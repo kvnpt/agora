@@ -100,7 +100,7 @@ works because there is one origin: every subdomain redirects to `orthodoxy.au`
 (`worker/lib/admin-host.mjs`).
 
 **Signing in comes back to the page.** Every Sign in on the page (the account
-menu's, and the one on the Bookmarks and Favourites cards) is
+menu's, and the one on the Saved and Favourites cards) is
 `/admin?back=<path>`, and `admin.html` sends anybody Access lets through, role
 or none, straight back to that path on this site; only the account menu's
 **Admin panel** goes to the panel (Kevin, 4 Nov 2026). The path brings back

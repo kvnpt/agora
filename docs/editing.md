@@ -257,7 +257,7 @@ service off the site with no notice at all. Reaching for the wrong one sends
 somebody to a locked church, so each says which it is before it does it.
 
 An event card's pencil (**Edit** beside its Parish button, and again on its
-floating toolbar beside the bookmark, for whoever may edit the event; a
+floating toolbar beside Save (the bookmark), for whoever may edit the event; a
 visitor's card has Suggest an edit at its foot instead) opens the same toolkit and fields
 (`editEvent`, `public/next/editing.js`), and Suppress and Delete each offer
 Cancel instead. A date of a service also takes its **Commemoration** (the saint,

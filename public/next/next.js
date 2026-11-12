@@ -358,7 +358,9 @@
   // Bookmarks are the current app's too (agora-bookmarks, [{ id, kind, at }]):
   // a date — a stored event, or one of a rule's by its "<rule>:<date>" id —
   // or a whole service, by its rule. They stay in this browser: a date's
-  // link expires, so a list of them is not a link.
+  // link expires, so a list of them is not a link. The page calls them Save
+  // and Saved, never "bookmark" (Kevin, 12 Nov 2026); the code and what is
+  // stored keep the old word, so nothing kept has to move.
   const BOOKMARKS = 'agora-bookmarks';
   const ruleIdOf = (e) => {
     if (e.schedule_id != null) return String(e.schedule_id);
@@ -1396,7 +1398,7 @@
     const chip = $('#inview');
     chip.classList.toggle('one', !!one);
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
-    const away = ps.length ? '' : S.todayMode === 'fav' ? 'Show your favourites' : S.todayMode === 'bm' ? 'Show your bookmarks' : nearestWords();
+    const away = ps.length ? '' : S.todayMode === 'fav' ? 'Show your favourites' : S.todayMode === 'bm' ? 'Show what you saved' : nearestWords();
     chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
     // On a phone, a button on the map (Kevin, 12 Nov 2026): up to three
     // logos in a box of one size, larger the fewer they are, and the count;
@@ -1607,7 +1609,7 @@
     if (S.todayMode && !hasMine(S.todayMode)) { setTodayMode(null); return; }
     const mode = S.todayMode;
     let html;
-    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: mode === 'bm' ? 'Nothing more today that you bookmarked.' : 'Nothing more today at your favourites.' });
+    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: mode === 'bm' ? 'Nothing more today that you saved.' : 'Nothing more today at your favourites.' });
     else {
       const on = feedFor(2).filter(e => eventPasses(e));
       // Nothing in view but something elsewhere says so, and the way to it,
@@ -1637,7 +1639,7 @@
   /**
    * Yours, read once while nothing changes (a map move asks again; the
    * bookmarks' days ahead are a long read): whether you have any — a parish
-   * starred, or a bookmark still to come, as Your lists' Bookmarks row has
+   * starred, or a bookmark still to come, as Your lists' Saved row has
    * it — and their places: your favourites, or where what you bookmarked is held.
    */
   const mineCache = new Map();
@@ -1671,7 +1673,7 @@
    */
   const todayModesHTML = () => {
     const btn = (m, label, off, on) => `<button class="tmode ${m}" type="button" data-today-mode="${m}" aria-pressed="${S.todayMode === m}" aria-label="${label}" title="${label}">${S.todayMode === m ? on : off}</button>`;
-    const bs = [hasMine('bm') && btn('bm', 'Your bookmarks', I.bookmark, I.bookmarkOn), hasMine('fav') && btn('fav', 'Your favourites', I.star, I.starOn)].filter(Boolean);
+    const bs = [hasMine('bm') && btn('bm', 'What you saved', I.bookmark, I.bookmarkOn), hasMine('fav') && btn('fav', 'Your favourites', I.star, I.starOn)].filter(Boolean);
     return bs.length ? `<div class="tmodes" role="group" aria-label="Today">${bs.join('')}</div>` : '';
   };
   function todayAwayHTML() {
@@ -1741,10 +1743,10 @@
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
     // The page's (`mode` given, null for the map's) has its buttons on the
-    // right; as yours, Tomorrow goes on in your Favourites' or Bookmarks' own card.
-    // Yours is titled so, its day under it: "Favourites", "Today · Sunday 15 Nov".
+    // right; as yours, Tomorrow goes on in your Favourites' or Saved's own card.
+    // Yours is titled so, its day under it: "Saved", "Today · Sunday 15 Nov".
     const date = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
-    const head = mode === 'bm' ? 'Bookmarks' : mode === 'fav' ? 'Favourites' : title;
+    const head = mode === 'bm' ? 'Saved' : mode === 'fav' ? 'Favourites' : title;
     return `<header class="card-head"><div><h2>${head}</h2><p>${mode ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML() : ''}</header>
       ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
       <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
@@ -1846,7 +1848,7 @@
         <span class="jt"><b>${esc(JURIS[c.jurisdiction]?.short || c.title)}</b><small>${c.ids.length} ${c.ids.length === 1 ? 'parish' : 'parishes'}</small></span></button>`).join('')}</div>`;
     renderLists();
   }
-  // Bookmarks, saved views and lists made by hand: a tint and a sign each.
+  // Saved (bookmarks), saved views and lists made by hand: a tint and a sign each.
   const BOOKMARK_LOOK = { tint: '#4f46e5', glyph: I.bookmarkOn };
   const VIEW_LOOK = { tint: '#0f766e', glyph: I.sliders };
   const LIST_LOOK = { tint: '#64748b', glyph: '☰' };
@@ -1922,7 +1924,7 @@
     const bm = bookmarked();
     const rows = [
       ...ls.filter(c => c.listId !== 'fav').map(c => row(`data-coll="${esc(c.id)}"`, LIST_LOOK, c.title, `${c.ids.length} ${c.ids.length === 1 ? 'place' : 'places'}`)),
-      ...(bm.dates.length || bm.rules.length ? [row('data-act="bookmarks"', BOOKMARK_LOOK, 'Bookmarks', `${bm.dates.length} to come`)] : []),
+      ...(bm.dates.length || bm.rules.length ? [row('data-act="bookmarks"', BOOKMARK_LOOK, 'Saved', `${bm.dates.length} to come`)] : []),
       ...savedViews().map(v => row(`data-view="${esc(v.path)}"`, VIEW_LOOK, viewTitle(v.path), v.path)),
     ];
     $('#shelf-lists').hidden = !rows.length;
@@ -2469,7 +2471,7 @@
     for (const el of $$('[data-kept]')) el.innerHTML = keptHTML();
   }
   /**
-   * Where Bookmarks and Favourites are kept, as their cards say it: on the
+   * Where Saved and Favourites are kept, as their cards say it: on the
    * account once signed in (syncSaved), else in this browser, with the way to
    * change that. The sign-in comes back here, where they join the account.
    */
@@ -4227,12 +4229,12 @@
     if (tools) tools.innerHTML = eventTools(e);
     fitLinks(el);
   }
-  // ── Bookmarks ─────────────────────────────────────────────────────────
+  // ── Bookmarks (Save, Saved on the page) ───────────────────────────────
 
   /** An event card's bookmark: on for the date, or for its whole service. */
   function bookmarkButton(e) {
     const on = isBookmarked(e);
-    return `<button class="bm${on ? ' on' : ''}" type="button" data-act="bookmark" aria-pressed="${on}" aria-label="${on ? 'Bookmarked' : 'Bookmark'}">${on ? I.bookmarkOn : I.bookmark}</button>`;
+    return `<button class="bm${on ? ' on' : ''}" type="button" data-act="bookmark" aria-pressed="${on}" aria-label="${on ? 'Saved' : 'Save'}">${on ? I.bookmarkOn : I.bookmark}</button>`;
   }
   /**
    * A one-off is bookmarked with a tap. A date of a regular service asks
@@ -4243,10 +4245,10 @@
     const rid = ruleIdOf(e);
     const r = rid && S.rules.find(x => String(x.id) === rid);
     if (!r) {
-      toast(toggleMark('event', e.id) ? 'Bookmarked' : 'Bookmark removed');
+      toast(toggleMark('event', e.id) ? 'Saved' : 'Removed from Saved');
       return afterMarks();
     }
-    const html = `<div class="lay-head"><h2>Bookmark</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
+    const html = `<div class="lay-head"><h2>Save</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
       <div class="sheet-scroll">
         <p class="lay-note">${esc(e.title)}</p>
         <div class="lists">
@@ -4283,16 +4285,16 @@
     }).join('');
     return `<div ${lookAttrs(BOOKMARK_LOOK, 'chero')}>
           <span class="ckicker">Your list</span>
-          <h1>Bookmarks</h1>
+          <h1>Saved</h1>
           <p data-kept>${keptHTML()}</p>
         </div>
         ${services ? `<h2 class="sec">Services</h2><div class="lists">${services}</div>` : ''}
         <h2 class="sec">Calendar</h2>
-        <div class="cu">${days || '<div class="tt-none sm">Nothing bookmarked is coming up.</div>'}</div>
+        <div class="cu">${days || '<div class="tt-none sm">Nothing you saved is coming up.</div>'}</div>
         <div class="toolbar-space sm"></div>`;
   }
   function openBookmarks() {
-    const el = pushSheet(`${glassBar('Bookmarks', null, { share: false })}<div class="sheet-scroll">${bookmarksBodyHTML()}</div>`, 'bookmarks');
+    const el = pushSheet(`${glassBar('Saved', null, { share: false })}<div class="sheet-scroll">${bookmarksBodyHTML()}</div>`, 'bookmarks');
     return el;
   }
 
@@ -4984,7 +4986,7 @@
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
       // page's in the In view card's.
-      // Your Today's goes on in your Favourites' card, or your Bookmarks'.
+      // Your Today's goes on in your Favourites' card, or your Saved.
       const sheet = b.closest('.sheet');
       const k = addDays(todayKey(), 1);
       if (sheet) toDay(sheet, k);
