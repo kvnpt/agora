@@ -683,8 +683,6 @@ body.map-full .parish-row {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
 }
 .today.clipped .see-all { display: none; }
-/* Yours with none yet has no button at its foot: room under its words. */
-.today:not(:has(.see-all)) .tlist { padding-bottom: 14px; }
 .tmore {
   position: relative; display: flex; align-items: center; gap: 4px; width: max-content;
   margin: -18px auto 16px; padding: 9px 14px 9px 18px; border-radius: 999px;
@@ -702,22 +700,24 @@ body.map-full .parish-row {
 .erow.dim, .tt-line.dim { opacity: .38; }
 .tsub.tnext { color: var(--pc, var(--accent)); }
 .card-head:has(.tfocus) { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-/* The page's Today's two buttons, on its right: your bookmarks, your
-   favourites, each in its list's colour once on (next.js todayModesHTML). */
+/* The page's Today's buttons, on its right: your bookmarks, your
+   favourites, each only once you have some, outlined (Kevin, 12 Nov 2026),
+   and in its list's colour once on (next.js todayModesHTML). */
 .card-head:has(.tmodes) { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.tmodes { flex: none; display: flex; gap: 2px; margin-right: -8px; }
+.tmodes { flex: none; display: flex; gap: 8px; }
 .tmode {
-  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
-  color: var(--text-2); transition: background-color .15s, color .15s;
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%;
+  color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: background-color .15s, color .15s, box-shadow .15s;
 }
-.tmode svg { width: 21px; height: 21px; }
+.tmode svg { width: 20px; height: 20px; }
 .tmode.bm { --tm: #4f46e5; }
 .tmode.fav { --tm: #b45309; }
 @media (prefers-color-scheme: dark) {
   .tmode.bm { --tm: #a5b4fc; }
   .tmode.fav { --tm: #fbbf24; }
 }
-.tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); }
+.tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tm) 55%, transparent); }
 @media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
 .tfocus {
