@@ -1681,8 +1681,9 @@
       <button class="see-all" type="button" data-nearest="on">Show what's on nearest ${I.chev}</button>`;
   }
   /**
-   * Today, from the rows given. With something on now, "Happening now" and
-   * then "Later today"; with nothing on now, the rest of the day under the
+   * Today, from the rows given. With something on now, those first, each
+   * saying Now, with no heading of their own (Kevin, 12 Nov 2026), then
+   * "Later today"; with nothing on now, the rest of the day under the
    * box's own title, "This evening" when it all is; once the day is done,
    * tomorrow, titled so. A day with both has the Evening divider. The page's
    * box is what is in view; a collection's card has one of its own, of its
@@ -1721,7 +1722,7 @@
     // `full`, the page's: the whole day, cut off by clipToday where it runs long.
     const upTo = (es, n) => (full ? es : es.slice(0, n));
     if (live.length) {
-      body += `<div class="tsub">Happening now</div>${rows(upTo(live, 4), { now: true })}`;
+      body += rows(upTo(live, 4), { now: true });
       if (later.length) body += `<div class="tsub">Later today</div>${rows(upTo(later, 3))}`;
     } else if (later.length) {
       if (later.every(isEvening)) title = 'This evening';

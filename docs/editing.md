@@ -719,7 +719,7 @@ later day of the parish's calendar and lasts at least twelve hours, says its spa
 on the card ("Friday 13 – Sunday 15 November" over "6pm Fri – 4pm Sun", painted and drawn alike),
 and keeps it in the feed after its first day: the bundle and the projection
 take a one-off whose `end_utc` reaches into the window, and Today puts one
-that began earlier and is still running under **Happening now**. The app v3
+that began earlier and is still running first, saying **Now**. The app v3
 replaced also listed it under every later day it covers (`multiDayContinuations`);
 v3 does not yet. The edit dialog has the same Date / Starts / Ends / Multi-day /
 Last day.

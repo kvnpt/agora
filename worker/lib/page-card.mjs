@@ -219,7 +219,8 @@ function comingUpHTML(m, start, today) {
 
 /**
  * A parish's Today, above its timetable, as next.js's todayHTML draws it:
- * with something on now, "Happening now" and then "Later today"; with nothing
+ * with something on now, those first, each saying Now, with no heading of
+ * their own, then "Later today"; with nothing
  * on now, the rest of the day under the box's title, "This evening" when it
  * all is; once the day is done, tomorrow, titled so. A day with both has the
  * Evening divider. Its button goes on to the card's Coming up. Nothing today
@@ -242,7 +243,7 @@ function todayBoxHTML(m, today) {
   const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
   if (!live.length && !later.length && !showsTomorrow) return '';
   if (live.length) {
-    body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), true)}`;
+    body += rows(live.slice(0, 4), true);
     if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
   } else if (later.length) {
     if (later.every(isEvening)) title = 'This evening';

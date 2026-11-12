@@ -75,8 +75,8 @@ for a filter link. `page-head.mjs` writes them.
 `worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
 The same sheet next.js draws, in the same class names (`public/next/next.css`), with
 what a first paint needs: a parish's names and address, its buttons (Google Maps,
-Website, the stream, Donate), its Today (as the page's: "Happening now" then
-"Later today", else the rest of the day under "This evening" when it is all the
+Website, the stream, Donate), its Today (as the page's: what is on now, each row
+saying Now, then "Later today", else the rest of the day under "This evening" when it is all the
 evening, else "Tomorrow"; the Evening divider where the day has both; nothing today or
 tomorrow, no box), its timetable, its own links as small buttons above its details, what is
 coming up and its details; an event's day, time, place and languages, a line each under its
