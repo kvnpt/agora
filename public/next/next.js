@@ -4440,12 +4440,16 @@
   }
   /** What a saved view keeps: the page's filters, without a date, which would pass. */
   const viewSegs = () => segsFor({ juris: S.juris, f: S.f });
-  /** Save: the page as its filters make it, kept in Your lists. Saved: tap to let it go. */
+  /**
+   * Save view: the page as its filters make it, kept in Your lists. View
+   * saved: tap to let it go. Not plain Save, which is an event's (the Saved
+   * card); a view is not kept there (Kevin, 12 Nov 2026).
+   */
   function saveViewHTML() {
     const path = pathOf(viewSegs());
     if (path === '/') return '';
     const on = isSavedView(path);
-    return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>Saved</span>` : 'Save'}</button>`;
+    return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>View saved</span>` : 'Save view'}</button>`;
   }
   // ── Filters, popped out ───────────────────────────────────────────────
   //
