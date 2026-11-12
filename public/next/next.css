@@ -728,9 +728,6 @@ body.map-full .parish-row {
 }
 .tfocus span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tfocus svg { flex: none; width: 14px; height: 14px; }
-.sheet .cu-band { scroll-margin-top: 72px; }
-/* A day gone to lands under the card's bar and the week bar held under it. */
-.sheet .cu .sday { scroll-margin-top: calc(var(--bar-h, 72px) + var(--wk-h, 0px)); }
 .etime { width: 50px; margin-right: -4px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
 /* Search results say the day under the time ("Sat 25 Oct"): room for it. */

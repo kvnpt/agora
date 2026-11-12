@@ -2127,12 +2127,58 @@
     if (!c.segs && c.id === 'inview') out.shareSegs = segsFor({ juris: c.juris || null, f: { ...c.f, parishIds: new Set(c.ids), listId: null } });
     return out;
   }
-  /** A card's Calendar, scrolled to the first day from `k` on. */
+  /**
+   * A card's Calendar, scrolled to the first day from `k` on: its header just
+   * under the card's bar and the week bar held under it. What they hold is
+   * measured now (holdWeek), not read from the week bar's observer, which
+   * says it a frame late: a card just opened had no week bar yet, so Tomorrow
+   * went a week bar too far, its heading and first rows under it; and a month
+   * just closed was still its height, so a day picked stopped that much short
+   * (Kevin, 12 Nov 2026). Only the card's own list moves.
+   *
+   * It stays there while what is above it settles (a picture that fails to
+   * load is taken out, and its row with less in it), for a few seconds or
+   * till the card is touched.
+   */
   function toDay(el, k, { smooth = true } = {}) {
     if (!el || !el.querySelector('.cu')) return;
+    const sc = el.querySelector('.sheet-scroll');
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
     const to = day || el.querySelector('.cu-band');
-    if (to) to.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    if (!to || !sc) return;
+    const still = !smooth || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const aim = () => {
+      const held = holdWeek(el);
+      return Math.max(0, Math.round(sc.scrollTop + to.getBoundingClientRect().top - sc.getBoundingClientRect().top - held.bar - (day ? held.wk : 0)));
+    };
+    let top = aim();
+    sc.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+    if (el._dayHold) el._dayHold();
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!to.isConnected) { stop(); return; }
+        const next = aim();
+        if (Math.abs(next - top) < 2) return;
+        top = next;
+        sc.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+      });
+    });
+    const touch = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    const timer = setTimeout(() => stop(), 5000);
+    const stop = () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      touch.forEach(t => el.removeEventListener(t, stop, true));
+      if (el._dayHold === stop) el._dayHold = null;
+    };
+    for (const c of sc.children) ro.observe(c);
+    // Anything done in the card (its ↑, a swipe, a key) lets the list go.
+    touch.forEach(t => el.addEventListener(t, stop, { capture: true, passive: true }));
+    el._dayHold = stop;
   }
   /**
    * A link that names a collection opens its card. One that names parishes
@@ -3024,6 +3070,24 @@
         <div class="wk-strip">${weeks.join('')}</div>
       </div>`;
   }
+  /**
+   * What is held under a card's bar, measured now: the bar, then the week bar
+   * (next.css --bar-h, --wk-h), for the day headers held under them. A parish
+   * card's scroller is padded down past its bar, and a sticky top counts from
+   * inside that padding (--wk-top). In pixels from the top of the card's list.
+   */
+  function holdWeek(el) {
+    const bar = el.querySelector('.glassbar'), sc = el.querySelector('.sheet-scroll'), wk = el.querySelector('.cu-band > .wk');
+    let h = 72;
+    if (bar && sc) {
+      h = bar.getBoundingClientRect().bottom - sc.getBoundingClientRect().top;
+      el.style.setProperty('--bar-h', `${h}px`);
+      el.style.setProperty('--wk-top', `${h - (parseFloat(getComputedStyle(sc).paddingTop) || 0)}px`);
+    }
+    const w = wk ? wk.offsetHeight : 0;
+    if (wk) el.style.setProperty('--wk-h', `${w}px`);
+    return { bar: h, wk: w };
+  }
   /** A card's week bar wired up: its dots as its weeks come into view, its size for what sticks under it. */
   function initWeek(el) {
     const wk = el.querySelector('.cu-band > .wk');
@@ -3035,18 +3099,9 @@
       for (const en of ents) if (en.isIntersecting) fillWeek(el, en.target);
     }, { root: strip, rootMargin: '0px 100%' });
     strip.querySelectorAll('.wk-week').forEach(w => el._wkIO.observe(w));
-    // What is held under the card's bar: the bar, then this (next.css --bar-h,
-    // --wk-h). A parish card's scroller is padded down past its bar, and a
-    // sticky top counts from inside that padding (--wk-top).
-    const bar = el.querySelector('.glassbar'), sc = el.querySelector('.sheet-scroll');
-    el._wkRO = new ResizeObserver(() => {
-      if (bar && sc) {
-        const h = bar.getBoundingClientRect().bottom - sc.getBoundingClientRect().top;
-        el.style.setProperty('--bar-h', `${h}px`);
-        el.style.setProperty('--wk-top', `${h - (parseFloat(getComputedStyle(sc).paddingTop) || 0)}px`);
-      }
-      el.style.setProperty('--wk-h', `${wk.offsetHeight}px`);
-    });
+    // What is held under the card's bar, kept as it changes (holdWeek).
+    const bar = el.querySelector('.glassbar');
+    el._wkRO = new ResizeObserver(() => holdWeek(el));
     el._wkRO.observe(wk);
     if (bar) el._wkRO.observe(bar);
     // Swiped to another week: its month's name, unless the day the list is on is in it.
