@@ -2432,7 +2432,10 @@
    * once it is scrolled to its top, it follows the finger, and let go far
    * enough down (or flicked) it closes, a step back like its X. Short of
    * that it springs back. A sideways drag is the row under the finger's
-   * (the buttons, a link), and an upward one the card's own scroll.
+   * (the buttons, a link), and an upward one the card's own scroll. The
+   * week and the month are swiped sideways, so a drag that starts on them
+   * is theirs, whichever way the finger first moves (Kevin, 13 Nov 2026: a
+   * swipe to the next month that began a little downward pulled the card).
    * Wide, a card stands at the right and has its X alone.
    */
   function swipeToClose(el) {
@@ -2446,7 +2449,7 @@
       const y = e.touches[0].clientY;
       const bar = el.querySelector('.glassbar');
       const onBar = y - el.getBoundingClientRect().top < (bar ? bar.offsetHeight : 64);
-      if (!onBar && e.target.closest('.card-map')) return;
+      if (!onBar && e.target.closest('.card-map, .wk-strip, .mg-months')) return;
       if (!onBar && scroller && scroller.scrollTop > 0) return;
       g = { y, x: e.touches[0].clientX, t: Date.now(), dy: 0, live: false };
     }, { passive: true });

@@ -54,9 +54,15 @@
    swiped sideways a month at a time; every month six weeks, one height. */
 .mg-small { padding: 2px 0 0; }
 .mg-small .mg-tools { padding: 2px 6px 8px; }
-.mg-months { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+/* Sideways only. overflow-x alone makes the other axis auto too, and a day's
+   dots and count reach a few px under its 44px, so the last row made the
+   months a few px taller than their box: on an iPhone that is a box that
+   scrolls both ways, and a swipe to the next month pulled it up and down
+   (Kevin, 13 Nov 2026). So y is hidden, and each month keeps room under its
+   last row for what hangs below it. */
+.mg-months { display: flex; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .mg-months::-webkit-scrollbar { display: none; }
-.mg-month { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.mg-month { flex: 0 0 100%; padding-bottom: 10px; scroll-snap-align: start; scroll-snap-stop: always; }
 .mg-small .mg-grid { row-gap: 1px; }
 .mg-small .mg-d {
   position: relative; display: flex; flex-direction: column; align-items: center;
