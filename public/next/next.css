@@ -14,11 +14,12 @@
   --line: rgba(60, 60, 67, 0.14);
   /* Today's rows, a hairline you can see. */
   --line-strong: rgba(60, 60, 67, 0.26);
-  /* The app's own blue is Greek's (jurisdiction-colors.js), on purpose: most
-     of the parishes are Greek (Kevin, 13 Nov 2026). */
-  --accent: #0d5eaf;
-  /* You: your distances, the edge and its pin, your dot on the map. The
-     electric blue phones use for where you are, kept clear of Greek's. */
+  /* The user's blue: the electric blue phones use for where you are. It is
+     you and what you do (links, buttons) and how far things are from you
+     (--dist: distances, the edge and its pin, your dot on the map), so the
+     app reads as an extension of you. Greek's flag blue is a jurisdiction,
+     kept apart from it (Kevin, 13 Nov 2026). */
+  --accent: #007aff;
   --dist: #007aff;
   --live: #2fb350;
   --evening: #2c3d72;
@@ -65,9 +66,8 @@
     --text-3: #6f6f78;
     --line: rgba(255, 255, 255, 0.10);
     --line-strong: rgba(255, 255, 255, 0.20);
-    /* Greek as dark mode lifts it (liftForDark), and the phone's dark-mode
-       location blue. */
-    --accent: #58a1f7;
+    /* The phone's dark-mode location blue. */
+    --accent: #0a84ff;
     --dist: #0a84ff;
     --live: #38c75c;
     --evening: #8ba3d4;

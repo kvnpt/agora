@@ -31,7 +31,7 @@ import { jurisLabel, weekFrom, parishSlug, isNarrowed, time12 } from './lite-pag
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 /** The accent when the page is not one jurisdiction's: the app's own blue (next.css --accent). */
-const NEUTRAL = '#0d5eaf';
+const NEUTRAL = '#007aff';
 
 const AU_STATES = {
   ACT: 'Australian Capital Territory', NSW: 'New South Wales', NT: 'Northern Territory',

@@ -351,11 +351,12 @@ about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
 the rows */admin* → Colours has deliberately changed, absence means the file's
 value, and a reset deletes the row rather than writing the default into it.
 
-**Two blues, one job each.** The page's own blue (`--accent` in `next.css`:
-links, buttons) is Greek's, on purpose: most of the parishes are Greek. Where
-you are (`--dist`: the distances, the edge between the map and Today and its
-pin, and your dot in `map.js`) is the electric blue phones use for location,
-kept apart from Greek's in both schemes. The six jurisdictions, the event types
+**Two blues, one job each.** The app's own blue is the user's: the electric
+blue phones use for where you are. It marks you and what you do (`--accent` in
+`next.css`: links, buttons) and how far things are from you (`--dist`: the
+distances, the edge between the map and Today and its pin, your dot in
+`map.js`), so the app reads as an extension of you. Greek's flag blue is one
+jurisdiction among six, kept apart from it in both schemes. The six jurisdictions, the event types
 (`event-types.js`) and these two were chosen together in November 2026, at
 least 10 apart (OKLab ΔE×100) where they sit side by side; a change to one is
 checked against the rest.

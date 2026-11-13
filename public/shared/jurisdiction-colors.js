@@ -22,9 +22,9 @@
   // ΔE×100) in light and in dark (liftForDark below), and at least 7 for
   // red–green colour-blind readers. Today the closest pair is Serbian and
   // Macedonian.
-  //   greek       the Greek flag's blue. The page's links and buttons
-  //               (--accent in next.css) are the same blue, on purpose; your
-  //               location (--dist) is a separate, electric blue.
+  //   greek       the Greek flag's blue: a jurisdiction, apart from the
+  //               app's own electric blue (--accent and --dist in next.css),
+  //               which is the user's.
   //   antiochian  a bright violet: a deeper purple beside that Greek looks
   //               the same colour to a red–green colour-blind reader.
   //   serbian     a clear red; macedonian toward cerise, away from it.
