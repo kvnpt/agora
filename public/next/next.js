@@ -231,6 +231,37 @@
   /** Distance only in location mode, as the summary line asks. */
   const distOf = (p) => (S.loc && p && isFinite(p.lat)) ? km(S.loc, p) : null;
   const sortOrigin = () => S.loc || (map ? (({ lng, lat }) => ({ lat, lng }))(map.getCenter()) : null);
+  /** Around you, as the page opens where it knows where you are: degrees east–west and north–south either side. */
+  const LOC_BOX = [0.35, 0.28];
+  /** How far a row is held from `o`, as its row says it (eventRow): Infinity where it has no place. */
+  const rowKm = (e, o) => { const at = e.lat != null ? e : S.byId.get(e.parish_id); return o && at && isFinite(at.lat) ? km(o, at) : Infinity; };
+  /**
+   * Rows at one time nearest first, to you, else to where the map is looking
+   * (Kevin, 14 Nov 2026): three Vespers at 6pm, the one down the road first.
+   * The times keep their order.
+   */
+  function byTimeNear(list, o = S.loc || sortOrigin()) {
+    if (!o || list.length < 2) return list;
+    const d = new Map(list.map(e => [e, rowKm(e, o)]));
+    return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc) || d.get(a) - d.get(b));
+  }
+  /** Nearest on, and you somewhere to measure from. */
+  const nearOn = () => S.near && !!S.loc;
+  /** How far from you, as a row says it (fmtKm): '' where it has no place. */
+  const kmLabel = (e) => { const d = rowKm(e, S.loc); return isFinite(d) ? fmtKm(d) : ''; };
+  /**
+   * Nearest: by how far from you as the rows say it, whatever the time; those
+   * that say the same distance by their time; those with no place last.
+   */
+  function byNear(list) {
+    const r = new Map(list.map(e => { const k = kmLabel(e); return [e, k ? parseFloat(k) : Infinity]; }));
+    return list.slice().sort((a, b) => (r.get(a) === r.get(b) ? 0 : r.get(a) - r.get(b)) || Date.parse(a.start_utc) - Date.parse(b.start_utc));
+  }
+  /**
+   * Nearest's slots, as the time's are: the rows that say the same distance
+   * share it, said once, each still saying its time (Kevin, 14 Nov 2026).
+   */
+  const kmSlotsOf = (list) => TL.slotsOf(byNear(list), kmLabel);
 
   const CITIES = [
     ['Sydney', -33.87, 151.21], ['Melbourne', -37.81, 144.96], ['Brisbane', -27.47, 153.03], ['Perth', -31.95, 115.86],
@@ -429,6 +460,10 @@
   let syncAs = null, sendTimer = null, edits = 0;
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* this page only */ } };
+  // Nearest first (Kevin, 14 Nov 2026): one switch, kept on this phone, that
+  // sorts Today and a card's Calendar by how far (nearOn, byNear).
+  const NEAR_KEY = 'agora_nearest';
+  S.near = lsGet(NEAR_KEY) === '1';
   function localSaved() {
     const d = {};
     for (const p of SV.PARTS) d[p] = readLS(SV.KEYS[p]);
@@ -1153,7 +1188,7 @@
     // else Sydney, where most of the parishes are.
     const back = takeSignInView();
     if (back) map.jumpTo({ center: [back.lng, back.lat], zoom: back.zoom });
-    else map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
+    else map.fitBounds(S.loc ? [[S.loc.lng - LOC_BOX[0], S.loc.lat - LOC_BOX[1]], [S.loc.lng + LOC_BOX[0], S.loc.lat + LOC_BOX[1]]]
       : [[150.6, -34.15], [151.35, -33.6]], { animate: false, padding: 0 });
   }
 
@@ -1670,10 +1705,12 @@
    * alone wears none, and one in two languages still says both.
    */
   const langBadge = (langs, asked) => !!(langs && langs.length) && !(asked && langs.every(l => langIs(l, asked)));
-  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false, tint = null, current = null } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false, tint = null, current = null, nearFirst = false } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
+    // `nearFirst`: sorted by how far, the row says it where its time goes, the time under it.
+    const far = nearFirst && d != null;
     const title = e.feast ? `${e.title}` : e.title;
     // Its own languages, as its line in the timetable has them, run on after its name. Services only.
     const langs = window.AgoraTimetable.serviceLangs(e);
@@ -1686,7 +1723,7 @@
     const sub = here && venue && here === venue.id ? `<span class="esub">${avatar(p, 'xs')}<span class="epar">Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
       : here && venue && e.parish_id === here ? `<span class="esub">${avatar(venue, 'xs')}<span class="epar">At ${esc(venue.name)}</span></span>`
       : here && e.parish_id === here ? ''
-      : `<span class="esub">${avatar(p, 'xs')}<span class="epar">${esc(p ? p.name : e.parish_name || '')}${d != null ? ` ${distHTML(d)}` : ''}</span></span>`;
+      : `<span class="esub">${avatar(p, 'xs')}<span class="epar">${esc(p ? p.name : e.parish_name || '')}${d != null && !far ? ` ${distHTML(d)}` : ''}</span></span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
@@ -1696,8 +1733,9 @@
     const kind = window.AgoraEventTypes.rowWord(e.event_type);
     // `current`: the date an event's card is open on, first in its Calendar, outlined.
     const cur = current != null && String(current) === String(e.id);
-    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}${cur ? ' cur' : ''}" type="button" data-event="${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${tint}"` : ''}>
-        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i><span class="t-now">Now</span>' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
+    const when = now ? '<i class="live"></i><span class="t-now">Now</span>' : timeHTML(l.hm);
+    return `<button class="erow${now && !far ? ' now' : ''}${far ? ' far' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}${cur ? ' cur' : ''}" type="button" data-event="${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${tint}"` : ''}>
+        <span class="etime${same ? (far ? ' samekm' : ' same') : ''}">${far ? `${distHTML(d, 'span')}<small class="ewhen${now ? ' on' : ''}">${when}</small>` : when}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${sub}
@@ -1749,12 +1787,12 @@
     if (S.todayMode && !hasMine(S.todayMode)) { setTodayMode(null); return; }
     const mode = S.todayMode;
     let html;
-    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: mode === 'bm' ? 'Nothing more today that you saved.' : 'Nothing more today at your favourites.' });
+    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, near: true, empty: mode === 'bm' ? 'Nothing more today that you saved.' : 'Nothing more today at your favourites.' });
     else {
       const on = feedFor(2).filter(e => eventPasses(e));
       // Nothing in view but something elsewhere says so, and the way to it,
       // rather than going without a word; nothing anywhere is still no box.
-      html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang, full: true, mode }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
+      html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang, full: true, mode, near: true }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
     }
     const box = $('#today');
     box.innerHTML = html;
@@ -1811,9 +1849,9 @@
    * favourites, each only once you have some (Kevin, 12 Nov 2026); a second
    * tap is the map's again.
    */
-  const todayModesHTML = () => {
+  const todayModesHTML = (near = false) => {
     const btn = (m, label, off, on) => `<button class="tmode ${m}" type="button" data-today-mode="${m}" aria-pressed="${S.todayMode === m}" aria-label="${label}" title="${label}">${S.todayMode === m ? on : off}</button>`;
-    const bs = [hasMine('bm') && btn('bm', 'What you saved', I.bookmark, I.bookmarkOn), hasMine('fav') && btn('fav', 'Your favourites', I.star, I.starOn)].filter(Boolean);
+    const bs = [near && nearBtnHTML(), hasMine('bm') && btn('bm', 'What you saved', I.bookmark, I.bookmarkOn), hasMine('fav') && btn('fav', 'Your favourites', I.star, I.starOn)].filter(Boolean);
     return bs.length ? `<div class="tmodes" role="group" aria-label="Today">${bs.join('')}</div>` : '';
   };
   function todayAwayHTML() {
@@ -1839,9 +1877,13 @@
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
    */
-  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false, mode, empty = '' } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false, mode, empty = '', near = false } = {}) {
     const now = Date.now();
     const t = todayKey();
+    // Those at one time nearest first; under Nearest (`near`, the page's and
+    // a collection's), each part of the day by how far (Kevin, 14 Nov 2026).
+    all = byTimeNear(all);
+    const nearby = near && nearOn();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
     const later = all.filter(e => Date.parse(e.start_utc) > now && local(e).date === t);
     const tomorrow = all.filter(e => local(e).date === addDays(t, 1));
@@ -1851,7 +1893,7 @@
     // stretch a slot, in the parish's.
     const slot = (es, o = {}) => `<div class="slot${here ? '' : ' rows'}">${es.map((e, i) => {
       seen.push(e.id);
-      return eventRow(e, { ...o, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
+      return eventRow(e, { ...o, now: o.live ? o.live.has(e) : o.now, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
     }).join('')}</div>`;
     // The rows come in order, so the evening starts once: the divider goes
     // there when the morning or afternoon came before it. Those at one time
@@ -1864,12 +1906,24 @@
       else if (!eve) { eve = true; if (day) div = EVENING; }
       return div + slot(s.rows, o);
     }).join('');
+    // Nearest: each part of the day nearest first, on now or later, each row
+    // saying how far and then when, those as far as each other one slot; the
+    // morning named when the evening follows it, its times no longer in order.
+    const nearRows = (es, live = new Set(), n = Infinity) => {
+      const part = (rs) => TL.slotsOf(byNear(rs).slice(0, n), kmLabel).map(x => slot(x.rows, { live, nearFirst: true })).join('');
+      const m = part(es.filter(e => !isEvening(e))), ev = part(es.filter(isEvening));
+      return `${m && ev ? MORNING : ''}${m}${m && ev ? EVENING : ''}${ev}`;
+    };
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
     if (!live.length && !later.length && !showsTomorrow && !next && !clear && !empty) return '';
     // `full`, the page's: the whole day, cut off by clipToday where it runs long.
     const upTo = (es, n) => (full ? es : es.slice(0, n));
-    if (live.length) {
+    if (nearby && (live.length || later.length)) {
+      const day = [...live, ...later];
+      if (day.every(isEvening)) title = 'This evening';
+      body += nearRows(day, new Set(live), full ? Infinity : 5);
+    } else if (live.length) {
       body += rows(upTo(live, 4), { now: true });
       if (later.length) body += `<div class="tsub">Later today</div>${rows(upTo(later, 3))}`;
     } else if (later.length) {
@@ -1878,7 +1932,7 @@
     } else if (showsTomorrow) {
       title = 'Tomorrow';
       k = addDays(t, 1);
-      body += rows(upTo(tomorrow, 4));
+      body += nearby ? nearRows(tomorrow, undefined, full ? Infinity : 4) : rows(upTo(tomorrow, 4));
     } else body += `<div class="tempty">${esc(empty || 'Nothing more today.')}</div>`;
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
@@ -1894,7 +1948,7 @@
     // Yours is titled so, its day under it: "Saved", "Today · Sunday 15 Nov".
     const date = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
     const head = mode === 'bm' ? 'Saved' : mode === 'fav' ? 'Favourites' : title;
-    return `<header class="card-head"><div><h2>${head}</h2><p>${mode ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML() : ''}</header>
+    return `<header class="card-head"><div><h2>${head}</h2><p>${mode ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML(near) : near ? `<div class="tmodes">${nearBtnHTML()}</div>` : ''}</header>
       ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
       <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
@@ -2215,7 +2269,11 @@
   const venueColor = (e) => parishColor(S.byId.get(e.location_parish_id) || S.byId.get(e.parish_id));
   function daysHTML(list, { start, days, linkFor, empty = false, row = {}, byVenue = false }) {
     const byDay = new Map();
-    for (const e of list) {
+    // Those at one time nearest first; a collection's under Nearest, each
+    // part of each day by how far, those as far one slot (Kevin, 14 Nov 2026).
+    const nearby = byVenue && nearOn();
+    const nearSlots = (es) => kmSlotsOf(es).map(x => `<div class="slot rows">${x.rows.map((e, i) => eventRow(e, { ...row, nearFirst: true, same: i > 0, tint: venueColor(e) })).join('')}</div>`).join('');
+    for (const e of byTimeNear(list)) {
       const k = local(e).date;
       if (!byDay.has(k)) byDay.set(k, []);
       byDay.get(k).push(e);
@@ -2228,7 +2286,8 @@
       const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${linkFor ? dayLink(k, linkFor(k)) : ''}</h3>`;
       if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
-      out.push(`<section class="sday" data-date="${k}">${head}${slotsHTML(morning, row, byVenue)}${evening.length ? EVENING + slotsHTML(evening, row, byVenue) : ''}</section>`);
+      const part = nearby ? nearSlots : (rs) => slotsHTML(rs, row, byVenue);
+      out.push(`<section class="sday" data-date="${k}">${head}${nearby && morning.length && evening.length ? MORNING : ''}${part(morning)}${evening.length ? EVENING + part(evening) : ''}</section>`);
     }
     return out.join('');
   }
@@ -2557,6 +2616,16 @@
   /** The app's Evening divider: its moon and the word, as faint as a day's name. */
   const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
   const EVENING = `<div class="eve">${MOON}<span>Evening</span></div>`;
+  /** Under Nearest, a day with both has its morning named too: its times are no longer in order. */
+  const SUN = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" d="M5 .6v1.1M5 8.3v1.1M.6 5h1.1M8.3 5h1.1M1.9 1.9l.8.8M7.3 7.3l.8.8M1.9 8.1l.8-.8M7.3 2.7l.8-.8"/></svg>';
+  const MORNING = `<div class="eve morn">${SUN}<span>Morning</span></div>`;
+  /**
+   * The Nearest button, its sign a pair of arrows, up and down (Kevin, 14 Nov
+   * 2026): round in a Today's head, as Saved and Favourites are beside it;
+   * floating on a card's Calendar, the Filters button's twin (`cal`).
+   */
+  const SORT_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20V4M4.5 7.5 8 4l3.5 3.5M16 4v16M12.5 16.5 16 20l3.5-3.5"/></svg>';
+  const nearBtnHTML = (cal = false) => `<button class="${cal ? 'fpill fbtn ficon nfab' : 'tmode near'}" type="button" data-near-sort aria-pressed="${nearOn()}" aria-label="Nearest first" title="Nearest first">${SORT_ICON}</button>`;
   const isEvening = (row) => TL.isEvening(row);
   /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
@@ -4085,7 +4154,7 @@
         </article>`;
     };
     const items = ps.slice(0, LIMIT).map(item).join('');
-    const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang }) : '';
+    const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang, near: true }) : '';
     const won = collWhatsOnHTML(c);
     const badges = filterBadges(cf);
     const stripe = stripeOf(c, ps);
@@ -4114,6 +4183,7 @@
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
           ${weekBarHTML(from, filtersPill(collFilterCount(c), false))}
+          <div class="near-float">${nearBtnHTML(true)}</div>
           <div class="cu">${collFeedHTML(c, days, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
@@ -5086,8 +5156,37 @@
 
   // ── Location ──────────────────────────────────────────────────────────
 
-  function locate() {
-    if (!('geolocation' in navigator)) return toast('Location isn’t available here');
+  /**
+   * Nearest on or off, kept on this phone: the page's Today and every open
+   * collection's Today and Calendar sorted again. On with nowhere to measure
+   * from asks where you are first, as Near me does, and comes on once it knows.
+   */
+  let nearAsked = false;
+  function setNear(on) {
+    if (on && !S.loc) { nearAsked = true; locate({ wide: true }); return; }
+    S.near = on;
+    lsSet(NEAR_KEY, on ? '1' : null);
+    renderToday();
+    for (const el of stack) if (el._coll) resortCard(el);
+  }
+  /** A collection's Today and Calendar in the new order; read in its Calendar, the same day stays in view. */
+  async function resortCard(el) {
+    const wk = el.querySelector('.cu-band > .wk'), bar = el.querySelector('.glassbar');
+    const stay = wk && bar && wk.getBoundingClientRect().top <= bar.getBoundingClientRect().bottom + 1 ? dayInView(el) : null;
+    const c = el._shown || shownOf(el);
+    const box = el.querySelector('.ctoday');
+    if (box) box.innerHTML = todayHTML(feedFor(2).filter(inCollection(c)), { lang: (c.f || {}).lang || null, near: true });
+    for (const b of el.querySelectorAll('[data-near-sort]')) b.setAttribute('aria-pressed', String(nearOn()));
+    await refreshComingUp(el, { keep: false });
+    if (stay) toDay(el, stay, { smooth: false });
+  }
+  /**
+   * Where you are, and the map there: close in for Near me; for Nearest
+   * (`wide`), the page's located start view around you, so Today still has
+   * a neighbourhood's worth to sort.
+   */
+  function locate({ wide = false } = {}) {
+    if (!('geolocation' in navigator)) { nearAsked = false; return toast('Location isn’t available here'); }
     navigator.geolocation.getCurrentPosition((pos) => {
       S.loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       try { localStorage.setItem('agora_location', JSON.stringify(S.loc)); } catch { /* fine */ }
@@ -5095,8 +5194,10 @@
       syncMap();
       renderInView();
       renderFavs();
-      if (map) map.flyTo({ center: [S.loc.lng, S.loc.lat], zoom: 11.5, duration: 900 });
-    }, () => toast('Couldn’t get your location'), { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+      if (map && wide) map.fitBounds([[S.loc.lng - LOC_BOX[0], S.loc.lat - LOC_BOX[1]], [S.loc.lng + LOC_BOX[0], S.loc.lat + LOC_BOX[1]]], { padding: 0, duration: 900 });
+      else if (map) map.flyTo({ center: [S.loc.lng, S.loc.lat], zoom: 11.5, duration: 900 });
+      if (nearAsked) { nearAsked = false; setNear(true); }
+    }, () => { nearAsked = false; toast('Couldn’t get your location'); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
 
   // ── Wiring ────────────────────────────────────────────────────────────
@@ -5161,6 +5262,7 @@
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else if (S.todayMode) { window.scrollTo({ top: 0, behavior: 'smooth' }); fitTo(mineIds(S.todayMode)); } else showNearest(); return; }
     if (t.closest('[data-act="today-all"]')) { S.todayAll = true; clipToday(); return; }
+    if (t.closest('[data-near-sort]')) { setNear(!nearOn()); return; }
     if ((b = t.closest('[data-today-mode]'))) { const m = b.dataset.todayMode; setTodayMode(S.todayMode === m ? null : m); return; }
     if ((b = t.closest('[data-nearest]'))) {
       closeAll();
