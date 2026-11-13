@@ -473,35 +473,17 @@ body.map-full .parish-row {
 }
 
 /* ── The phone's one card ──────────────────────────────────────────────
-   The map, Today and What's on, the phone's width, its corners still
-   rounded (Kevin, 13 Nov 2026). The tabs are a row of buttons along the
-   map's top, glass as its other buttons are, beside Full screen; the map
-   takes the room they had above it, so it is taller by as much and Today
-   starts where it did. Full screen, the same row, under the phone's own
-   bar. Wide, none of this: the tabs are above the map. */
+   The tabs, the map, Today and What's on, the phone's width, its corners
+   still rounded (Kevin, 13 Nov 2026). The tabs keep their look, as the
+   card's head: with the card's edge they frame the map, Full screen on the
+   map under them. The card's own top margin goes to the map, so Today
+   starts where it did. Wide, none of this: the tabs are above the map. */
 @media (max-width: 1079px) {
   .vc-shell { margin: 0; }
-  .viewport { height: min(calc(44vh + 52px), 404px); }
-  .jurisdiction-banner {
-    position: absolute; top: 10px; left: 0; right: 58px; z-index: 4;
-    gap: 6px; padding: 5px 10px; background: none; border: 0;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-  }
-  /* Room at the end to scroll the last one clear of the fade. */
-  .jurisdiction-banner::after { content: ''; flex: none; width: 10px; }
-  .jurisdiction-chip {
-    height: 34px; padding: 0 13px; border-radius: 17px;
-    background: var(--glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
-    border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
-    -webkit-tap-highlight-color: transparent;
-  }
-  .jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-2); border-color: var(--hair); opacity: 1; }
-  .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-color: transparent; }
-  body.map-full .jurisdiction-banner { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 0; right: 58px; z-index: 4; padding-top: 5px; }
-  body.map-full .map-fs { top: calc(10px + env(safe-area-inset-top)); }
-  body.map-full .map-filters { top: calc(62px + env(safe-area-inset-top)); }
+  .vc-shell > .jurisdiction-banner { border-top: 0; }
+  .viewport { height: min(calc(44vh + 11px), 363px); }
+  .vc-shell > .jurisdiction-banner + .viewport { border-radius: 0; }
+  .vc-shell:not(:has(> .today:not([hidden]), > .shelf:not(:empty))) > .jurisdiction-banner + .viewport { border-radius: 0 0 22px 22px; }
 }
 /* What's on in the card, under Today: the map's too, so on its plane, a
    hairline between them; its heading Today's size, its posters in line

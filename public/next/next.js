@@ -1574,25 +1574,23 @@
   }
 
   /**
-   * Where the map's own pieces are. On a phone the map, Today and What's on
-   * are one card, the phone's width (Kevin, 12 and 13 Nov 2026): the tabs a
-   * row of buttons along the map's top and the parishes in view a button at
-   * its foot, Today under it, What's on under Today. On a wide screen the
-   * tabs are above the map, the parishes in view the page's heading under
-   * it, Today heads the left column, under any WhatsApp drafts, and What's
-   * on the right, as they were. index.html has them where a phone does.
+   * Where the map's own pieces are. On a phone the tabs, the map, Today and
+   * What's on are one card, the phone's width (Kevin, 12 and 13 Nov 2026):
+   * the parishes in view a button on the map's foot, Today under it, What's
+   * on under Today. On a wide screen the parishes in view are the page's
+   * heading under the map, Today heads the left column, under any WhatsApp
+   * drafts, and What's on the right, as they were. index.html has them
+   * where a phone does.
    */
   function placeToday() {
-    const t = $('#today'), chip = $('#inview'), tabs = $('#juris-row'), on = $('#shelf-whatson');
+    const t = $('#today'), chip = $('#inview'), on = $('#shelf-whatson');
     if (WIDE.matches) {
       if (t.parentElement !== $('.col-side')) $('#favs').before(t);
       if (chip.parentElement === $('#viewport')) $('#viewport').after(chip);
-      if (tabs.parentElement !== $('#viewport-card')) $('#viewport-card').prepend(tabs);
       if (on.parentElement !== $('.col-main')) $('.col-main').prepend(on);
     } else {
       if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
       if (chip.parentElement !== $('#viewport')) $('#viewport').append(chip);
-      if (tabs.parentElement !== $('#viewport')) $('#viewport').prepend(tabs);
       if (on.parentElement !== $('#vc-shell') || on.previousElementSibling !== t) t.after(on);
     }
   }
