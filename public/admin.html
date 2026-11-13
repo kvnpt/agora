@@ -28,10 +28,10 @@
       --radius: 10px;
       --radius-sm: 6px;
       /* The main app's blue, so the two surfaces read as one product. */
-      --accent: #2c6cb4;
-      --accent-bg: #e8f0fa;
-      --accent-text: #1f5696;
-      --accent-ring: rgba(44,108,180,0.22);
+      --accent: #007aff;
+      --accent-bg: #e5f1ff;
+      --accent-text: #0062cc;
+      --accent-ring: rgba(0,122,255,0.22);
       --danger: #dc3545;
       --danger-bg: #fdecee;
       --success: #16a34a;
@@ -56,10 +56,10 @@
         --backdrop: rgba(0,0,0,0.65);
         --soft-bg: #1f2026;
         --raw-bg: #1f2026;
-        --accent: #5b8fd6;
-        --accent-bg: #1c2638;
-        --accent-text: #9cc0f0;
-        --accent-ring: rgba(91,143,214,0.3);
+        --accent: #0a84ff;
+        --accent-bg: #14263d;
+        --accent-text: #6cb2ff;
+        --accent-ring: rgba(10,132,255,0.3);
         --danger: #f06b6b;
         --danger-bg: #2d1a1a;
         --shadow-sm: none;
@@ -182,7 +182,7 @@
        that has something to add, instead of a collapsed "Add Parish ▶"
        heading that read like a section title. Its label follows the
        section, so it always says what it will make. */
-    .fab { position: fixed; z-index: 45; right: max(20px, calc(16px + env(safe-area-inset-right))); bottom: max(20px, calc(16px + env(safe-area-inset-bottom))); height: 56px; min-width: 56px; padding: 0 20px 0 16px; border: none; border-radius: 28px; background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: var(--shadow-md), 0 2px 6px rgba(44,108,180,0.35); transition: transform 0.15s ease, filter 0.15s; }
+    .fab { position: fixed; z-index: 45; right: max(20px, calc(16px + env(safe-area-inset-right))); bottom: max(20px, calc(16px + env(safe-area-inset-bottom))); height: 56px; min-width: 56px; padding: 0 20px 0 16px; border: none; border-radius: 28px; background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: var(--shadow-md), 0 2px 6px rgba(0,122,255,0.35); transition: transform 0.15s ease, filter 0.15s; }
     .fab:hover { filter: brightness(1.08); }
     .fab:active { transform: scale(0.96); }
     .fab svg.ic { width: 24px; height: 24px; stroke-width: 2.4; }
@@ -568,13 +568,13 @@
     .k-vespers    { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
     .k-paraklesis { --kb-bg: #dcecf0; --kb-fg: #1f5a66; }
     .k-compline   { --kb-bg: #e2e0f4; --kb-fg: #3e3a80; }
-    .k-bible-study{ --kb-bg: #f3ead6; --kb-fg: #7a5a20; }
+    .k-bible-study{ --kb-bg: #fee1d6; --kb-fg: #8d3c18; }
     .k-confession { --kb-bg: #f6e0e6; --kb-fg: #8a2f4a; }
-    .k-feast      { --kb-bg: #f5ecd0; --kb-fg: #7a6520; }
+    .k-feast      { --kb-bg: #f1e7ce; --kb-fg: #896a00; }
     .k-prayer     { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
-    .k-talk       { --kb-bg: #f0e8d5; --kb-fg: #7a5a20; }
-    .k-youth      { --kb-bg: #d8ebf6; --kb-fg: #2d5a8a; }
-    .k-social     { --kb-bg: #d9ecd9; --kb-fg: #2d6a2d; }
+    .k-talk       { --kb-bg: #fee1d6; --kb-fg: #8d3c18; }
+    .k-youth      { --kb-bg: #d2eef1; --kb-fg: #006169; }
+    .k-social     { --kb-bg: #dbeedb; --kb-fg: #15561d; }
     .k-other      { --kb-bg: #ececef; --kb-fg: #555a62; }
     @media (prefers-color-scheme: dark) {
       .k-liturgy    { --kb-bg: #3a2840; --kb-fg: #d4a3d4; }
@@ -582,11 +582,11 @@
       .k-vespers, .k-prayer { --kb-bg: #1f2a3a; --kb-fg: #9bb8e0; }
       .k-paraklesis { --kb-bg: #1b3035; --kb-fg: #92c8d2; }
       .k-compline   { --kb-bg: #26243d; --kb-fg: #b2acec; }
-      .k-bible-study, .k-talk { --kb-bg: #3a2f1c; --kb-fg: #d4b682; }
+      .k-bible-study, .k-talk { --kb-bg: #40271d; --kb-fg: #f9a686; }
       .k-confession { --kb-bg: #3a2029; --kb-fg: #e6a3b8; }
-      .k-feast      { --kb-bg: #3a3220; --kb-fg: #d4c082; }
-      .k-youth      { --kb-bg: #1c303d; --kb-fg: #a8c8de; }
-      .k-social     { --kb-bg: #1f2e1f; --kb-fg: #a3c8a3; }
+      .k-feast      { --kb-bg: #362d13; --kb-fg: #d9bb68; }
+      .k-youth      { --kb-bg: #163336; --kb-fg: #71cfd9; }
+      .k-social     { --kb-bg: #213322; --kb-fg: #95cf96; }
       .k-other      { --kb-bg: #26272c; --kb-fg: #aaaaaa; }
     }
     .pill .kb-dot { width: 9px; height: 9px; }

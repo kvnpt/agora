@@ -19,13 +19,13 @@
 (function (root) {
   const LANGUAGES = [
     { name: 'English', short: 'English', slug: 'english', glyph: 'En', tint: '#1d4ed8' },
-    { name: 'Greek', short: 'Greek', slug: 'greek', glyph: 'Ελ', tint: '#0061fe' },
-    { name: 'Arabic', short: 'Arabic', slug: 'arabic', glyph: 'عر', tint: '#7c3bc1' },
-    { name: 'Serbian', short: 'Serbian', slug: 'serbian', glyph: 'Ср', tint: '#cc2234' },
-    { name: 'Church Slavonic', short: 'Slavonic', slug: 'slavonic', glyph: 'Сл', tint: '#d38301',
+    { name: 'Greek', short: 'Greek', slug: 'greek', glyph: 'Ελ', tint: '#0d5eaf' },
+    { name: 'Arabic', short: 'Arabic', slug: 'arabic', glyph: 'عر', tint: '#8d52e3' },
+    { name: 'Serbian', short: 'Serbian', slug: 'serbian', glyph: 'Ср', tint: '#d22e2c' },
+    { name: 'Church Slavonic', short: 'Slavonic', slug: 'slavonic', glyph: 'Сл', tint: '#e47c01',
       aliases: ['slavonic', 'russian', 'church-slavonic', 'old church slavonic'] },
-    { name: 'Romanian', short: 'Romanian', slug: 'romanian', glyph: 'Ro', tint: '#4e7a27' },
-    { name: 'Macedonian', short: 'Macedonian', slug: 'macedonian', glyph: 'Мк', tint: '#b92d5d' },
+    { name: 'Romanian', short: 'Romanian', slug: 'romanian', glyph: 'Ro', tint: '#40731a' },
+    { name: 'Macedonian', short: 'Macedonian', slug: 'macedonian', glyph: 'Мк', tint: '#b94082' },
     { name: 'Ukrainian', short: 'Ukrainian', slug: 'ukrainian', glyph: 'Ук', tint: '#0e7490' },
   ];
   const NAMES = LANGUAGES.map(l => l.name);
