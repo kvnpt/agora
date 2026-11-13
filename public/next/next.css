@@ -655,18 +655,23 @@ body.map-full .parish-row {
 .today .see-all { border-top-color: var(--line-strong); }
 /* Today's rows spaced as a Calendar's are (Kevin, 12 Nov 2026), the two to
    meet: the time and the name on one line at the top of the row, no taller
-   than what is in it, a hairline between them inset to the words as the
-   Calendar's are. The row is still the whole width to tap. */
-.today .erow { position: relative; padding: 10px 18px 10px 31px; min-height: 0; align-items: flex-start; }
+   than what is in it. Those at one time are one slot, the time said once
+   and no hairline between them; a hairline between slots, inset to the
+   words as the Calendar's are (Kevin, 14 Nov 2026). The row is still the
+   whole width to tap. */
+.today .slot { position: relative; padding: 4px 0; }
+.today .erow { position: relative; padding: 6px 18px 6px 31px; min-height: 0; align-items: flex-start; }
 /* Each row's line in the colour of the jurisdiction it is held in (its
-   --pc, next.js todayHTML), as a Calendar's rows have it (Kevin, 12 Nov 2026). */
-.today .erow::after {
-  content: ''; position: absolute; left: 18px; top: 10px; bottom: 10px;
+   --pc, next.js todayHTML), as a Calendar's rows have it (Kevin, 12 Nov
+   2026); a parish card's, one stretch a slot in the parish's. */
+.today .slot.rows .erow::after, .today .slot:not(.rows)::after {
+  content: ''; position: absolute; left: 18px; top: 6px; bottom: 6px;
   width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
 }
+.today .slot:not(.rows)::after { top: 10px; bottom: 10px; }
 .today .erow .etime { padding-top: 2px; }
 .today .erow + .erow { border-top: 0; }
-.today .erow + .erow::before, .today .erow + .eve::before {
+.today .slot + .slot::before, .today .slot + .eve::before {
   content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; background: var(--line-strong);
 }
 /* A Today with the day and the evening divides them, as a day of the feed does. */
@@ -1199,8 +1204,9 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   content: ''; position: absolute; left: -13px; top: 6px; bottom: 6px;
   width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
 }
-/* Said once by its slot, the time is still read out on every row. */
-.etime.same .t-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* Said once by its slot, the time (or Now) is still read out on every row. */
+.etime.same .t-time, .etime.same .t-now { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.etime.same .live { display: none; }
 .more-days { display: flex; justify-content: center; gap: 4px; padding: 22px 0 10px; }
 .more-days i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); opacity: .25; animation: more-days 1.2s ease-in-out infinite; }
 .more-days i:nth-child(2) { animation-delay: .2s; }

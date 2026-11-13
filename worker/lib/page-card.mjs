@@ -176,7 +176,7 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null, current
   // The date an event's card is open on, first in its Calendar, outlined.
   const cur = current != null && String(current) === String(e.id);
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}${cur ? ' cur' : ''}" href="/${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${esc(tint)}"` : ''}>
-      <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}${kind ? `<span class="ekind" style="color:${eventTypes.kindColors(e.event_type, false).fg}">${esc(kind)}</span>` : ''}</span>
+      <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i><span class="t-now">Now</span>' : timeHTML(e._local.time)}${kind ? `<span class="ekind" style="color:${eventTypes.kindColors(e.event_type, false).fg}">${esc(kind)}</span>` : ''}</span>
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
         ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
         ${away}
@@ -232,12 +232,14 @@ function todayBoxHTML(m, today) {
   const live = all.filter(e => Date.parse(e.start_utc) <= m.now && endMs(e) > m.now);
   const later = all.filter(e => Date.parse(e.start_utc) > m.now && e._local.date === today);
   const tomorrow = all.filter(e => e._local.date === addDays(today, 1));
+  // Those at one time are one slot, the time said once, as a Calendar's
+  // (next.js todayHTML); those on now share their Now.
   let day = false, eve = false;
-  const rows = (es, now) => es.map(e => {
+  const rows = (es, now) => lines.slotsOf(es, e => now ? `now ${isEvening(e)}` : e._local.time).map(s => {
     let div = '';
-    if (!isEvening(e)) day = true;
+    if (!isEvening(s.rows[0])) day = true;
     else if (!eve) { eve = true; if (day) div = EVENING; }
-    return div + eventRowHTML(e, m.parish.id, { now });
+    return `${div}<div class="slot">${s.rows.map((e, i) => eventRowHTML(e, m.parish.id, { now, same: i > 0 })).join('')}</div>`;
   }).join('');
   let title = 'Today', k = today, body = '';
   const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
