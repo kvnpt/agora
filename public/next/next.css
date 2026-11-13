@@ -743,6 +743,43 @@ body.map-full .parish-row {
 .tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tm) 55%, transparent); }
 @media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
+/* Nearest (next.js nearBtnHTML, Kevin 14 Nov 2026): a pill in a Today's
+   head, first of its buttons; on, in the blue how far is in. On a card's
+   Calendar the same button floats at the right of the day header held under
+   the week bar (.near-float), so it is at hand wherever the list is. */
+.tnear {
+  display: inline-flex; align-items: center; gap: 5px; height: 38px; padding: 0 13px 0 11px; border-radius: 19px;
+  color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); font-weight: 600; font-size: 14.5px;
+  transition: background-color .15s, color .15s, box-shadow .15s;
+}
+.tnear svg, .nfab svg { flex: none; }
+.near-float {
+  position: sticky; top: calc(var(--wk-top, var(--bar-h, 72px)) + var(--wk-h, 0px)); z-index: 3;
+  display: flex; justify-content: flex-end; height: 0; padding: 0 18px; pointer-events: none;
+}
+.nfab {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 4px; height: 28px; margin-top: 5px; padding: 0 10px 0 8px; border-radius: 14px;
+  background: var(--card); color: var(--text-2); font-weight: 600; font-size: 13px;
+  box-shadow: 0 0 0 1px var(--line-strong), 0 2px 8px rgba(0, 0, 0, .08);
+  transition: background-color .15s, color .15s, box-shadow .15s;
+}
+.nfab svg { width: 13px; height: 13px; }
+.tnear[aria-pressed="true"], .nfab[aria-pressed="true"] {
+  color: var(--dist); background: color-mix(in srgb, var(--dist) 13%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dist) 55%, transparent);
+}
+.nfab[aria-pressed="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dist) 55%, transparent), 0 2px 8px rgba(0, 0, 0, .08); }
+@media (hover: hover) { .tnear:hover, .nfab:hover { color: var(--text); } .tnear[aria-pressed="true"]:hover, .nfab[aria-pressed="true"]:hover { color: var(--dist); background: color-mix(in srgb, var(--dist) 18%, var(--card)); } }
+@media (prefers-reduced-motion: reduce) { .tnear, .nfab { transition: none; } }
+/* A row sorted by how far says it where its time goes, the time under it. */
+.erow.far .etime { width: 54px; }
+.erow.far .etime > .dist { font-size: 15px; font-weight: 650; }
+.ewhen { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
+.ewhen.on { display: flex; align-items: center; gap: 4px; color: var(--live); font-weight: 650; }
+.ewhen .live { width: 6px; height: 6px; }
+/* Under Nearest a day's morning is named too, its times no longer in order. */
+.eve.morn { color: #a16207; }
+@media (prefers-color-scheme: dark) { .eve.morn { color: #e0b75a; } }
 .tfocus {
   flex: none; display: inline-flex; align-items: center; gap: 4px; max-width: 55%;
   margin-top: 2px; padding: 5px 8px 5px 11px; border-radius: 16px;

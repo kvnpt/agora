@@ -152,6 +152,20 @@ the jurisdiction it is held in (a parish card's in the parish's). Wide (1080px
 and up), Today heads the left column and the chip is the page's heading under
 the map (`placeToday` in `next.js`), as before.
 
+**Nearest first** (Kevin, 14 Nov 2026, for someone going to this evening's
+closest). Rows at one time are always nearest first: to you, else to where the
+map is looking (`byTimeNear`). A Nearest button sorts each part of the day by
+how far from you instead, whatever the time (`byNear`, `nearOn`): the page's
+Today and a collection's have it in their head, beside Saved and Favourites,
+and a collection's Calendar has it floating at the right of the day header held
+under the week bar (`.near-float`). Each row then says how far where its time
+goes, the time under it, and a day with both names its Morning as well as its
+Evening, since its times are no longer in order. It is one switch, kept on the
+phone (`agora_nearest`); with nowhere to measure from, it asks where you are
+first and opens the map on the located start view around you rather than
+closing in as Near me does, so Today still has a neighbourhood to sort. A
+parish's own card has no button: one place has nothing to sort.
+
 **Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,
 `/wed+fri`, written in the tabs' order and from Sunday; `/greek/antiochian` and
 `/fri/wed` read the same. A filter holds one as its key or its number, as every
