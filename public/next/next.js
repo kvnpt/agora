@@ -247,11 +247,21 @@
   }
   /** Nearest on, and you somewhere to measure from. */
   const nearOn = () => S.near && !!S.loc;
-  /** Nearest: by how far from you, whatever the time; the earlier of two as far. */
+  /** How far from you, as a row says it (fmtKm): '' where it has no place. */
+  const kmLabel = (e) => { const d = rowKm(e, S.loc); return isFinite(d) ? fmtKm(d) : ''; };
+  /**
+   * Nearest: by how far from you as the rows say it, whatever the time; those
+   * that say the same distance by their time; those with no place last.
+   */
   function byNear(list) {
-    const d = new Map(list.map(e => [e, rowKm(e, S.loc)]));
-    return list.slice().sort((a, b) => d.get(a) - d.get(b) || Date.parse(a.start_utc) - Date.parse(b.start_utc));
+    const r = new Map(list.map(e => { const k = kmLabel(e); return [e, k ? parseFloat(k) : Infinity]; }));
+    return list.slice().sort((a, b) => (r.get(a) === r.get(b) ? 0 : r.get(a) - r.get(b)) || Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
+  /**
+   * Nearest's slots, as the time's are: the rows that say the same distance
+   * share it, said once, each still saying its time (Kevin, 14 Nov 2026).
+   */
+  const kmSlotsOf = (list) => TL.slotsOf(byNear(list), kmLabel);
 
   const CITIES = [
     ['Sydney', -33.87, 151.21], ['Melbourne', -37.81, 144.96], ['Brisbane', -27.47, 153.03], ['Perth', -31.95, 115.86],
@@ -1725,7 +1735,7 @@
     const cur = current != null && String(current) === String(e.id);
     const when = now ? '<i class="live"></i><span class="t-now">Now</span>' : timeHTML(l.hm);
     return `<button class="erow${now && !far ? ' now' : ''}${far ? ' far' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}${cur ? ' cur' : ''}" type="button" data-event="${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${tint}"` : ''}>
-        <span class="etime${same ? ' same' : ''}">${far ? `${distHTML(d, 'span')}<small class="ewhen${now ? ' on' : ''}">${when}</small>` : when}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
+        <span class="etime${same ? (far ? ' samekm' : ' same') : ''}">${far ? `${distHTML(d, 'span')}<small class="ewhen${now ? ' on' : ''}">${when}</small>` : when}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${sub}
@@ -1883,7 +1893,7 @@
     // stretch a slot, in the parish's.
     const slot = (es, o = {}) => `<div class="slot${here ? '' : ' rows'}">${es.map((e, i) => {
       seen.push(e.id);
-      return eventRow(e, { ...o, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
+      return eventRow(e, { ...o, now: o.live ? o.live.has(e) : o.now, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
     }).join('')}</div>`;
     // The rows come in order, so the evening starts once: the divider goes
     // there when the morning or afternoon came before it. Those at one time
@@ -1897,12 +1907,12 @@
       return div + slot(s.rows, o);
     }).join('');
     // Nearest: each part of the day nearest first, on now or later, each row
-    // its own slot saying how far and then when; the morning named when the
-    // evening follows it, its times no longer in order.
+    // saying how far and then when, those as far as each other one slot; the
+    // morning named when the evening follows it, its times no longer in order.
     const nearRows = (es, live = new Set(), n = Infinity) => {
-      const m = byNear(es.filter(e => !isEvening(e))).slice(0, n), ev = byNear(es.filter(isEvening)).slice(0, n);
-      const one = (e) => slot([e], { now: live.has(e), nearFirst: true });
-      return `${m.length && ev.length ? MORNING : ''}${m.map(one).join('')}${m.length && ev.length ? EVENING : ''}${ev.map(one).join('')}`;
+      const part = (rs) => TL.slotsOf(byNear(rs).slice(0, n), kmLabel).map(x => slot(x.rows, { live, nearFirst: true })).join('');
+      const m = part(es.filter(e => !isEvening(e))), ev = part(es.filter(isEvening));
+      return `${m && ev ? MORNING : ''}${m}${m && ev ? EVENING : ''}${ev}`;
     };
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
@@ -2260,9 +2270,9 @@
   function daysHTML(list, { start, days, linkFor, empty = false, row = {}, byVenue = false }) {
     const byDay = new Map();
     // Those at one time nearest first; a collection's under Nearest, each
-    // part of each day by how far, each row its own slot (Kevin, 14 Nov 2026).
+    // part of each day by how far, those as far one slot (Kevin, 14 Nov 2026).
     const nearby = byVenue && nearOn();
-    const nearSlots = (es) => byNear(es).map(e => `<div class="slot rows">${eventRow(e, { ...row, nearFirst: true, tint: venueColor(e) })}</div>`).join('');
+    const nearSlots = (es) => kmSlotsOf(es).map(x => `<div class="slot rows">${x.rows.map((e, i) => eventRow(e, { ...row, nearFirst: true, same: i > 0, tint: venueColor(e) })).join('')}</div>`).join('');
     for (const e of byTimeNear(list)) {
       const k = local(e).date;
       if (!byDay.has(k)) byDay.set(k, []);
@@ -2609,9 +2619,13 @@
   /** Under Nearest, a day with both has its morning named too: its times are no longer in order. */
   const SUN = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" d="M5 .6v1.1M5 8.3v1.1M.6 5h1.1M8.3 5h1.1M1.9 1.9l.8.8M7.3 7.3l.8.8M1.9 8.1l.8-.8M7.3 2.7l.8-.8"/></svg>';
   const MORNING = `<div class="eve morn">${SUN}<span>Morning</span></div>`;
-  /** The Nearest button: a pill in a Today's head, or floating on a card's Calendar (`cls`). */
-  const NEAR_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="m21 3l-6.5 18a.55.55 0 0 1-1 0L10 14l-7-3.5a.55.55 0 0 1 0-1z"/></svg>';
-  const nearBtnHTML = (cls = 'tnear') => `<button class="${cls}" type="button" data-near-sort aria-pressed="${nearOn()}" title="Nearest first">${NEAR_ICON}<span>Nearest</span></button>`;
+  /**
+   * The Nearest button, its sign a pair of arrows, up and down (Kevin, 14 Nov
+   * 2026): round in a Today's head, as Saved and Favourites are beside it;
+   * floating on a card's Calendar, the Filters button's twin (`cal`).
+   */
+  const SORT_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20V4M4.5 7.5 8 4l3.5 3.5M16 4v16M12.5 16.5 16 20l3.5-3.5"/></svg>';
+  const nearBtnHTML = (cal = false) => `<button class="${cal ? 'fpill fbtn ficon nfab' : 'tmode near'}" type="button" data-near-sort aria-pressed="${nearOn()}" aria-label="Nearest first" title="Nearest first">${SORT_ICON}</button>`;
   const isEvening = (row) => TL.isEvening(row);
   /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
@@ -4169,7 +4183,7 @@
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
           ${weekBarHTML(from, filtersPill(collFilterCount(c), false))}
-          <div class="near-float">${nearBtnHTML('nfab')}</div>
+          <div class="near-float">${nearBtnHTML(true)}</div>
           <div class="cu">${collFeedHTML(c, days, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>

@@ -743,36 +743,28 @@ body.map-full .parish-row {
 .tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tm) 55%, transparent); }
 @media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
-/* Nearest (next.js nearBtnHTML, Kevin 14 Nov 2026): a pill in a Today's
-   head, first of its buttons; on, in the blue how far is in. On a card's
-   Calendar the same button floats at the right of the day header held under
-   the week bar (.near-float), so it is at hand wherever the list is. */
-.tnear {
-  display: inline-flex; align-items: center; gap: 5px; height: 38px; padding: 0 13px 0 11px; border-radius: 19px;
-  color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); font-weight: 600; font-size: 14.5px;
-  transition: background-color .15s, color .15s, box-shadow .15s;
-}
-.tnear svg, .nfab svg { flex: none; }
+/* Nearest (next.js nearBtnHTML, Kevin 14 Nov 2026): its arrows, round as
+   Saved and Favourites in a Today's head, first of them; on, in the blue how
+   far is in. On a card's Calendar the Filters button's twin, no shadow,
+   floating at the right of the day header held under the week bar
+   (.near-float), so it is at hand wherever the list is. */
+.tmode.near { --tm: var(--dist); }
 .near-float {
   position: sticky; top: calc(var(--wk-top, var(--bar-h, 72px)) + var(--wk-h, 0px)); z-index: 3;
   display: flex; justify-content: flex-end; height: 0; padding: 0 18px; pointer-events: none;
 }
-.nfab {
-  pointer-events: auto; display: inline-flex; align-items: center; gap: 4px; height: 28px; margin-top: 5px; padding: 0 10px 0 8px; border-radius: 14px;
-  background: var(--card); color: var(--text-2); font-weight: 600; font-size: 13px;
-  box-shadow: 0 0 0 1px var(--line-strong), 0 2px 8px rgba(0, 0, 0, .08);
-  transition: background-color .15s, color .15s, box-shadow .15s;
+.near-float .nfab { pointer-events: auto; margin-top: 6px; color: var(--text); }
+.nfab svg { width: 15px; height: 15px; }
+.nfab[aria-pressed="true"] {
+  color: var(--dist); border-color: color-mix(in srgb, var(--dist) 55%, transparent);
+  background: color-mix(in srgb, var(--dist) 13%, var(--card));
 }
-.nfab svg { width: 13px; height: 13px; }
-.tnear[aria-pressed="true"], .nfab[aria-pressed="true"] {
-  color: var(--dist); background: color-mix(in srgb, var(--dist) 13%, var(--card));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dist) 55%, transparent);
-}
-.nfab[aria-pressed="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dist) 55%, transparent), 0 2px 8px rgba(0, 0, 0, .08); }
-@media (hover: hover) { .tnear:hover, .nfab:hover { color: var(--text); } .tnear[aria-pressed="true"]:hover, .nfab[aria-pressed="true"]:hover { color: var(--dist); background: color-mix(in srgb, var(--dist) 18%, var(--card)); } }
-@media (prefers-reduced-motion: reduce) { .tnear, .nfab { transition: none; } }
-/* A row sorted by how far says it where its time goes, the time under it. */
+/* A row sorted by how far says it where its time goes, the time under it;
+   those after the first of a distance's slot their time only, the distance
+   said once and still read out. */
 .erow.far .etime { width: 54px; }
+.etime.samekm > .dist { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.etime.samekm > .ewhen { padding-top: 2px; }
 .erow.far .etime > .dist { font-size: 15px; font-weight: 650; }
 .ewhen { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
 .ewhen.on { display: flex; align-items: center; gap: 4px; color: var(--live); font-weight: 650; }
