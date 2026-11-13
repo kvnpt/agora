@@ -137,7 +137,14 @@
     if (e.start_local) return { date: e.start_local.slice(0, 10), hm: e.start_local.slice(11, 16) };
     return partsIn(e.timezone || TZ, Date.parse(e.start_utc));
   }
-  const todayKey = () => partsIn(Intl.DateTimeFormat().resolvedOptions().timeZone || TZ, Date.now()).date;
+  // Asked thousands of times in a card's drawing, and a new formatter each
+  // time (resolvedOptions) is most of what a card cost: the answer kept a second.
+  let todayAt = 0, todayWas = '';
+  function todayKey() {
+    const now = Date.now();
+    if (now - todayAt > 1000 || now < todayAt) { todayAt = now; todayWas = partsIn(Intl.DateTimeFormat().resolvedOptions().timeZone || TZ, now).date; }
+    return todayWas;
+  }
   function addDays(key, n) {
     const d = new Date(key + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n);
     return d.toISOString().slice(0, 10);
@@ -1151,14 +1158,20 @@
   }
 
   function onView() {
-    if (!map || S.mapCard) return;
+    if (!map) return;
+    // In a card, the card's: what it lists follows it (cardMoved).
+    if (S.mapCard) return cardMoved();
     S.bounds = map.getBounds();
     S.inView = new Set(S.parishes.filter(p => isFinite(p.lat) && p.lat != null && S.bounds.contains([p.lng, p.lat])).map(p => p.id));
     // Where the map is looking, said in the parish chip under it.
-    const c = map.getCenter();
-    S.place = S.loc && km(S.loc, { lat: c.lat, lng: c.lng }) < 15 ? 'Near you' : placeName(c.lat, c.lng, map.getZoom());
+    S.place = placeOfMap();
     renderInView();
     renderFeeds();
+  }
+  /** Where the map is looking, in words: Near you, a city, Australia. */
+  function placeOfMap() {
+    const c = map.getCenter();
+    return S.loc && km(S.loc, { lat: c.lat, lng: c.lng }) < 15 ? 'Near you' : placeName(c.lat, c.lng, map.getZoom());
   }
   function fitTo(ids, animate = true, around = S.loc, padding = 40) {
     const ps = [...ids].map(id => S.byId.get(id)).filter(p => p && isFinite(p.lat) && p.lat != null);
@@ -1195,10 +1208,12 @@
   }
   function mapToCard(el) {
     if (document.body.classList.contains('map-full')) setFullscreen(false);
+    map.stop();
+    // Where the map was looking, on the page or in the card it was in: where this one first looks (frameCard).
+    const was = { view: viewOf(), box: S.mapCard ? S.mapCard.el._bounds || seenBounds() : map.getBounds() };
     if (S.mapCard) mapToPage({ view: false });
     // Where the page's map was looking, kept while cards have it.
-    map.stop();
-    if (!pageView) pageView = viewOf();
+    if (!pageView) pageView = was.view;
     const beside = WIDE.matches;
     if (beside) {
       // The page's map in view, above the scrim, its full screen not the card's.
@@ -1206,6 +1221,7 @@
       window.scrollTo({ top: 0 });
       document.body.classList.add('map-beside');
       besideRoom();
+      $('#viewport').appendChild(showAllBtn());
     } else {
       const box = document.createElement('div');
       box.className = 'card-map';
@@ -1213,17 +1229,17 @@
       box.appendChild($('#map'));
       // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
       box.appendChild($('#btn-filters'));
+      box.appendChild(showAllBtn());
       el.classList.add('has-map');
     }
     S.mapCard = { el, ids: new Set(el._coll.ids), beside };
     map.resize();
     syncMap();
-    // Back on a card it was in, where it was there; else those near where
-    // you are, or near where the page's map was looking, clear of the card
-    // beside it.
-    const near = S.loc || { lng: pageView.center[0], lat: pageView.center[1] };
-    if (el._view) map.jumpTo(el._view);
-    else fitTo(el._coll.ids, false, near, beside ? besidePadding() : 40);
+    // Back on a card it was in, where it was there, listing what it did;
+    // else where it first looks (frameCard), listing what it shows.
+    if (el._view) { map.jumpTo(el._view); el._at = viewKey(); }
+    else lookedAt(el, frameCard(el, beside, was));
+    if (el._shownKey != null && shownKey(shownOf(el)) !== el._shownKey) repaintCollection(el, { keepDays: true });
     syncCounts();
     syncFilterBtns();
   }
@@ -1245,9 +1261,11 @@
     S.mapCard = null;
     if (fpop && fpop.btn === $('#btn-filters')) closeFilters();
     document.body.classList.remove('map-beside');
+    showAllBtn().hidden = true;
     if (!own.beside) {
       $('#viewport').prepend($('#map'));
       $('#viewport').insertBefore($('#btn-filters'), $('#btn-locate'));
+      $('#viewport').appendChild(showAllBtn());
       const box = own.el.querySelector('.card-map');
       if (box) box.remove();
       own.el.classList.remove('has-map');
@@ -1271,6 +1289,120 @@
     el._view = null;
     mapToCard(el);
   });
+
+  // ── What a card's map shows is what the card lists ────────────────────
+  //
+  // Kevin's friend moved the map to his part of the country, opened
+  // Weeknight services, and was shown every state's (13 Nov 2026). The
+  // shelf's card is every parish's still, whatever the page's map shows;
+  // inside it, its own map says which of them the card is about. Its Today,
+  // its parishes, What's on and its Calendar keep to those the map has in
+  // view, and follow it as it moves; the map shows the rest of them too, to
+  // pan to, and Show all fits them. A parish with no pin is nowhere, so it
+  // is never out of view.
+  //
+  // A collection opens where the page's map was looking, as the shelf
+  // counted it ("4 in view"), or on the nearest of it when none was there.
+  // What was named opens on all of it: a list, a saved view, a link's
+  // parishes or place, a search's finds; and so does a link opened before
+  // anybody looked at the page's map, by somebody we cannot place. In view
+  // is the map's own card: every parish that answers it, where its map is,
+  // and named for where that is.
+
+  /** Is this parish where the map is looking? */
+  const inBox = (b, p) => !!p && (p.lat == null || !isFinite(p.lat) || b.contains([p.lng, p.lat]));
+  const pinOf = (id) => { const p = S.byId.get(id); return p && p.lat != null && isFinite(p.lat) ? p : null; };
+  /** What the map shows: its box, less what a card beside it covers. */
+  function seenBounds() {
+    const box = map.getContainer();
+    const w = box.clientWidth, h = box.clientHeight;
+    const right = S.mapCard && S.mapCard.beside ? Math.max(80, w - besideCover()) : w;
+    const b = new maplibregl.LngLatBounds();
+    for (const pt of [[0, 0], [right, 0], [0, h], [right, h]]) b.extend(map.unproject(pt));
+    return b;
+  }
+  /** Named, it opens on all of it. */
+  const wholeOf = (c) => !!(c.listId || c.viewPath || c.id === 'words' || c.id === 'search' || (c.f && (c.f.parishIds || c.f.location)));
+  /**
+   * Where a card's map first looks, from where the map `was` looking. There,
+   * it lists what that map had in view (returned): the count the shelf or
+   * the chip said, though the card's map, another shape, shows a little more
+   * round it.
+   */
+  function frameCard(el, beside, was) {
+    const c = el._coll, pad = beside ? besidePadding() : 40;
+    const pins = c.ids.filter(pinOf);
+    if (!c.here && (wholeOf(c) || (S.cold && !S.loc))) { fitTo(pins, false, null, pad); return null; }
+    if (c.here || pins.some(id => was.box.contains([pinOf(id).lng, pinOf(id).lat]))) {
+      // Beside the card, in what it leaves uncovered.
+      map.fitBounds(was.box, { padding: beside ? { top: 0, bottom: 0, left: 0, right: besideCover() } : 0, duration: 0 });
+      return was.box;
+    }
+    nearestIn(c.ids, { lng: was.view.center[0], lat: was.view.center[1] }, false);
+    return null;
+  }
+  /**
+   * The map out to the nearest few of a card's parishes, from where it is
+   * looking, as showNearest does on the page; but around them alone, or from
+   * the middle of nowhere the box is the country, and the list all of it.
+   */
+  function nearestIn(ids, o, animate = true) {
+    const ps = ids.map(pinOf).filter(Boolean);
+    if (!ps.length) return;
+    const b = new maplibregl.LngLatBounds();
+    ps.sort((x, y) => km(o, x) - km(o, y)).slice(0, NEAREST).forEach(p => b.extend([p.lng, p.lat]));
+    const pad = S.mapCard && S.mapCard.beside ? { ...besidePadding(), left: 50, top: 50, bottom: 50, right: besideCover() + 50 } : 50;
+    map.fitBounds(b, { padding: pad, maxZoom: 13, duration: animate ? 600 : 0 });
+  }
+  /** Where the card's map is looking now (`by`: what to list for it, else what it shows). */
+  function lookedAt(el, by = null) {
+    el._bounds = by || seenBounds();
+    el._place = placeOfMap();
+    el._at = viewKey();
+  }
+  const viewKey = () => { const c = map.getCenter(); return `${c.lng.toFixed(6)},${c.lat.toFixed(6)},${map.getZoom().toFixed(3)}`; };
+  /** A card's collection as its map shows it: those in view, or all of them before it has had the map. */
+  function shownOf(el, c = el._coll) {
+    const b = el._bounds;
+    if (!b) return c;
+    const ids = c.ids.filter(id => inBox(b, S.byId.get(id)));
+    if (c.here) return { ...withWords({ ...c, ids }, el._place), pool: c.ids.length };
+    return ids.length === c.ids.length ? c : { ...c, ids, of: c.ids.length };
+  }
+  /** The card's map moved: the card again, if what it shows has changed. */
+  function cardMoved() {
+    const el = S.mapCard.el;
+    // Not moved since it was put there: its framing's own end, or its size settling.
+    if (!el.isConnected || viewKey() === el._at) return;
+    lookedAt(el);
+    const c = shownOf(el);
+    if (shownKey(c) !== el._shownKey) repaintCollection(el, { keepDays: true });
+  }
+  const shownKey = (c) => `${c.title}|${c.ids.join(',')}`;
+  /** Show all, on a card's map showing only some of its parishes (Kevin, 13 Nov 2026). */
+  function showAllBtn() {
+    let b = $('#btn-mapall');
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button';
+      b.id = 'btn-mapall';
+      b.className = 'map-all';
+      b.dataset.act = 'map-all';
+      b.hidden = true;
+    }
+    return b;
+  }
+  function syncShowAll(el) {
+    const b = showAllBtn();
+    const c = el._shown;
+    const on = !!(S.mapCard && S.mapCard.el === el && c && c.of && el._coll.ids.some(pinOf));
+    b.hidden = !on;
+    if (on) b.textContent = `Show all ${c.of}`;
+  }
+  function showAllOf(el) {
+    const pad = S.mapCard && S.mapCard.beside ? besidePadding() : 40;
+    fitTo(el._coll.ids.filter(pinOf), true, null, pad);
+  }
 
   // ── Full screen ───────────────────────────────────────────────────────
 
@@ -1360,10 +1492,11 @@
    */
   const NAMES_SHOWN = 4;
   const namesOf = (ps) => ps.slice(0, NAMES_SHOWN).map(p => p.name).join(' · ') + (ps.length > NAMES_SHOWN ? ` · and ${ps.length - NAMES_SHOWN} more` : '');
-  function viewWords(ids, f = S.f, juris = S.juris, { here = true } = {}) {
+  function viewWords(ids, f = S.f, juris = S.juris, { here = true, at = S.place } = {}) {
     const W = window.AgoraLinkWords, n = ids.length;
     // Where the map is, for the parishes it shows; not for a link's, which may be anywhere.
-    const place = !here || !S.place ? '' : S.place === 'Near you' ? 'near you' : `in ${S.place}`;
+    // `at`: where a card's own map is looking (cardMoved), else the page's.
+    const place = !here || !at ? '' : at === 'Near you' ? 'near you' : `in ${at}`;
     const r = window.AgoraUrlState.classifyPath(pathOf(segsFor({ juris, f })), { today: todayKey() });
     const loc = regionOf(f);
     const list = f.listId && listById(f.listId);
@@ -1375,7 +1508,7 @@
     if (list) what += ` from ${list.name}`;
     else if (named) what += ` at ${named.length} parishes`;
     if (!loc && place) what += ` ${place}`;
-    let name = W.listNameOf(r, { loc, place: S.place });
+    let name = W.listNameOf(r, { loc, place: at });
     if (list) name += ` from ${list.name}`;
     else if (named) name = named.map(p => p.acronym || p.name).join(' + ');
     const count = `${n} ${placeNoun(n)}${place ? ` ${place}` : ''}`;
@@ -2044,18 +2177,22 @@
     S.loads++;
   }
   /** Every service and event on a day in [start, start + days), each by its own day. */
-  let rangeCache = { key: '', list: [] };
+  // A few ranges kept, not one: a card draws its Calendar's fortnight and
+  // its week bar's week in turn, and each threw the other's away.
+  const rangeCache = new Map();
   function feedRange(start, days) {
     // Wide enough for New Zealand's morning and Perth's night; each event's own day decides.
     const from = new Date(Date.parse(start + 'T00:00:00Z') - 14 * 3600000).toISOString();
     const to = new Date(Date.parse(addDays(start, days) + 'T12:00:00Z')).toISOString();
     const key = `${from}|${to}|${S.loads}`;
-    if (rangeCache.key !== key) {
-      const list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
-      rangeCache = { key, list };
+    let list = rangeCache.get(key);
+    if (!list) {
+      list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+      if (rangeCache.size >= 6) rangeCache.delete(rangeCache.keys().next().value);
+      rangeCache.set(key, list);
     }
     const end = addDays(start, days);
-    return rangeCache.list.filter(e => { const k = local(e).date; return k >= start && k < end; });
+    return list.filter(e => { const k = local(e).date; return k >= start && k < end; });
   }
   const shortDate = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
   const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
@@ -2107,10 +2244,14 @@
     // A city's own page (/sydney) is every parish in it, as its head says,
     // and so is any region a link names (/qld/2026-11-18), wherever the map is.
     const everywhere = !!link && !!(view || place || f0.parishIds || asksWhat(f0) || f0.lang || f0.location);
-    const inView = (p) => (everywhere || !S.inView || S.inView.has(p.id)) && (!mine || mine.has(p.id));
-    const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && parishMatches(p, f, juris)).map(p => p.id);
-    const ids = pick(f0);
-    const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
+    const yours = (p) => !mine || mine.has(p.id);
+    const inView = (p) => (everywhere || !S.inView || S.inView.has(p.id)) && yours(p);
+    const ids = S.parishes.filter(p => inView(p) && parishMatches(p, f0, j0)).map(p => p.id);
+    // The map's own card holds every parish that answers it, and lists
+    // those its map shows (shownOf): moved, it finds others (Kevin, 13 Nov 2026).
+    const here = !everywhere && !!map;
+    const pick = (f, juris = j0) => S.parishes.filter(p => (here ? yours(p) : inView(p)) && parishMatches(p, f, juris)).map(p => p.id);
+    const say = (xs, f, juris, at) => viewWords(xs, f, juris, { here: !everywhere, at });
     // One parish is that parish's card, asked what the card would have been:
     // a link's as the parish's own link asks it (/smg+smk/feast with only
     // SMK's ahead is /smk/feast), the chip's under the map's filters.
@@ -2121,8 +2262,8 @@
       // Its own Filters ask again of the same place (pick). Shared, it is
       // those parishes by name under the same filters (/sgr+snb/en-only), not
       // the map's link; from a link, that link, which its address keeps.
-      openCollection(withWords({ id: 'inview', kicker: view ? 'Your list' : link ? 'From link' : 'In view', tint: view ? VIEW_LOOK.tint : '#475569', ids, f: { ...f0 }, juris: j0,
-        pick, say, ...(link ? { segs: segsFor({ juris: j0, f: f0 }) } : {}), ...(view ? { viewPath: view } : {}) }), { from, entry });
+      openCollection(withWords({ id: 'inview', kicker: view ? 'Your list' : link ? 'From link' : 'In view', tint: view ? VIEW_LOOK.tint : '#475569', ids: here ? pick(f0) : ids, f: { ...f0 }, juris: j0,
+        here, pick, say, ...(link ? { segs: segsFor({ juris: j0, f: f0 }) } : {}), ...(view ? { viewPath: view } : {}) }), { from, entry });
     }
     if (at || from) toDay(stack[stack.length - 1], at || from);
   }
@@ -2131,9 +2272,9 @@
    * From link, a list): its title and the words under it, and what it is
    * shared as when it has no link of its own.
    */
-  function withWords(c) {
+  function withWords(c, at) {
     if (!c.say) return c;
-    const out = { ...c, ...c.say(c.ids, c.f, c.juris || null) };
+    const out = { ...c, ...c.say(c.ids, c.f, c.juris || null, at) };
     if (!c.segs && c.id === 'inview') out.shareSegs = segsFor({ juris: c.juris || null, f: { ...c.f, parishIds: new Set(c.ids), listId: null } });
     return out;
   }
@@ -2920,7 +3061,8 @@
 
   /** A collection less the parishes its Month has switched off. */
   function collOn(el) {
-    return el._off && el._off.size ? { ...el._coll, ids: el._coll.ids.filter(id => !el._off.has(id)) } : el._coll;
+    const c = el._shown || el._coll;
+    return el._off && el._off.size ? { ...c, ids: c.ids.filter(id => !el._off.has(id)) } : c;
   }
   /** What a card's Calendar holds on these days: the rows its list draws. */
   function cardList(el, start, days) {
@@ -2943,7 +3085,7 @@
       monthReady = Promise.all([css, loadScript('/next/month.js')]).then(() => {
         window.NextMonth.init({
           list: cardList,
-          parishes: (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean)),
+          parishes: (el) => cardParishes(el),
           ensure: ensureLoaded,
           holds,
           notices: noticesOn,
@@ -3052,8 +3194,8 @@
   const monthWords = (k) => `${MONTH_LONG[+k.slice(5, 7) - 1]}${k.slice(0, 4) === todayKey().slice(0, 4) ? '' : ` ${k.slice(0, 4)}`}`;
   /** A day changed or cancelled, or a one-off: what the rhythm does not already say. */
   const isNotice = (e) => !e.schedule_id || e.mutation_type === 'adapted' || !!tombOf(e);
-  /** The card's parishes, all of them. */
-  const cardParishes = (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean));
+  /** The card's parishes, all those its map shows. */
+  const cardParishes = (el) => (el._coll ? (el._shown || el._coll).ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean));
   /** A card of more than four parishes marks only its notices, unless told otherwise (Month's Notices). */
   const noticesOn = (el) => (el._notices != null ? el._notices : cardParishes(el).length > 4);
 
@@ -3753,6 +3895,15 @@
    */
   function jurisOffer(c) {
     if (!c.pick || /^j-/.test(c.id || '')) return null;
+    // Asked again each time its map moves the card (cardMoved), where it cannot have changed.
+    const key = JSON.stringify([S.loads, c.juris || null, c.f || null]);
+    let kept = offers.get(c.pick);
+    if (!kept) offers.set(c.pick, kept = new Map());
+    if (!kept.has(key)) kept.set(key, offerOf(c));
+    return kept.get(key);
+  }
+  const offers = new WeakMap();
+  function offerOf(c) {
     const on = jList(c.juris);
     const have = new Set(c.pick({ ...blankFilters(), ...(c.f || {}) }, null).map(id => S.byId.get(id)?.jurisdiction));
     const offer = TAB_ORDER.filter(j => have.has(j) || on.includes(j));
@@ -3850,15 +4001,14 @@
    * A collection's parishes folded behind their logos, as the chip under the
    * map has them: logos first, then those with times, then the nearest.
    */
-  function stackHTML(ps, times) {
-    const o = sortOrigin();
+  function stackHTML(ps, times, of = 0, o = sortOrigin()) {
     const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
       || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
       || (o ? km(o, a) - km(o, b) : 0));
     const n = ps.length, what = times ? 'timetables' : 'them';
     return `<label class="cstack"><input type="checkbox" hidden>
         <span class="stackrow">${ranked.slice(0, STACK_LOGOS).map(p => avatar(p, 'stack')).join('')}</span>
-        <span class="inview-text"><b>${n} ${n === 1 ? 'parish' : 'parishes'}</b><small><span class="cstack-shut">Show ${what}</span><span class="cstack-open">Hide ${what}</span></small></span>
+        <span class="inview-text"><b>${n}${of ? ` of ${of}` : ''} ${n === 1 && !of ? 'parish' : 'parishes'}</b><small><span class="cstack-shut">Show ${what}</span><span class="cstack-open">Hide ${what}</span></small></span>
         <span class="inview-go">${I.chev}</span></label>`;
   }
   const STACK_LOGOS = 5;
@@ -3873,6 +4023,13 @@
     return `No ${window.AgoraLinkWords.headingOf(r, {})} on file yet.`;
   }
   function emptyHTML(c) {
+    // None where its map is looking: the way to the nearest of them.
+    const pool = c.of || c.pool || 0;
+    if (pool) {
+      const what = c.segs && !c.here ? window.AgoraLinkWords.headingOf(window.AgoraUrlState.classifyPath(pathOf(c.segs), { today: todayKey() }), {}) : placeNoun(0);
+      const n = Math.min(NEAREST, pool);
+      return `<div class="tt-none">No ${esc(what)} in this map area.</div><button class="wide-btn" type="button" data-act="coll-nearest">${n === 1 ? 'Show the nearest' : `Show the nearest ${n}`}</button>`;
+    }
     if (c.listId) return '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>';
     if (c.id === 'inview') return `<div class="tt-none">No ${placeNoun(0)} in view.</div><button class="wide-btn" type="button" data-nearest>${esc(nearestWords())}</button>`;
     const all = c.juris && c.f ? byFilters({ ...c, ids: null, juris: null }) : null;
@@ -3881,8 +4038,8 @@
   }
 
   /** A collection's card as it now is: its bar's title, and everything under the bar. */
-  function collectionHTML(c, { from = null } = {}) {
-    const o = sortOrigin();
+  function collectionHTML(c, { from = null, days = CU_DAYS, origin = null } = {}) {
+    const o = origin || sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
     const cf = { ...blankFilters(), ...(c.f || {}) };
@@ -3923,7 +4080,7 @@
     const won = collWhatsOnHTML(c);
     const badges = filterBadges(cf);
     const stripe = stripeOf(c, ps);
-    const html = `${glassBar(c.title, `${ps.length} places`)}
+    const html = `${glassBar(c.title, `${ps.length}${c.of ? ` of ${c.of}` : ''} places`)}
       <div class="sheet-scroll">
         <div ${lookAttrs(c, 'chero')}>
           ${stripe ? `<span class="cstripe" style="background:${stripe}"></span>` : ''}
@@ -3941,36 +4098,44 @@
         ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' stacked' : ''}">
-          ${ps.length > 1 ? stackHTML(ps, items.includes('class="tt-line')) : ''}
+          ${ps.length > 1 ? stackHTML(ps, items.includes('class="tt-line'), c.of, o) : ''}
           <div class="clist">${items || emptyHTML(c)}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
           ${weekBarHTML(from, filtersPill(collFilterCount(c), false))}
-          <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
+          <div class="cu">${collFeedHTML(c, days, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
       </div>`;
     return { html, rest: () => ps.slice(LIMIT).map(item).join('') };
   }
   function openCollection(c, { entry = true, from = null } = {}) {
-    const { html, rest } = collectionHTML(c, { from });
-    const el = pushSheet(html, 'collection', { segs: (c.segs && collSegs(c, from)) || null, entry });
+    // Its frame and its map first: what it lists is what the map shows (Kevin, 13 Nov 2026).
+    const el = pushSheet(`${glassBar(c.title, '')}<div class="sheet-scroll"></div>`, 'collection', { segs: (c.segs && collSegs(c, from)) || null, entry });
     el._coll = c;
     el._from = from;
     el._days = CU_DAYS;
-    el._rest = rest;
-    watchMore(el);
-    initWeek(el);
     mapFollow();
-    // A date further out than the bundle holds fills in once it has it.
-    if (from) refreshComingUp(el);
+    repaintCollection(el);
+    // Its bar, which took its name with no title under it yet.
+    el.querySelector('.sheet-scroll').dispatchEvent(new Event('scroll'));
   }
-  /** An open collection's card again, where it was scrolled to: its filters changed, or what it holds. */
-  function repaintCollection(el) {
-    const c = el._coll;
-    const { html, rest } = collectionHTML(c, { from: el._from });
+  /**
+   * An open collection's card again, where it was scrolled to: its filters
+   * changed, what it holds, or where its map is looking (`keepDays`: as far
+   * on as its Calendar had gone).
+   */
+  function repaintCollection(el, { keepDays = false } = {}) {
+    const c = shownOf(el);
+    el._shown = c;
+    el._shownKey = shownKey(c);
+    const days = keepDays ? el._days : CU_DAYS;
+    // Nearest first: to you; else, kept to its map, to the map's middle;
+    // else from where the page's map was looking, as before it had a map.
+    const origin = S.loc || (S.mapCard && S.mapCard.el === el && !c.of && !c.here && pageView ? { lng: pageView.center[0], lat: pageView.center[1] } : null);
+    const { html, rest } = collectionHTML(c, { from: el._from, days, origin });
     const box = document.createElement('div');
     box.innerHTML = html;
     const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
@@ -3985,11 +4150,14 @@
     if (open) { const i = scroller.querySelector('.cstack input'); if (i) i.checked = true; }
     if (bar) bar.innerHTML = box.querySelector('.gtitle').innerHTML;
     el._rest = rest;
-    el._days = CU_DAYS;
+    el._days = days;
     fitLinks(el);
     watchMore(el);
     initWeek(el);
-    if (S.mapCard && S.mapCard.el === el) { S.mapCard.ids = new Set(c.ids); syncMap(); }
+    // The map shows all of them, those out of its view too.
+    const all = el._coll.ids;
+    if (S.mapCard && S.mapCard.el === el && (all.length !== S.mapCard.ids.size || all.some(id => !S.mapCard.ids.has(id)))) { S.mapCard.ids = new Set(all); syncMap(); }
+    syncShowAll(el);
     // Filtered down to none on the map, the map goes; widened again, it comes back.
     mapFollow();
     // Its month, and the parishes it has switched off, come back with its days.
@@ -5125,8 +5293,8 @@
       if (a === 'bookmark' && top && top._event) return bookmarkEvent(top._event);
       if (a === 'bookmarks') return openBookmarks();
       if (a === 'share') {
-        if (top && top._segs) return share(top._coll ? top._coll.title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
-        if (top && top._coll) return share(top._coll.title, pathOf(top._coll.shareSegs || pageSegs()));
+        if (top && top._segs) return share(top._coll ? (top._shown || top._coll).title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
+        if (top && top._coll) { const c = top._shown || top._coll; return share(c.title, pathOf(c.shareSegs || pageSegs())); }
         return;
       }
       if (a === 'share-parish') { const p = S.byId.get(top.dataset.pid); return share(p.name, pathOf(segsFor({ parish: p }))); }
@@ -5192,6 +5360,14 @@
       }
       if (a === 'more-items') { top.querySelector('.clist').insertAdjacentHTML('beforeend', top._rest()); b.remove(); return; }
       if (a === 'coll-all') { const c = top._coll; openCollection(byFilters({ ...c, ids: null, juris: null })); return; }
+      // A card's map out to all its parishes, or to the nearest of them.
+      if (a === 'map-all' && S.mapCard) { showAllOf(S.mapCard.el); return; }
+      if (a === 'coll-nearest' && S.mapCard) {
+        const el = S.mapCard.el, o = map.getCenter();
+        el.querySelector('.sheet-scroll').scrollTo({ top: 0, behavior: 'smooth' });
+        nearestIn(el._coll.ids, { lat: o.lat, lng: o.lng });
+        return;
+      }
     }
   });
   $('#scrim').addEventListener('click', () => popSheet());
@@ -5388,10 +5564,13 @@
     // The card a link names, one step on from the plain page: closing it is
     // that page, whose map is drawn first.
     if (asCard) refilter({ url: 'none' });
+    // A link opened before anybody looked at the page's map (frameCard): back
+    // from signing in, the map is where they had it.
+    S.cold = asCard && !kept;
     const opening = asCard ? openRoute(route, path, { animate: false }) : applyPage(route, { animate: false });
     // A card painted for a link this page did not open (a parish since gone),
     // once an event the bundle did not hold has been read.
-    Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
+    Promise.resolve(opening).catch(() => {}).then(() => { S.cold = false; $$('#sheets > .ssr').forEach(x => x.remove()); });
     // /admin's New parish asks only what the row needs, then sends its maker
     // here to finish it: the logo, the buttons, the links, the Maps place.
     let made = null;
