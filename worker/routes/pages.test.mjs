@@ -382,12 +382,22 @@ test('a painted Today: no count, what is on now first with no heading, Later tod
   assert.match(c, /Paraklesis[\s\S]*<div class="eve">[\s\S]*Vespers/);
   // On now: first, each row saying Now, with no heading of its own (Kevin, 12 Nov 2026), then Later today.
   c = await today(raw => { rule(raw, PARISH, 3, '11:00', 'Divine Liturgy'); rule(raw, PARISH, 3, '18:00', 'Vespers'); });
-  assert.match(c, /<h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<a class="erow now"[\s\S]*Divine Liturgy[\s\S]*<div class="tsub">Later today<\/div><div class="eve">[\s\S]*Vespers/);
+  assert.match(c, /<h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<div class="slot"><a class="erow now"[\s\S]*Divine Liturgy[\s\S]*<div class="tsub">Later today<\/div><div class="eve">[\s\S]*Vespers/);
   assert.doesNotMatch(c, /Happening now/);
   assert.doesNotMatch(c, /on now/);
+  // At one time, one slot, the time said once (Kevin, 14 Nov 2026): the
+  // second row's is there to be read out, not shown (next.css .etime.same).
+  c = await today(raw => { rule(raw, PARISH, 3, '18:00', 'Vespers'); rule(raw, PARISH, 3, '18:00', 'Paraklesis'); rule(raw, PARISH, 3, '19:00', 'Talk'); });
+  const slots = c.match(/<div class="slot">[\s\S]*?<\/a>\s*<\/div>(?=<div class="slot">|\s*<a class="see-all")/g) || [];
+  assert.equal(slots.length, 2, 'the 6pm pair and the 7pm');
+  assert.match(slots[0], /<span class="etime">[\s\S]*Vespers[\s\S]*<span class="etime same">[\s\S]*Paraklesis/);
+  assert.doesNotMatch(slots[1], /etime same/);
+  // On now together, they say Now once.
+  c = await today(raw => { rule(raw, PARISH, 3, '11:00', 'Divine Liturgy'); rule(raw, PARISH, 3, '11:30', 'Baptism'); });
+  assert.match(c, /<div class="slot"><a class="erow now"[^>]*>\s*<span class="etime"><i class="live"><\/i><span class="t-now">Now<\/span>[\s\S]*Divine Liturgy[\s\S]*<a class="erow now"[^>]*>\s*<span class="etime same">[\s\S]*Baptism/);
   // The day done: tomorrow, by its title and date, going on to the week.
   c = await today(raw => rule(raw, PARISH, 4, '07:00', 'Matins'));
-  assert.match(c, /<h2>Tomorrow<\/h2><p>Thursday 1 Oct<\/p><\/div><\/header>\s*<a class="erow"[\s\S]*Matins/);
+  assert.match(c, /<h2>Tomorrow<\/h2><p>Thursday 1 Oct<\/p><\/div><\/header>\s*<div class="slot"><a class="erow"[\s\S]*Matins/);
   assert.doesNotMatch(c, /Nothing more today|class="tsub"/);
   assert.match(c, /<a class="see-all" href="#coming-up">This week/);
   // Nothing at all ahead: no Today, and no Next on the line above it.

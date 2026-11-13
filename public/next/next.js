@@ -1697,7 +1697,7 @@
     // `current`: the date an event's card is open on, first in its Calendar, outlined.
     const cur = current != null && String(current) === String(e.id);
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}${cur ? ' cur' : ''}" type="button" data-event="${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${tint}"` : ''}>
-        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
+        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i><span class="t-now">Now</span>' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${sub}
@@ -1846,17 +1846,23 @@
     const later = all.filter(e => Date.parse(e.start_utc) > now && local(e).date === t);
     const tomorrow = all.filter(e => local(e).date === addDays(t, 1));
     const seen = [];
-    // The rows come in order, so the evening starts once: the divider goes
-    // there when the morning or afternoon came before it.
-    let day = false, eve = false;
-    const rows = (es, o = {}) => es.map(e => {
+    // A slot of rows, as a Calendar's: each row its own stretch of the rule,
+    // in the colour of the jurisdiction it is held in; a parish card's one
+    // stretch a slot, in the parish's.
+    const slot = (es, o = {}) => `<div class="slot${here ? '' : ' rows'}">${es.map((e, i) => {
       seen.push(e.id);
+      return eventRow(e, { ...o, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
+    }).join('')}</div>`;
+    // The rows come in order, so the evening starts once: the divider goes
+    // there when the morning or afternoon came before it. Those at one time
+    // share it, said once, as a Calendar's do (Kevin, 14 Nov 2026); those on
+    // now share their Now, the day's apart from the evening's.
+    let day = false, eve = false;
+    const rows = (es, o = {}) => TL.slotsOf(es, e => o.now ? `now ${isEvening(e)}` : local(e).hm).map(s => {
       let div = '';
-      if (!isEvening(e)) day = true;
+      if (!isEvening(s.rows[0])) day = true;
       else if (!eve) { eve = true; if (day) div = EVENING; }
-      // Each row's line in the colour of the jurisdiction it is held in, as
-      // a collection's Calendar has it; a parish's card's are the parish's.
-      return div + eventRow(e, { ...o, here, focus, lang, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
+      return div + slot(s.rows, o);
     }).join('');
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
@@ -1878,7 +1884,7 @@
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
       const nk = local(next).date;
-      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${eventRow(next, { here, lang, focus, lit: true })}`;
+      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${slot([next], { lit: true })}`;
     }
     const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
