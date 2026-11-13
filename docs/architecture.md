@@ -215,10 +215,21 @@ collection's card (`jurisOffer`). In view, a link's card and a list ask
 everything. Every card of parishes (a collection, a jurisdiction's, a list,
 a saved view, a link's, a search's, In view) has the page's one map at its
 top, showing its parishes and no others (`mapFollow`, `mapToCard`): there is
-no Show on map (Kevin, 6 Nov 2026). It is framed near where you are or where
-the page's map was looking; closing the card or the back button puts it back
-on the page as it was (`mapToPage`), and the page's map, filters and shelves
-never see the card's. On a wide screen the card is a panel and the map stays
+no Show on map (Kevin, 6 Nov 2026). **The card lists what its map shows**
+(Kevin, 13 Nov 2026, after a friend moved the map to his area and Weeknight
+services listed every state's): its Today, its parishes ("3 of 37"), What's
+on and its Calendar keep to the parishes in the map's view and follow it as it
+moves (`shownOf`, `cardMoved`); the map shows the rest of them to pan to, and
+Show all on the map fits them all. A parish with no pin is never out of view.
+The shelf's cards stay every parish's whatever the page's map shows. A
+collection opens where the page's map was looking, listing exactly what the
+page had in view (the shelf's "3 in view"), or on the nearest when none was;
+what was named opens on all of it (a list, a saved view, a link's parishes or
+place, a search's finds), and so does a link opened cold by somebody the page
+cannot place (`frameCard`). In view is the map's own card: every parish that
+answers it, listed and titled by where its map is. Closing the card or the
+back button puts the map back on the page as it was (`mapToPage`), and the
+page's map, filters and shelves never see the card's. On a wide screen the card is a panel and the map stays
 on the page beside it, in front of the scrim, its buttons clear of the panel
 (`beside`). A saved view from Your lists opens its card (`openView`): the one
 its link opens, or for jurisdictions or a place alone (`/greek+serbian`) a
