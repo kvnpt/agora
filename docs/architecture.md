@@ -133,11 +133,16 @@ Scrolled past it and the filters, both ride in the dock at the top of the page
 names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
 showing everything it means. It is not in the URL.
 
-On a phone the map and Today are one card (`.vc-shell`, Kevin, 12 Nov 2026):
-the chip is a button on the map's foot, three logos at most in a box of one
-size and the count ("63 parishes ›"); one parish is its name across the map,
-over Near me. Today is on the map's plane under it, a pin on the edge between
-them on a blue edge, because Today is what is on where the map is looking.
+On a phone the map, Today and What's on are one card (`.vc-shell`, Kevin, 12
+and 13 Nov 2026), the phone's full width with its corners still rounded. The
+jurisdiction tabs are a row of glass buttons along the map's top, beside Full
+screen, and the map has the room they had above it: it is taller by as much,
+so Today starts where it did. The chip is a button on the map's foot, three
+logos at most in a box of one size and the count ("63 parishes ›"); one parish
+is its name across the map, over Near me. Today is on the map's plane under
+it, a pin on the edge between them on a blue edge, because Today is what is on
+where the map is looking; What's on is under Today, a hairline between them,
+because it follows the map too (with no Today it takes the edge and the pin).
 The page's Today is the whole day, cut off under a fade where it runs long
 (`clipToday`), and Show all opens the rest in place with Tomorrow at its
 foot. Its buttons on the right, a bookmark and a star, each there only once
@@ -149,15 +154,16 @@ the parishes button counts those in view or takes the map out to them. The
 pin goes and the edge is the card's own outline, and Tomorrow goes on in
 your Saved or Favourites card. Each Today row has the Calendar's line in the colour of
 the jurisdiction it is held in (a parish card's in the parish's). Wide (1080px
-and up), Today heads the left column and the chip is the page's heading under
-the map (`placeToday` in `next.js`), as before.
+and up), the tabs are above the map, Today heads the left column, What's on the
+right, and the chip is the page's heading under the map (`placeToday` in
+`next.js`), as before. `index.html` has them where a phone does.
 
 **Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,
 `/wed+fri`, written in the tabs' order and from Sunday; `/greek/antiochian` and
 `/fri/wed` read the same. A filter holds one as its key or its number, as every
 older link means, and several as a list (`jurisdictionValue` in `url-state.js`,
 `dayValue` in `services.js`); a `+` segment that is not all jurisdictions or all
-days is a list of parishes, as it always was. The tabs above the map are one
+days is a list of parishes, as it always was. The map's tabs are one
 jurisdiction at a time; the filters' panel takes as many as you like, and each
 is a chip in its colour.
 

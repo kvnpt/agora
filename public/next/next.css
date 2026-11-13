@@ -243,7 +243,7 @@ body.map-full .viewport::after { display: none; }
 @media (max-width: 1079px) and (prefers-color-scheme: dark) {
   .viewport::after { box-shadow: none; }
 }
-.vc-shell:not(:has(> .today:not([hidden]))) > .viewport { border-radius: 22px; }
+.vc-shell:not(:has(> .today:not([hidden]), > .shelf:not(:empty))) > .viewport { border-radius: 22px; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -464,13 +464,54 @@ body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0;
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); border-top: 0; }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
-body.map-full .inview, body.map-full .vc-shell > .today { display: none; }
+body.map-full .inview, body.map-full .vc-shell > :is(.today, .shelf) { display: none; }
 body.map-full .vc-shell { margin: 0; background: transparent; border-radius: 0; box-shadow: none; overflow: visible; }
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
   background: transparent;
 }
+
+/* ── The phone's one card ──────────────────────────────────────────────
+   The map, Today and What's on, the phone's width, its corners still
+   rounded (Kevin, 13 Nov 2026). The tabs are a row of buttons along the
+   map's top, glass as its other buttons are, beside Full screen; the map
+   takes the room they had above it, so it is taller by as much and Today
+   starts where it did. Full screen, the same row, under the phone's own
+   bar. Wide, none of this: the tabs are above the map. */
+@media (max-width: 1079px) {
+  .vc-shell { margin: 0; }
+  .viewport { height: min(calc(44vh + 52px), 404px); }
+  .jurisdiction-banner {
+    position: absolute; top: 10px; left: 0; right: 58px; z-index: 4;
+    gap: 6px; padding: 5px 10px; background: none; border: 0;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  }
+  /* Room at the end to scroll the last one clear of the fade. */
+  .jurisdiction-banner::after { content: ''; flex: none; width: 10px; }
+  .jurisdiction-chip {
+    height: 34px; padding: 0 13px; border-radius: 17px;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+    border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-2); border-color: var(--hair); opacity: 1; }
+  .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-color: transparent; }
+  body.map-full .jurisdiction-banner { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 0; right: 58px; z-index: 4; padding-top: 5px; }
+  body.map-full .map-fs { top: calc(10px + env(safe-area-inset-top)); }
+  body.map-full .map-filters { top: calc(62px + env(safe-area-inset-top)); }
+}
+/* What's on in the card, under Today: the map's too, so on its plane, a
+   hairline between them; its heading Today's size, its posters in line
+   with Today's words. With no Today it takes Today's edge and pin. */
+.vc-shell > .shelf { position: relative; margin: 0; padding: 16px 0 14px; border-top: 1px solid var(--line-strong); }
+.vc-shell > .shelf .shelf-head { padding: 0 18px 2px; }
+.vc-shell > .shelf .shelf-head h2 { font-size: 21px; letter-spacing: -.015em; }
+.vc-shell > .shelf .shelf-sub { margin: 0 18px 12px; font-size: 14px; }
+.vc-shell > .shelf .shelf-row { padding: 2px 18px 6px; scroll-padding: 0 18px; }
+.vc-shell > .today[hidden] + .shelf { border-top-color: color-mix(in srgb, var(--dist) 75%, transparent); }
 
 /* ── Avatars ───────────────────────────────────────────────────────────
    A parish's logo; a parish with none, its letters in its colour on white,
@@ -670,10 +711,10 @@ body.map-full .parish-row {
 }
 .vc-shell > .today.mine { border-top-color: var(--frame); }
 .vc-shell > .today.mine::before, .vc-shell > .today.mine::after { content: none; }
-.vc-shell > .today::before {
+.vc-shell > .today::before, .vc-shell > .today[hidden] + .shelf::before {
   content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--card);
 }
-.vc-shell > .today::after {
+.vc-shell > .today::after, .vc-shell > .today[hidden] + .shelf::after {
   content: ''; position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 20px;
   background: var(--dist);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;

@@ -122,16 +122,20 @@
          screen. The tabs above it and the parish row under it are next.js's,
          and the map is map.js itself. -->
     <section class="viewport-card" id="viewport-card">
-      <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
-      <!-- On a phone the map and Today are one card (Kevin, 12 Nov 2026): the
-           map, with what it holds as a button on it, and Today under it on
+      <!-- On a phone the map, Today and What's on are one card, the phone's
+           width (Kevin, 12 and 13 Nov 2026): the map, with its tabs and what
+           it holds as buttons on it, then Today and What's on under it on
            the same plane, a pin between them, because what is on is what is
-           on where the map is looking. Wide, Today goes to the head of the
-           left column and the chip under the map (next.js, placeToday): the
-           map and its heading. -->
+           on where the map is looking. Wide, the tabs go above the map,
+           Today to the head of the left column, What's on to the head of the
+           right and the chip under the map (next.js, placeToday): the map
+           and its heading. -->
       <div class="vc-shell" id="vc-shell">
       <div class="viewport" id="viewport">
         <div id="map"></div>
+        <!-- The jurisdiction tabs: on a phone a row of buttons along the
+             map's top, so the map has their room (Kevin, 13 Nov 2026). -->
+        <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
         <!-- The app's gum-tree loader, over the map alone while it loads: the
              rest of the page is there to read meanwhile. It goes once the map
              has drawn with its parishes on it (lsHide, in next.js). -->
@@ -175,6 +179,10 @@
       </div>
       <!-- Today, before anything else: what is on where the map is looking. -->
       <section class="today card" id="today" aria-label="Today"></section>
+      <!-- What's on: the one-offs, poster first. It follows the map, as Today
+           does, so it comes before what does not (Kevin, 6 Nov 2026), and on
+           a phone it is in the map's card with Today (13 Nov). -->
+      <section class="shelf" id="shelf-whatson"></section>
       </div>
     </section>
 
@@ -204,9 +212,7 @@
 
     </div>
     <div class="col-main">
-    <!-- What's on: the one-offs, poster first. It follows the map, as Today
-         does, so it comes before what does not (Kevin, 6 Nov 2026). -->
-    <section class="shelf" id="shelf-whatson"></section>
+    <!-- Wide, What's on comes back here, at the head (next.js placeToday). -->
 
     <!-- Curated: the slices of the data, as collections of parishes. -->
     <section class="shelf" id="shelf-collections"></section>
