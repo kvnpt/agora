@@ -97,7 +97,18 @@ and no X. A card of more than four parishes marks only **Notices** (each
 day's one-offs, changes and cancellations, with a grey count of its regular
 services, in the month), and a card of a few can switch each parish off and
 on, as a calendar app's calendars, until the month closes. Neither is
-remembered. A re-drawn list waits for its logos to decode before it swaps in
+remembered. On a phone (under 1080px), the open month has a **Schedule |
+Month** switch at its top, kept on the phone (`agora_cal_view` in
+localStorage). Schedule is the default and is all of the above. Month is for
+whoever wants the month to stay: the grid sits under the Calendar's head
+instead of in it, each day showing two lines of titles (or a title and
+"n more"; on Notices, notices only, with a grey count on a day with none), the
+days either side of the month fainter, and nothing folds. A tapped day is
+filled, and the list under the grid starts from it as a dated link does
+(`pickInMonth` → `setCardDate`). The card settles with the grid's days just
+under the held head. The month's name has no chevron and does nothing there.
+On a laptop the big month beside the card already stays, so the switch is not
+shown. A re-drawn list waits for its logos to decode before it swaps in
 (`swapDecoded`), so nothing flashes. The Worker's first paint titles the
 Calendar with its month too (`page-card.mjs` `calHeadHTML`).
 

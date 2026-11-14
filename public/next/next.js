@@ -464,6 +464,12 @@
   // sorts Today and a card's Calendar by how far (nearOn, byNear).
   const NEAR_KEY = 'agora_nearest';
   S.near = lsGet(NEAR_KEY) === '1';
+  // The Calendar's view on a phone (Kevin, 14 Nov 2026), kept on it as
+  // Nearest is: Schedule, the list under a week whose month folds away again
+  // when a day is tapped, for everyone; or Month, for whoever picks it, a grid
+  // of the month that stays (next/month.js).
+  const VIEW_KEY = 'agora_cal_view';
+  S.calView = lsGet(VIEW_KEY) === 'month' ? 'month' : 'schedule';
   function localSaved() {
     const d = {};
     for (const p of SV.PARTS) d[p] = readLS(SV.KEYS[p]);
@@ -1317,6 +1323,8 @@
   }
   // A window made wider or narrower than a panel's: the map goes where that one keeps it.
   WIDE.addEventListener('change', () => {
+    // The Month view is a phone's: a card's week bar as its view has it on this side of 1080px.
+    for (const el of stack) viewWeek(el);
     monthFollow();
     if (!S.mapCard) return;
     const el = S.mapCard.el;
@@ -3181,6 +3189,9 @@
           timeHTML,
           avatar,
           pick: pickMonthDay,
+          picked: (el) => el._from || todayKey(),
+          monthView,
+          setView: setCalView,
           refresh: refreshComingUp,
           setMonth,
           stack: () => stack,
@@ -3221,6 +3232,29 @@
   }
   /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
   function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
+  /** Is a card's month the Month view: Month picked, on a phone (wide, the big month beside it stays already). */
+  const monthView = (el) => S.calView === 'month' && !WIDE.matches && !!(el && el.querySelector('.cu-band > .wk'));
+  /** A card's week bar as its view has it: in the Month view, its month open for good under it. */
+  function viewWeek(el) {
+    const wk = el.querySelector('.cu-band > .wk');
+    if (!wk) return;
+    const big = monthView(el);
+    wk.classList.toggle('mview', big);
+    holdWeek(el);
+    if (big && !el._month) setMonth(el, true);
+  }
+  /**
+   * Schedule or Month, from the switch in a card's month: kept on this phone,
+   * and every open card's Calendar in it. Its month stays open either way, so
+   * the switch is still under the thumb that tapped it.
+   */
+  function setCalView(v) {
+    S.calView = v === 'month' ? 'month' : 'schedule';
+    lsSet(VIEW_KEY, S.calView === 'month' ? 'month' : null);
+    for (const el of stack) viewWeek(el);
+    monthFollow();
+    for (const el of stack) if (el.querySelector('.cu-band > .wk')) weekAfterList(el);
+  }
   /**
    * A day picked on a card's month: the card's list goes to it, and the cards
    * opened over it from the big month make way. The month in the week bar
@@ -3231,8 +3265,26 @@
     let n = 0;
     while (stack.length && stack[stack.length - 1] !== el) { dropSheet(); n++; }
     if (n) goBack(n);
+    if (monthView(el)) return pickInMonth(el, k);
     if (el._month && !WIDE.matches) await setMonth(el, false);
     return goToDay(el, k);
+  }
+  /**
+   * A day picked in the Month view: the month stays, the day filled in it,
+   * and the list under it starts from that day, as a dated link does. The
+   * card settles with the month's days just under the Calendar's head, held
+   * there, so the day's rows show under the month: scrolled on down past it,
+   * the month comes back.
+   */
+  async function pickInMonth(el, k) {
+    const t = todayKey();
+    el._wkPin = null;
+    await setCardDate(el, !k || k <= t ? null : k);
+    const sc = el.querySelector('.sheet-scroll'), bar = el.querySelector('.glassbar'), wk = el.querySelector('.cu-band > .wk');
+    const days = el.querySelector('.cu-band > .mg-view .mg-wk');
+    if (!sc || !bar || !wk || !days) return;
+    const by = days.getBoundingClientRect().top - (bar.getBoundingClientRect().bottom + wk.offsetHeight);
+    if (Math.abs(by) > 1) sc.scrollTo({ top: Math.max(0, sc.scrollTop + by), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   /**
    * Wide, the page's map box holds the big month: over the dimmed page, as
@@ -3354,6 +3406,7 @@
     }, { passive: true });
     el._wkCur = null;
     markWeek(el, dayInView(el), { align: true, smooth: false });
+    viewWeek(el);
   }
   function setWeekTitle(el, k) {
     const span = el.querySelector('.wk-month > span');
@@ -5331,9 +5384,15 @@
       return;
     }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
-    if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
+    // In the Month view the month is open for good: its name is only its name.
+    if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el && !monthView(el)) setMonth(el, !el._month); return; }
     if ((b = t.closest('[data-wk-day]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, b.dataset.wkDay); return; }
-    if ((b = t.closest('[data-wk-today]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, todayKey()); return; }
+    if ((b = t.closest('[data-wk-today]'))) {
+      const el = b.closest('.sheet');
+      if (el && monthView(el)) { pickInMonth(el, todayKey()).then(() => window.NextMonth && window.NextMonth.mark(el, todayKey())); return; }
+      if (el) goToDay(el, todayKey());
+      return;
+    }
     if (window.NextMonth && window.NextMonth.click(t)) return;
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
