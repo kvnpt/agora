@@ -71,64 +71,16 @@
 }
 .mg-small button.mg-d:hover { background: var(--card-2); }
 .mg-small .mg-n { width: 28px; height: 28px; line-height: 28px; font-size: 14px; font-weight: 500; }
+/* Month (next.js S.calView): the day whose rows are under the month, filled. */
+.mg-small .mg-d.picked .mg-n { background: var(--text); color: var(--bg); font-weight: 700; box-shadow: none; }
+/* A phone keeps :hover on the day just tapped: the fill says it already. */
+.mg-small button.mg-d.picked:hover { background: none; }
 .mg-dots { display: flex; align-items: center; gap: 3px; height: 7px; margin-top: 3px; }
 .mg-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--text-3)); }
 .mg-dots i.tomb { background: transparent; box-shadow: inset 0 0 0 1.25px var(--c, var(--text-3)); }
 .mg-dots b { font-size: 10px; font-weight: 700; line-height: 1; color: var(--text-3); }
 .mg-c { font-size: 10px; font-weight: 600; line-height: 1; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .mg-small .mg-c { margin-top: 2px; }
-
-/* Schedule or Month (month.js viewsHTML): one pill of two, at the top of a
-   card's month on a phone, the one on filled as a pill that is on is. */
-.mg-views {
-  flex: none; display: inline-flex; padding: 2px; gap: 2px;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--fab-bg);
-}
-.mg-views button {
-  min-height: 24px; padding: 3px 11px; border-radius: 999px;
-  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2; color: var(--text-2);
-  -webkit-tap-highlight-color: transparent;
-}
-.mg-views button:hover { color: var(--text); }
-.mg-views button.on { background: var(--text); color: var(--bg); }
-
-/* The Month view (month.js viewDay): under the Calendar's head, which is
-   held over the list as ever, the month with two lines of titles in each
-   day, short enough that the list under it shows on a phone, Sunday first,
-   swiped a month at a time like the one in the week bar. Nothing hangs under a day, so nothing scrolls up and down
-   in a sideways swipe (month-swipe, 13 Nov 2026). */
-.mg-view { padding: 0 12px; background: var(--card); border-bottom: 1px solid var(--line); }
-.mg-view .mg-tools { padding: 8px 6px 6px; }
-.mg-view .mg-wk { padding: 0 0 4px; }
-.mg-view .mg-month { padding-bottom: 0; }
-.mg-view .mg-d {
-  display: flex; flex-direction: column; align-items: stretch; gap: 1px;
-  height: 54px; min-width: 0; padding: 2px 2px 2px; overflow: hidden;
-  border-top: 1px solid var(--line); color: var(--text); text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-.mg-view button.mg-d:active { background: var(--card-2); }
-@media (hover: hover) { .mg-view button.mg-d:hover { background: var(--card-2); } }
-.mg-view .mg-top { position: relative; justify-content: center; min-height: 22px; }
-.mg-view .mg-n { width: 22px; height: 22px; line-height: 22px; font-size: 12.5px; font-weight: 500; }
-/* A Notices day with no notice: its regular services as a grey count, as the week bar's month has it. */
-.mg-view .mg-c { font-size: 10px; line-height: 13px; text-align: center; }
-/* The day the list starts from, filled; today keeps its ring till then. */
-.mg-view .mg-d.picked .mg-n { background: var(--text); color: var(--bg); font-weight: 700; box-shadow: none; }
-/* The days either side of the month: there, but not this month's. */
-.mg-view .mg-d.out > * { opacity: .45; }
-.mg-t {
-  display: block; min-width: 0; padding: 0 1px 0 4px;
-  border-left: 2px solid var(--c, var(--text-3)); border-radius: 0 2px 2px 0;
-  font-size: 10.5px; font-weight: 500; line-height: 13px; letter-spacing: -.01em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.mg-t.one { font-weight: 700; }
-.mg-t.tomb { color: var(--text-3); text-decoration: line-through; }
-.mg-view .mg-more { padding-left: 4px; font-size: 10px; font-weight: 600; line-height: 13px; color: var(--text-3); white-space: nowrap; overflow: hidden; }
-/* The Calendar's head over it: no chevron, nothing to fold. */
-.wk.mview .wk-chev { display: none; }
-.wk.mview .wk-month { cursor: default; }
 
 /* Wide: the big month, where the page's map was beside the card. */
 body.month-beside .viewport { z-index: 41; }
