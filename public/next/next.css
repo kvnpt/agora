@@ -1164,7 +1164,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .wk-chev { flex: none; color: var(--text-2); }
 .wk-acts { display: flex; align-items: center; gap: 6px; flex: none; }
 .wk-today { min-height: 26px; padding: 3px 10px; }
+/* Today as a ‹, beside the menu and its twin (Kevin, 14 Nov 2026); on today, not there. */
+.wk-today.ficon { min-height: 30px; padding: 5px 9px; color: var(--text); }
 .wk-today[hidden] { display: none; }
+/* Month, on a phone (next.js monthView): the month open for good, so its name has nothing to open. */
+.wk.mview .wk-chev { display: none; }
+.wk.mview .wk-month { cursor: default; }
 .wk-names, .wk-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .wk-names { padding: 4px 0 2px; font-size: 11px; font-weight: 600; text-align: center; color: var(--text-3); }
 .wk-names .sun { color: var(--text-2); }
@@ -1507,6 +1512,9 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .pm-t .pm-wait { color: var(--danger); font-weight: 600; }
 .pm-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .pm-ic img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
+.pm-sep { height: 1px; margin: 4px 8px; background: var(--line); }
+/* The view a card's Calendar is in (next.js openCalMenu), ticked as Notion's is. */
+.pm-row > .pm-tick { flex: none; width: 18px; height: 18px; color: var(--text); }
 .pm-note { padding: 8px 12px 6px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 @media (prefers-reduced-motion: reduce) { .popmenu, .popmenu.out { animation: none; transition: none; } }
 

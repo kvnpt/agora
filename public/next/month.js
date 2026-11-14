@@ -24,6 +24,14 @@
 // few parishes (a list, Favourites) can switch each one off and on, like the
 // calendars in a calendar app; the list under it follows.
 //
+// Two views of a card's Calendar on a phone (Kevin, 14 Nov 2026), picked in
+// the menu beside its month's name, with Filters, and kept on the phone
+// (next.js S.calView). List, for everyone unless they pick otherwise: the
+// list under the week, whose month folds back to the week when a day is
+// tapped, as above. Month: this same month, open for good, the day tapped
+// filled in it, and under it only that day's rows, no list going on. Wide,
+// Month is the big month beside the card.
+//
 // Nothing here draws a picture twice: a parish's chip, logo and all, is drawn
 // when the month opens and only its state changes after (Kevin, 7 Nov 2026:
 // the logos flashed as days were tapped).
@@ -43,6 +51,7 @@
 //   today(), addDays(k, n), weekday(k)  dates as the page keeps them
 //   timeHTML(hm), avatar(p, size)
 //   pick(el, k)            the card's list to that day
+//   picked(el)             the day the card's Month shows, or null in List
 //   refresh(el)            the card's Calendar again (its parishes switched)
 //   redot(el)              the week bar's dots again (Notices)
 //   setMonth(el, on)       the month open or closed
@@ -160,14 +169,15 @@
    * in its kind's colour, up to four and + for a fifth (the page's dotsHTML,
    * as its week bar), and on Notices the rest as a count.
    */
-  function smallDay(d, notices) {
+  function smallDay(d, notices, picked = null) {
     if (!d.inMonth) return '<span class="mg-d out" aria-hidden="true"></span>';
     const n = +d.k.slice(8);
     if (!d.open) return `<span class="mg-d past"><span class="mg-n">${n}</span></span>`;
+    const on = d.k === picked;
     const shown = notices ? d.es.filter(host.isNotice) : d.es;
     const rest = notices ? d.es.length - shown.length : 0;
     const say = `${dayWords(d.k)}: ${d.es.length ? `${d.es.length} on` : 'nothing on file'}${notices && shown.length ? `, ${shown.length} new or changed` : ''}`;
-    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}">
+    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}${on ? ' picked' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}"${on ? ' aria-current="date"' : ''}>
         <span class="mg-n">${n}</span><span class="mg-dots">${host.dots(shown)}</span>${rest ? `<span class="mg-c">${rest}</span>` : ''}
       </button>`;
   }
@@ -259,7 +269,8 @@
       if (!g.isConnected || g._ver !== ver) return;
     }
     const notices = host.notices(el);
-    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices)).join('');
+    const picked = host.picked(el);
+    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices, picked)).join('');
   }
   function showMonth(el, box, m, smooth) {
     const months = box.querySelector('.mg-months');
@@ -383,6 +394,15 @@
     if (!shown || shown.dataset.m !== monthOf(k)) showMonth(el, box, monthOf(k), true);
   }
 
+  /** The month a card's small month has in view ('2026-11'), or null. */
+  function shown(el) {
+    const box = smallOf(el);
+    if (!box) return null;
+    const months = box.querySelector('.mg-months');
+    const g = months.children[Math.round(months.scrollLeft / Math.max(1, months.clientWidth))];
+    return g ? g.dataset.m : null;
+  }
+
   /** A tap the page passes on: true when it was one of the month's own. */
   function click(t) {
     const box = t.closest('.mg');
@@ -413,12 +433,13 @@
       return true;
     }
     if ((b = t.closest('[data-mg-day]'))) {
-      // The list goes to it; in the week bar, the month closes back to the week (host.pick).
+      // The list goes to it; in the week bar, the month closes back to the week
+      // (host.pick). In Month it stays, that day's rows under it.
       host.pick(el, b.dataset.mgDay);
       return true;
     }
     return box.contains(t);
   }
 
-  root.NextMonth = { init, paint, follow, click, mark };
+  root.NextMonth = { init, paint, follow, click, mark, shown };
 })(window);

@@ -74,17 +74,21 @@ to.
 **Month is the same Calendar as a grid.** The list was a calendar app's agenda
 view all along, and a card's Calendar is headed as one (Kevin, 7 Nov 2026): one
 row with the month's name for its title (an up-and-down chevron beside it),
-**Today** when the list is on another day, and the card's Filters; under it
+a small **‹** back to today when the list is on another day (nothing on
+today), and one button for **List**, **Month** and **Filters**; under it
 S M T W T F S over a week of days, Sunday first, with up to four dots a day in
 the colour of each one's kind and a + from the fifth. The whole head is held
 under the card's bar while the list scrolls under it, as Fantastical's week
 drawer was, and each day's header is held under the head till the next one
 comes up. No day is marked in the week or the month: the day headers say
-where the list is. The week swipes a week at a time and follows the list; a
+where the list is. The week swipes a week at a time and follows the list; swiped by hand,
+the list goes to the week's first day (today, in this week; Kevin, 14 Nov
+2026), and on the way to a day the week does not swipe through the weeks
+the list passes (`_wkGoing`). A
 tapped day has the list go to it, as Tomorrow does in Today, growing the list
 in place when it has not got that far (`goToDay` in `next.js`). The way back
 up to the rest of the card is the card's ↑ (placed between the name and
-Today while the head is held), or scrolling up past the Calendar. The month's
+its buttons while the head is held), or scrolling up past the Calendar. The month's
 name opens the whole month (`public/next/month.js` and `month.css`, loaded on
 the first tap as `editing.js` is, and kept by `sw.js`); it reads what the
 list reads (`cardList`, the card's filters included) and stores nothing. On a
@@ -92,12 +96,24 @@ phone the month opens in the week's place, months swiped like a gallery, and
 the name, or a day tapped in it, closes it back to the week; on a laptop
 (≥1080px) the grid takes the map's place beside the card, titles in the cells
 (their lines the jurisdiction's, as the list's), while the week stays in the
-card, and **Map** has the map back. There is no Date button, no Month button
+card, and **Map** has the map back. There is no Date button
 and no X. A card of more than four parishes marks only **Notices** (each
 day's one-offs, changes and cancellations, with a grey count of its regular
 services, in the month), and a card of a few can switch each parish off and
 on, as a calendar app's calendars, until the month closes. Neither is
-remembered. A re-drawn list waits for its logos to decode before it swaps in
+remembered. The Calendar's one button (`calMenuHTML`, Kevin, 14 Nov 2026,
+after Notion Calendar's) opens a menu: **List** and **Month**, a line, then
+**Filters**, its icon three lines in List and a month grid in Month, with how
+many filters are on. List is the default and is all of the above. Month, kept
+on the phone (`agora_cal_view` in localStorage), is for whoever wants the
+month to stay: the same month as the open one, dots and all, open for good in
+the week's place, and under it only the day picked, no list going on
+(`el._days = 1`; `oneDay`, `monthView`). A tapped day is filled and becomes
+the card's date, as a dated link's (`pickInMonth` → `setCardDate`); ‹ shows
+whenever the picked day or the month in view is not today's. The month's name
+has no chevron and does nothing there. On a laptop Month is the big month
+beside the card (opened or closed by the menu, not kept), so nothing else
+changes. A re-drawn list waits for its logos to decode before it swaps in
 (`swapDecoded`), so nothing flashes. The Worker's first paint titles the
 Calendar with its month too (`page-card.mjs` `calHeadHTML`).
 

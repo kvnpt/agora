@@ -464,6 +464,12 @@
   // sorts Today and a card's Calendar by how far (nearOn, byNear).
   const NEAR_KEY = 'agora_nearest';
   S.near = lsGet(NEAR_KEY) === '1';
+  // The Calendar's view on a phone (Kevin, 14 Nov 2026), kept on it as
+  // Nearest is: List, the list under a week whose month folds back to the
+  // week when a day is tapped, for everyone; or Month, for whoever picks it,
+  // the month open for good with only the day tapped under it (next/month.js).
+  const VIEW_KEY = 'agora_cal_view';
+  S.calView = lsGet(VIEW_KEY) === 'month' ? 'month' : 'list';
   function localSaved() {
     const d = {};
     for (const p of SV.PARTS) d[p] = readLS(SV.KEYS[p]);
@@ -1088,6 +1094,11 @@
     plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     starOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
+    // A card's Calendar menu (calMenuHTML): List's three lines, Month's month, Today's ‹, the menu's tick.
+    lines: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>',
+    month: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="currentColor"><rect x="3" y="3" width="5" height="5" rx="1.3"/><rect x="9.5" y="3" width="5" height="5" rx="1.3"/><rect x="16" y="3" width="5" height="5" rx="1.3"/><rect x="3" y="9.5" width="5" height="5" rx="1.3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1.3"/><rect x="16" y="9.5" width="5" height="5" rx="1.3"/><rect x="3" y="16" width="5" height="5" rx="1.3"/><rect x="9.5" y="16" width="5" height="5" rx="1.3"/><rect x="16" y="16" width="5" height="5" rx="1.3"/></svg>',
+    toStart: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
+    tick: '<svg class="pm-tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>',
     more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
     phone: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>',
@@ -1317,6 +1328,8 @@
   }
   // A window made wider or narrower than a panel's: the map goes where that one keeps it.
   WIDE.addEventListener('change', () => {
+    // The Month view is a phone's: a card's week bar as its view has it on this side of 1080px.
+    for (const el of stack) viewWeek(el);
     monthFollow();
     if (!S.mapCard) return;
     const el = S.mapCard.el;
@@ -2267,7 +2280,7 @@
     .map(s => `<div class="slot${byVenue ? ' rows' : ''}">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0, tint: byVenue ? venueColor(e) : null })).join('')}</div>`).join('');
   /** Where a row is held, as a colour: its venue parish's jurisdiction, or its own parish's. */
   const venueColor = (e) => parishColor(S.byId.get(e.location_parish_id) || S.byId.get(e.parish_id));
-  function daysHTML(list, { start, days, linkFor, empty = false, row = {}, byVenue = false }) {
+  function daysHTML(list, { start, days, linkFor, empty = false, none = 'Nothing in view', row = {}, byVenue = false }) {
     const byDay = new Map();
     // Those at one time nearest first; a collection's under Nearest, each
     // part of each day by how far, those as far one slot (Kevin, 14 Nov 2026).
@@ -2284,7 +2297,7 @@
       const es = byDay.get(k) || [];
       if (!es.length && !empty) continue;
       const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${linkFor ? dayLink(k, linkFor(k)) : ''}</h3>`;
-      if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
+      if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>${esc(none)}</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
       const part = nearby ? nearSlots : (rs) => slotsHTML(rs, row, byVenue);
       out.push(`<section class="sday" data-date="${k}">${head}${nearby && morning.length && evening.length ? MORNING : ''}${part(morning)}${evening.length ? EVENING + part(evening) : ''}</section>`);
@@ -2479,7 +2492,7 @@
         if (el._wkIO) weekScroll(el);
       }, { passive: true });
       // The list moved by hand: a day tapped is no longer held as the day.
-      const loose = () => { el._wkPin = null; };
+      const loose = () => { el._wkPin = null; el._wkGoing = null; };
       scroller.addEventListener('wheel', loose, { passive: true });
       scroller.addEventListener('touchmove', loose, { passive: true });
       titled();
@@ -3028,17 +3041,35 @@
     const start = from || todayKey();
     const now = Date.now();
     const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
-    const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
+    const body = daysHTML(list, { start, days, ...ONE_DAY(days), row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  /** A card's Filters pill, with how many it asks, popping its Filters out. */
-  const filtersPill = (n, panel) => `<button class="fpill fbtn ficon" type="button" data-card-filters aria-expanded="${!!panel}" aria-label="${n ? `Filters, ${n} on` : 'Filters'}" title="Filters">${I.filters}${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
-  /** What sits beside a card's Calendar title, the month's name: its Filters. */
-  const calActsHTML = (el) => filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el);
+  // Month's one day (Kevin, 14 Nov 2026): its header said even with nothing
+  // on it, and no foot, since nothing comes after it.
+  const ONE_DAY = (days) => (days === 1 ? { empty: true, none: 'Nothing on file this day.' } : {});
+  /**
+   * A card's Calendar menu (Kevin, 14 Nov 2026): List, Month and, under a
+   * line, Filters, out of one button beside the month's name, which shows the
+   * view it is in, three lines or a month, and how many Filters ask. It is
+   * the Filters' button too: their pop-out comes out of it.
+   */
+  const calMenuHTML = (n, month) => `<button class="fpill fbtn ficon" type="button" data-cal-menu data-card-filters aria-haspopup="menu" aria-expanded="false" aria-label="${month ? 'Month' : 'List'}, and Filters${n ? `, ${n} on` : ''}" title="List, Month and Filters">${month ? I.month : I.lines}${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
+  /** Is a card's Calendar in Month: on a phone, as picked; wide, while the big month is beside it. */
+  const inMonth = (el) => (WIDE.matches ? !!el._month : S.calView === 'month');
+  /** What sits beside a card's Calendar title, the month's name: its menu. */
+  const calActsHTML = (el) => calMenuHTML(cardFilterCount(el), inMonth(el));
+  /** List, Month, and Filters, out of a card's menu button. */
+  function openCalMenu(btn, el) {
+    const month = inMonth(el), n = cardFilterCount(el);
+    const row = (v, icon, words, on) => `<button class="pm-row" role="menuitemradio" aria-checked="${on}" type="button" data-cal-view="${v}">${icon}<span class="pm-t"><b>${words}</b></span>${on ? I.tick : ''}</button>`;
+    openMenu(btn, `${row('list', I.lines, 'List', !month)}${row('month', I.month, 'Month', month)}
+        <div class="pm-sep" role="separator"></div>
+        <button class="pm-row" role="menuitem" type="button" data-cal-filters>${I.sliders}<span class="pm-t"><b>Filters</b>${n ? `<small>${n} on</small>` : ''}</span></button>`);
+  }
   // The foot of a Calendar, which brings the next fortnight as it scrolls into
   // view: three quiet dots, not words, since it is usually done before it is seen.
-  const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days role="status" aria-label="Loading more days"><i></i><i></i><i></i></div>' : '';
+  const MORE = (days) => days > 1 && days < 365 ? '<div class="more-days" data-more-days role="status" aria-label="Loading more days"><i></i><i></i><i></i></div>' : '';
   /** A card's Calendar grows as its foot comes into view (moreIO). */
   function watchMore(el) {
     const m = el.querySelector('[data-more-days]');
@@ -3093,6 +3124,7 @@
    * it grew).
    */
   async function growComingUp(el, want = 0) {
+    if (monthView(el)) return;
     const box = el.querySelector('.cu');
     const foot = box && box.querySelector('[data-more-days]');
     if (!foot) return;
@@ -3120,7 +3152,7 @@
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
     el._from = k && k > todayKey() ? k : null;
-    el._days = CU_DAYS;
+    el._days = monthView(el) ? 1 : CU_DAYS;
     const c = el._coll;
     // A collection with no link of its own (In view) has no date to put in one.
     if (c && !c.segs) return refreshComingUp(el, { keep: false });
@@ -3169,7 +3201,8 @@
           notices: noticesOn,
           isNotice,
           current: (el) => el._wkCur || el._from || todayKey(),
-          title: setWeekTitle,
+          // Swiped to another month: its name, and in Month, ‹ back to this one.
+          title: (el, k) => { setWeekTitle(el, k); if (monthView(el)) syncToday(el); },
           redot: weekAfterList,
           local,
           colour: venueColor,
@@ -3181,6 +3214,7 @@
           timeHTML,
           avatar,
           pick: pickMonthDay,
+          picked: (el) => (monthView(el) ? el._from || todayKey() : null),
           refresh: refreshComingUp,
           setMonth,
           stack: () => stack,
@@ -3221,18 +3255,69 @@
   }
   /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
   function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
+  /** Month, on a phone: the view picked, wherever a card has a Calendar. */
+  const oneDay = () => S.calView === 'month' && !WIDE.matches;
+  /** Is a card's Calendar the phone's Month: its month open for good, and only the day picked under it. */
+  function monthView(el) { return oneDay() && !!(el && el.querySelector('.cu-band > .wk')); }
+  /**
+   * A card's Calendar as its view has it. Month: the month open in the week
+   * bar for good, its name only a name, and under it the one day. List: the
+   * week again, and the list going on from that day.
+   */
+  function viewWeek(el) {
+    const wk = el.querySelector('.cu-band > .wk');
+    if (!wk) return;
+    const big = monthView(el), was = wk.classList.contains('mview');
+    wk.classList.toggle('mview', big);
+    if (big && !el._month) setMonth(el, true);
+    if (big === was) return;
+    el._days = big ? 1 : CU_DAYS;
+    if (!big && el._month) setMonth(el, false);
+    refreshComingUp(el, { keep: false });
+  }
+  /**
+   * List or Month, from a card's menu. On a phone, kept on it, and every open
+   * card's Calendar in it. Wide, the big month beside the card, or the map
+   * back, as its month's name has them.
+   */
+  function setCalView(v, el) {
+    const month = v === 'month';
+    if (WIDE.matches) { if (el && !!el._month !== month) setMonth(el, month); return; }
+    S.calView = month ? 'month' : 'list';
+    lsSet(VIEW_KEY, month ? 'month' : null);
+    for (const c of stack) {
+      viewWeek(c);
+      const acts = c.querySelector('.cal-acts');
+      if (acts) acts.innerHTML = calActsHTML(c);
+    }
+    monthFollow();
+  }
+  /** In Month, ‹ shows while the day picked, or the month in view, is not today's. */
+  function syncToday(el) {
+    const btn = el.querySelector('.cu-band > .wk [data-wk-today]');
+    if (!btn) return;
+    const t = todayKey(), m = window.NextMonth && window.NextMonth.shown(el);
+    btn.hidden = (el._from || t) === t && (!m || m === t.slice(0, 7));
+  }
   /**
    * A day picked on a card's month: the card's list goes to it, and the cards
    * opened over it from the big month make way. The month in the week bar
    * closes back to the week (Kevin, 7 Nov 2026); the big one beside the card
-   * stays.
+   * stays. In Month, the month stays too, and the day's rows are under it.
    */
   async function pickMonthDay(el, k) {
     let n = 0;
     while (stack.length && stack[stack.length - 1] !== el) { dropSheet(); n++; }
     if (n) goBack(n);
+    if (monthView(el)) return pickInMonth(el, k);
     if (el._month && !WIDE.matches) await setMonth(el, false);
     return goToDay(el, k);
+  }
+  /** A day picked in Month: filled in the month, its rows under it, and in the card's link, as a dated link's. */
+  async function pickInMonth(el, k) {
+    el._wkPin = null;
+    await setCardDate(el, k);
+    syncToday(el);
   }
   /**
    * Wide, the page's map box holds the big month: over the dimmed page, as
@@ -3293,11 +3378,12 @@
       }
       weeks.push(`<div class="wk-week" data-week="${w}">${days.join('')}</div>`);
     }
-    return `<div class="wk">
+    // Month, on a phone: no chevron from the first paint (viewWeek).
+    return `<div class="wk${oneDay() ? ' mview' : ''}">
         <div class="wk-head">
           <h2 class="wk-title"><button class="wk-month" type="button" data-wk-month aria-expanded="false" title="The whole month"><span>${esc(monthWords(from || t))}</span>${CHEV}</button></h2>
           <div class="wk-acts">
-            <button class="fpill wk-today" type="button" data-wk-today hidden>Today</button>
+            <button class="fpill ficon wk-today" type="button" data-wk-today hidden aria-label="Today" title="Today">${I.toStart}</button>
             <div class="cal-acts">${acts}</div>
           </div>
         </div>
@@ -3339,9 +3425,29 @@
     el._wkRO = new ResizeObserver(() => holdWeek(el));
     el._wkRO.observe(wk);
     if (bar) el._wkRO.observe(bar);
+    // Swiped by hand to another week (Kevin, 14 Nov 2026): once it settles,
+    // the list goes to the week's first day, today in this week, as a tapped
+    // day does. A finger still down, or the strip following the list, waits.
+    let touching = false, byHand = false, settle = 0;
+    const settled = () => {
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (touching || !byHand) return;
+        byHand = false;
+        if (el._month && !WIDE.matches) return;
+        const w = strip.children[Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth))];
+        const k = w && w.dataset.week, cur = el._wkCur;
+        if (!k || (cur && cur >= k && cur < addDays(k, 7))) return;
+        goToDay(el, k);
+      }, 150);
+    };
+    strip.addEventListener('touchstart', () => { touching = true; byHand = true; clearTimeout(settle); }, { passive: true });
+    for (const t of ['touchend', 'touchcancel']) strip.addEventListener(t, () => { touching = false; settled(); }, { passive: true });
+    strip.addEventListener('wheel', (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { byHand = true; settled(); } }, { passive: true });
     // Swiped to another week: its month's name, unless the day the list is on is in it.
     let raf = 0;
     strip.addEventListener('scroll', () => {
+      if (byHand) settled();
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
@@ -3354,6 +3460,7 @@
     }, { passive: true });
     el._wkCur = null;
     markWeek(el, dayInView(el), { align: true, smooth: false });
+    viewWeek(el);
   }
   function setWeekTitle(el, k) {
     const span = el.querySelector('.wk-month > span');
@@ -3421,7 +3528,8 @@
     const t = todayKey();
     if (el._wkCur !== k) {
       el._wkCur = k;
-      wk.querySelector('[data-wk-today]').hidden = k === t;
+      if (monthView(el)) syncToday(el);
+      else wk.querySelector('[data-wk-today]').hidden = k === t;
       if (window.NextMonth && el._month) window.NextMonth.mark(el, k);
     }
     // The month open in the week bar has its own name and its own days.
@@ -3451,6 +3559,10 @@
     el._wkRaf = requestAnimationFrame(() => {
       el._wkRaf = 0;
       const k = dayInView(el);
+      // Going to a day (goToDay): the weeks the list passes on the way are
+      // not swiped through, back and forth.
+      if (el._wkGoing && k !== el._wkGoing) { placeTop(el); return; }
+      el._wkGoing = null;
       if (k !== el._wkCur) markWeek(el, k);
       placeTop(el);
     });
@@ -3480,6 +3592,9 @@
     }
     el._wkPin = k;
     markWeek(el, k);
+    el._wkGoing = k;
+    clearTimeout(el._wkGoT);
+    el._wkGoT = setTimeout(() => { el._wkGoing = null; weekScroll(el); }, 1500);
     toDay(el, k);
   }
 
@@ -3917,8 +4032,8 @@
         <section class="p-whatson"${won ? '' : ' hidden'}>${won}</section>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
-          ${weekBarHTML(from, filtersPill(focusCount(focus), false))}
-          <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
+          ${weekBarHTML(from, calMenuHTML(focusCount(focus), oneDay()))}
+          <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, oneDay() ? 1 : CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
         <div class="toolbar-space"></div>
@@ -3932,7 +4047,7 @@
     el.dataset.pid = pid;
     el._from = from;
     el._focus = focus;
-    el._days = CU_DAYS;
+    el._days = oneDay() ? 1 : CU_DAYS;
     watchMore(el);
     initWeek(el);
     paintAddBadge(el);
@@ -4018,7 +4133,7 @@
     const list = feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(c));
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
-    const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
+    const body = daysHTML(list, { start, days, ...ONE_DAY(days), linkFor, row: { lang: f.lang }, byVenue: true });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
@@ -4182,7 +4297,7 @@
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          ${weekBarHTML(from, filtersPill(collFilterCount(c), false))}
+          ${weekBarHTML(from, calMenuHTML(collFilterCount(c), oneDay()))}
           <div class="near-float">${nearBtnHTML(true)}</div>
           <div class="cu">${collFeedHTML(c, days, from)}</div>
         </section>` : ''}
@@ -4195,7 +4310,7 @@
     const el = pushSheet(`${glassBar(c.title, '')}<div class="sheet-scroll"></div>`, 'collection', { segs: (c.segs && collSegs(c, from)) || null, entry });
     el._coll = c;
     el._from = from;
-    el._days = CU_DAYS;
+    el._days = oneDay() ? 1 : CU_DAYS;
     mapFollow();
     repaintCollection(el);
     // Its bar, which took its name with no title under it yet.
@@ -4210,7 +4325,7 @@
     const c = shownOf(el);
     el._shown = c;
     el._shownKey = shownKey(c);
-    const days = keepDays ? el._days : CU_DAYS;
+    const days = oneDay() ? 1 : keepDays ? el._days : CU_DAYS;
     // Nearest first: to you; else, kept to its map, to the map's middle;
     // else from where the page's map was looking, as before it had a map.
     const origin = S.loc || (S.mapCard && S.mapCard.el === el && !c.of && !c.here && pageView ? { lng: pageView.center[0], lat: pageView.center[1] } : null);
@@ -5222,6 +5337,17 @@
     // The Filters pop-out the same: a tap off it closes it, and does no more.
     if (fpop && !fpopEl().contains(t) && !t.closest('[data-filters], [data-card-filters]')) { closeFilters(); return; }
     if ((b = t.closest('[data-fsec]'))) { fpopSec = fpopSec === b.dataset.fsec ? null : b.dataset.fsec; renderFilters(); return; }
+    // A card's Calendar menu: List, Month and Filters (openCalMenu). Its
+    // Filters open out of its button; with them open, the button puts them away.
+    if ((b = t.closest('[data-cal-menu]'))) {
+      const el = b.closest('.sheet');
+      if (!el) return;
+      if (fpop && fpop.scope === el) closeFilters();
+      else if (fromMenu !== b) openCalMenu(b, el);
+      return;
+    }
+    if ((b = t.closest('[data-cal-view]')) && fromMenu) { const el = fromMenu.closest('.sheet'); if (el) setCalView(b.dataset.calView, el); return; }
+    if (t.closest('[data-cal-filters]') && fromMenu) { const el = fromMenu.closest('.sheet'); if (el) openFilters(fromMenu, el); return; }
 
     // Search: a tap on any result remembers what was typed.
     if (top && top.classList.contains('search') && t.closest('[data-parish],[data-event],[data-coll],[data-place]')) {
@@ -5331,9 +5457,15 @@
       return;
     }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
-    if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
+    // In the Month view the month is open for good: its name is only its name.
+    if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el && !monthView(el)) setMonth(el, !el._month); return; }
     if ((b = t.closest('[data-wk-day]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, b.dataset.wkDay); return; }
-    if ((b = t.closest('[data-wk-today]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, todayKey()); return; }
+    if ((b = t.closest('[data-wk-today]'))) {
+      const el = b.closest('.sheet');
+      if (el && monthView(el)) { if (window.NextMonth) window.NextMonth.mark(el, todayKey()); pickInMonth(el, todayKey()); return; }
+      if (el) goToDay(el, todayKey());
+      return;
+    }
     if (window.NextMonth && window.NextMonth.click(t)) return;
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the

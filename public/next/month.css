@@ -71,6 +71,10 @@
 }
 .mg-small button.mg-d:hover { background: var(--card-2); }
 .mg-small .mg-n { width: 28px; height: 28px; line-height: 28px; font-size: 14px; font-weight: 500; }
+/* Month (next.js S.calView): the day whose rows are under the month, filled. */
+.mg-small .mg-d.picked .mg-n { background: var(--text); color: var(--bg); font-weight: 700; box-shadow: none; }
+/* A phone keeps :hover on the day just tapped: the fill says it already. */
+.mg-small button.mg-d.picked:hover { background: none; }
 .mg-dots { display: flex; align-items: center; gap: 3px; height: 7px; margin-top: 3px; }
 .mg-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--text-3)); }
 .mg-dots i.tomb { background: transparent; box-shadow: inset 0 0 0 1.25px var(--c, var(--text-3)); }
