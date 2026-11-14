@@ -1164,7 +1164,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .wk-chev { flex: none; color: var(--text-2); }
 .wk-acts { display: flex; align-items: center; gap: 6px; flex: none; }
 .wk-today { min-height: 26px; padding: 3px 10px; }
-/* Today as |<, beside the menu and its twin (Kevin, 14 Nov 2026); on today, not there. */
+/* Today as a ‹, beside the menu and its twin (Kevin, 14 Nov 2026); on today, not there. */
 .wk-today.ficon { min-height: 30px; padding: 5px 9px; color: var(--text); }
 .wk-today[hidden] { display: none; }
 /* Month, on a phone (next.js monthView): the month open for good, so its name has nothing to open. */

@@ -1094,10 +1094,10 @@
     plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     starOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
-    // A card's Calendar menu (calMenuHTML): List's three lines, Month's month, Today's |<, the menu's tick.
+    // A card's Calendar menu (calMenuHTML): List's three lines, Month's month, Today's ‹, the menu's tick.
     lines: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>',
     month: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="currentColor"><rect x="3" y="3" width="5" height="5" rx="1.3"/><rect x="9.5" y="3" width="5" height="5" rx="1.3"/><rect x="16" y="3" width="5" height="5" rx="1.3"/><rect x="3" y="9.5" width="5" height="5" rx="1.3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1.3"/><rect x="16" y="9.5" width="5" height="5" rx="1.3"/><rect x="3" y="16" width="5" height="5" rx="1.3"/><rect x="9.5" y="16" width="5" height="5" rx="1.3"/><rect x="16" y="16" width="5" height="5" rx="1.3"/></svg>',
-    toStart: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M18 6l-7 6 7 6"/></svg>',
+    toStart: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
     tick: '<svg class="pm-tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>',
     more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
@@ -2492,7 +2492,7 @@
         if (el._wkIO) weekScroll(el);
       }, { passive: true });
       // The list moved by hand: a day tapped is no longer held as the day.
-      const loose = () => { el._wkPin = null; };
+      const loose = () => { el._wkPin = null; el._wkGoing = null; };
       scroller.addEventListener('wheel', loose, { passive: true });
       scroller.addEventListener('touchmove', loose, { passive: true });
       titled();
@@ -3201,7 +3201,7 @@
           notices: noticesOn,
           isNotice,
           current: (el) => el._wkCur || el._from || todayKey(),
-          // Swiped to another month: its name, and in Month, |< back to this one.
+          // Swiped to another month: its name, and in Month, ‹ back to this one.
           title: (el, k) => { setWeekTitle(el, k); if (monthView(el)) syncToday(el); },
           redot: weekAfterList,
           local,
@@ -3292,7 +3292,7 @@
     }
     monthFollow();
   }
-  /** In Month, |< shows while the day picked, or the month in view, is not today's. */
+  /** In Month, ‹ shows while the day picked, or the month in view, is not today's. */
   function syncToday(el) {
     const btn = el.querySelector('.cu-band > .wk [data-wk-today]');
     if (!btn) return;
@@ -3425,9 +3425,29 @@
     el._wkRO = new ResizeObserver(() => holdWeek(el));
     el._wkRO.observe(wk);
     if (bar) el._wkRO.observe(bar);
+    // Swiped by hand to another week (Kevin, 14 Nov 2026): once it settles,
+    // the list goes to the week's first day, today in this week, as a tapped
+    // day does. A finger still down, or the strip following the list, waits.
+    let touching = false, byHand = false, settle = 0;
+    const settled = () => {
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (touching || !byHand) return;
+        byHand = false;
+        if (el._month && !WIDE.matches) return;
+        const w = strip.children[Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth))];
+        const k = w && w.dataset.week, cur = el._wkCur;
+        if (!k || (cur && cur >= k && cur < addDays(k, 7))) return;
+        goToDay(el, k);
+      }, 150);
+    };
+    strip.addEventListener('touchstart', () => { touching = true; byHand = true; clearTimeout(settle); }, { passive: true });
+    for (const t of ['touchend', 'touchcancel']) strip.addEventListener(t, () => { touching = false; settled(); }, { passive: true });
+    strip.addEventListener('wheel', (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { byHand = true; settled(); } }, { passive: true });
     // Swiped to another week: its month's name, unless the day the list is on is in it.
     let raf = 0;
     strip.addEventListener('scroll', () => {
+      if (byHand) settled();
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
@@ -3539,6 +3559,10 @@
     el._wkRaf = requestAnimationFrame(() => {
       el._wkRaf = 0;
       const k = dayInView(el);
+      // Going to a day (goToDay): the weeks the list passes on the way are
+      // not swiped through, back and forth.
+      if (el._wkGoing && k !== el._wkGoing) { placeTop(el); return; }
+      el._wkGoing = null;
       if (k !== el._wkCur) markWeek(el, k);
       placeTop(el);
     });
@@ -3568,6 +3592,9 @@
     }
     el._wkPin = k;
     markWeek(el, k);
+    el._wkGoing = k;
+    clearTimeout(el._wkGoT);
+    el._wkGoT = setTimeout(() => { el._wkGoing = null; weekScroll(el); }, 1500);
     toDay(el, k);
   }
 

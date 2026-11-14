@@ -74,14 +74,17 @@ to.
 **Month is the same Calendar as a grid.** The list was a calendar app's agenda
 view all along, and a card's Calendar is headed as one (Kevin, 7 Nov 2026): one
 row with the month's name for its title (an up-and-down chevron beside it),
-a small **|<** back to today when the list is on another day (nothing on
+a small **‹** back to today when the list is on another day (nothing on
 today), and one button for **List**, **Month** and **Filters**; under it
 S M T W T F S over a week of days, Sunday first, with up to four dots a day in
 the colour of each one's kind and a + from the fifth. The whole head is held
 under the card's bar while the list scrolls under it, as Fantastical's week
 drawer was, and each day's header is held under the head till the next one
 comes up. No day is marked in the week or the month: the day headers say
-where the list is. The week swipes a week at a time and follows the list; a
+where the list is. The week swipes a week at a time and follows the list; swiped by hand,
+the list goes to the week's first day (today, in this week; Kevin, 14 Nov
+2026), and on the way to a day the week does not swipe through the weeks
+the list passes (`_wkGoing`). A
 tapped day has the list go to it, as Tomorrow does in Today, growing the list
 in place when it has not got that far (`goToDay` in `next.js`). The way back
 up to the rest of the card is the card's ↑ (placed between the name and
@@ -106,7 +109,7 @@ on the phone (`agora_cal_view` in localStorage), is for whoever wants the
 month to stay: the same month as the open one, dots and all, open for good in
 the week's place, and under it only the day picked, no list going on
 (`el._days = 1`; `oneDay`, `monthView`). A tapped day is filled and becomes
-the card's date, as a dated link's (`pickInMonth` → `setCardDate`); |< shows
+the card's date, as a dated link's (`pickInMonth` → `setCardDate`); ‹ shows
 whenever the picked day or the month in view is not today's. The month's name
 has no chevron and does nothing there. On a laptop Month is the big month
 beside the card (opened or closed by the menu, not kept), so nothing else
