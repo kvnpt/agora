@@ -10,7 +10,7 @@
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
 //                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong"
 //                   |"programme_gladesville"|"feast_at_burwood"|"mums_group"
-//                   |"mums_group_december","delay":60}
+//                   |"mums_group_december"|"programme_called_off","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -42,6 +42,9 @@
 //                    workshop: a date of that group, linked to it before it is added
 //                  mums_group_december: next month's, the group on file — its 4 December
 //                    meeting goes onto the rule
+//                  programme_called_off: a December programme at Sts Peter & Paul,
+//                    Doonside — a Sunday's saint, and two dates called off, which
+//                    nothing publishes until each is confirmed on its card
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
@@ -252,6 +255,23 @@ const DOCS = {
       languages: [], venue: null, description: null, notes: [],
     })),
   },
+  // Sts Peter & Paul, Doonside (a seed parish): a December programme that
+  // gives one Sunday's saint and calls two dates off, one with no time
+  // printed — the timetable has it — and one with its reason.
+  programme_called_off: {
+    kind: 'poster', other_parish: null, notes: [],
+    events: [
+      { title: 'Sunday Divine Liturgy', feast: 'Nicholas the Wonderworker', date: '2026-12-06', weekday_printed: 'Sunday',
+        year_printed: true, start_time: '10:00', end_time: null, event_type: 'liturgy',
+        languages: [], venue: null, description: null, notes: [] },
+      { title: 'English Divine Liturgy', date: '2026-12-13', weekday_printed: 'Sunday', year_printed: true,
+        cancelled: true, start_time: null, end_time: null, event_type: 'liturgy',
+        languages: [], venue: null, description: 'No evening Liturgy: carols at the cathedral instead.', notes: [] },
+      { title: 'Sunday Divine Liturgy', date: '2026-12-27', weekday_printed: 'Sunday', year_printed: true,
+        cancelled: true, start_time: '10:00', end_time: null, event_type: 'liturgy',
+        languages: [], venue: null, description: null, notes: [] },
+    ],
+  },
   mums_group: mumsGroup('Coaster-making Workshop', '2026-11-06',
     'Coaster-making workshop: create your very own coaster.'),
   mums_group_december: mumsGroup('Christmas Ornaments', '2026-12-04',
@@ -264,7 +284,7 @@ for (const d of Object.values(DOCS)) {
   d.written_in ??= 'English';
   d.services ??= [];
   d.details ??= { address: '', phone: '', email: '', website: '' };
-  for (const e of d.events) e.feast ??= '';
+  for (const e of d.events) { e.feast ??= ''; e.cancelled ??= false; }
 }
 
 const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;

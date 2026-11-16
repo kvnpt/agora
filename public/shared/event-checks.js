@@ -133,6 +133,18 @@
       }
     }
 
+    // "No Liturgy on the 25th", read off a programme (drafts.mjs CARD_FIELDS:
+    // 1 as read, 2 once a person has confirmed it, 0 or nothing otherwise).
+    // A false cancellation keeps somebody from a service that is running, so
+    // nothing publishes one a person has not confirmed; and only a date of a
+    // service on the timetable can be cancelled, as a tombstone on it.
+    const called = Number(f.cancelled) || 0;
+    if (called && blank(f.occurrence)) {
+      add('cancelled', 'block', 'This says a service is not held, but it is not linked to one on the timetable. Link it, say it is still on, or discard it.');
+    } else if (called === 1) {
+      add('cancelled', 'block', 'Confirm the cancellation, or say it is still on.');
+    }
+
     if (!multi && isLocalTime(f.start_time) && isLocalTime(f.end_time) && f.end_time <= f.start_time) {
       add('end_time', 'info', 'Ends after midnight, on the next day.');
     }

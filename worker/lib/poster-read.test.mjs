@@ -163,7 +163,7 @@ test('a streamed answer arrives as fields, then items, then the normalised read'
     title: 'Youth Night: Faith And Film', feast: null,
     date: '2026-11-14', start_time: '19:00', end_time: '21:30', end_date: null, event_type: 'youth',
     description: 'A film and a talk for young adults. Bring a plate to share.',
-    languages: null, location_override: null, printed_weekday: 'Saturday', year_printed: 0, after: null,
+    languages: null, location_override: null, printed_weekday: 'Saturday', year_printed: 0, after: null, cancelled: null,
     read_notes: [{ field: 'start_time', text: 'Doors 6:30, film 7:00; used 7:00.' }],
   });
   assert.deepStrictEqual(r.usage, { model: POSTER_MODEL, input_tokens: 1800, output_tokens: 412 });
@@ -181,6 +181,23 @@ test('what an event follows is read before its time, kept as printed, and is no 
   const r = await read(fakeFetch(haikuStream(JSON.stringify(doc))), (event, p) => seen.push({ event, ...p }));
   assert.deepStrictEqual(r.read.events.map(e => e.after), ['English Liturgy', null]);
   assert.ok(!seen.some(s => s.event === 'field' && s.name === 'after'), 'the editor is not sent it');
+});
+
+test('a date called off is read before its time, only on a plain true, and is no field of the form', async () => {
+  const fields = Object.keys(POSTER_SCHEMA.properties.events.items.properties);
+  assert.ok(fields.indexOf('cancelled') < fields.indexOf('start_time'), 'that it is off, then when');
+  assert.deepStrictEqual(POSTER_SCHEMA.properties.events.items.properties.cancelled.type, 'boolean', 'no union');
+  assert.ok(POSTER_SCHEMA.properties.events.items.required.includes('cancelled'));
+  const doc = { kind: 'poster', events: [
+    { title: 'Divine Liturgy', date: '2030-01-27', cancelled: true, start_time: null, event_type: 'liturgy' },
+    { title: 'Vespers', date: '2030-01-26', cancelled: false, start_time: '18:00', event_type: 'prayer' },
+    { title: 'Bible Study', date: '2030-01-30', cancelled: 'yes', start_time: '19:00', event_type: 'talk' },
+    { title: 'Matins', date: '2030-01-27', start_time: '08:00', event_type: 'prayer' },
+  ] };
+  const seen = [];
+  const r = await read(fakeFetch(haikuStream(JSON.stringify(doc))), (event, p) => seen.push({ event, ...p }));
+  assert.deepStrictEqual(r.read.events.map(e => e.cancelled), [1, null, null, null]);
+  assert.ok(!seen.some(s => s.event === 'field' && s.name === 'cancelled'), 'the editor is not sent it a field at a time');
 });
 
 test('a refusal, a cut-off answer and a mid-stream error each say what happened', async () => {

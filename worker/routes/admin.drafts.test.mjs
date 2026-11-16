@@ -1148,12 +1148,119 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-9), ['read_parish', 'read_language', 'read_services', 'read_details',
     'source', 'message_text', 'seen_at', 'images', 'sender_name']);
-  assert.deepEqual(cols('draft_events').slice(-10), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
-    'host_parish_id', 'host_event_id']);
+  assert.deepEqual(cols('draft_events').slice(-11), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
+    'host_parish_id', 'host_event_id', 'cancelled']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
-  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard, types.host_parish_id, types.host_event_id],
-    ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER'],
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard, types.host_parish_id, types.host_event_id, types.cancelled],
+    ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER', 'INTEGER'],
     'a pin is a number, and so are the pill, the bin and an event on file');
+});
+
+// ── a programme that calls a date off ──
+//
+// The last piece of the bulletin ingest (docs/roadmap.md, phase 1): "No
+// Liturgy on Sunday 10 November". The reader had no field for it. A false
+// one keeps somebody from a service that is running, so nothing publishes a
+// cancellation a person has not confirmed.
+
+const ev = (o) => ({ feast: '', weekday_printed: null, year_printed: true, cancelled: false, after: '', end_time: null,
+  end_date: '', languages: [], venue: null, description: null, notes: [], ...o });
+/** Rookwood's programme, with a Sunday called off (no time printed) and a Saturday still on. */
+const CALLED_OFF = {
+  kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  events: [
+    ev({ title: 'Orthros and Divine Liturgy', feast: 'Dionysios the Areopagite', date: '2030-11-02', start_time: '08:00', event_type: 'liturgy' }),
+    ev({ title: 'Divine Liturgy', date: '2030-11-10', cancelled: true, start_time: null, event_type: 'liturgy',
+      description: 'Father is away.' }),
+    ev({ title: 'Youth Group', date: '2030-11-08', cancelled: true, start_time: null, event_type: 'youth' }),
+  ],
+};
+
+test('a date a programme calls off is matched to its service by name, and takes the service’s time', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sat, sun } = addRookwood(f.raw);
+  const draft = await readAt(f, ROOKWOOD, CALLED_OFF);
+  const [on, off, none] = draft.cards;
+  assert.deepEqual([on.occurrence, on.cancelled], [`${sat}:2030-11-02`, null]);
+  assert.deepEqual([off.occurrence, off.cancelled, off.title, off.start_time],
+    [`${sun}:2030-11-10`, 1, 'Orthros & Divine Liturgy', '08:00'], 'the Sunday on file, as the timetable has it');
+  assert.ok(!off.read_fields.includes('start_time'), 'a time the poster did not print is not "from poster"');
+  assert.deepEqual([none.occurrence, none.cancelled], [null, 1], 'nothing on the timetable is a youth group');
+
+  // Two services of the name that day: nobody guesses which is off.
+  const read = { events: [{ title: 'Liturgy', date: '2030-11-10', start_time: null, cancelled: 1, event_type: 'liturgy' }] };
+  const two = [
+    { id: 1, parish_id: 'p', day_of_week: 0, start_time: '08:00', title: 'Divine Liturgy', event_type: 'liturgy', active: 1 },
+    { id: 2, parish_id: 'p', day_of_week: 0, start_time: '18:00', title: 'English Liturgy', event_type: 'liturgy', active: 1 },
+  ];
+  assert.equal(matchOccurrences(read, two).events[0].occurrence, null);
+  // Without the cancellation, no time is no match, as it always was.
+  const plain = { events: [{ title: 'Divine Liturgy', date: '2030-11-10', start_time: null, event_type: 'liturgy' }] };
+  assert.equal(matchOccurrences(plain, two.slice(0, 1)).events[0].occurrence, null);
+});
+
+test('a cancellation is published only once a person confirms it, as a tombstone on the occurrence', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sun } = addRookwood(f.raw);
+  const draft = await readAt(f, ROOKWOOD, CALLED_OFF);
+  const [, off, none] = draft.cards;
+  const events = () => f.raw.prepare('SELECT COUNT(*) n FROM events').get().n;
+  const before = events();
+  const override = () => f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sun, '2030-11-10');
+
+  // As read: refused, and nothing written.
+  const unconfirmed = await f.call('POST', `/api/admin/draft-events/${off.id}/publish`, {});
+  assert.equal(unconfirmed.status, 400);
+  assert.match(unconfirmed.body.error, /Confirm the cancellation/);
+  assert.equal(override(), undefined);
+
+  // With no service to cancel, it cannot be published at all, confirmed or not.
+  await f.call('PATCH', `/api/admin/draft-events/${none.id}`, { cancelled: 2, start_time: '19:00' });
+  const loose = await f.call('POST', `/api/admin/draft-events/${none.id}/publish`, {});
+  assert.equal(loose.status, 400);
+  assert.match(loose.body.error, /not linked to one on the timetable/);
+  assert.equal(events(), before, 'never a one-off beside it');
+
+  // Only read, confirmed, or not one.
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${off.id}`, { cancelled: 3 })).body.field, 'cancelled');
+
+  // Confirmed: the tombstone, with the reason and the poster, and the
+  // service's own name and time untouched.
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${off.id}`, { cancelled: 2 })).body.cancelled, 2);
+  const done = await f.call('POST', `/api/admin/draft-events/${off.id}/publish`, {});
+  assert.equal(done.status, 201);
+  assert.deepEqual([done.body.occurrence, done.body.cancelled, done.body.event.status], [true, true, 'cancelled']);
+  const o = override();
+  assert.deepEqual([o.kind, o.patch_title, o.patch_start_time, o.patch_end_time, o.patch_description, o.patch_poster_path],
+    ['cancelled', null, null, null, 'Father is away.', draft.poster_path]);
+  assert.equal(events(), before);
+});
+
+test('a cancellation a person says is still on publishes as an ordinary date; one on a combined date is refused', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sun } = addRookwood(f.raw);
+  const draft = await readAt(f, ROOKWOOD, CALLED_OFF);
+  const off = draft.cards[1];
+  const override = () => f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sun, '2030-11-10');
+
+  // Combined into another event that day: the combine says where it is held.
+  const other = f.raw.prepare(`INSERT INTO events (parish_id, title, start_utc, event_type, status, source_adapter)
+    VALUES (?, 'Deanery Liturgy', '2030-11-09T21:00:00Z', 'liturgy', 'approved', 'admin') RETURNING id`).get(ROOKWOOD).id;
+  f.raw.prepare(`INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind, combined_into_event_id)
+    VALUES (?, '2030-11-10', 'combined', ?)`).run(sun, other);
+  await f.call('PATCH', `/api/admin/draft-events/${off.id}`, { cancelled: 2 });
+  const refused = await f.call('POST', `/api/admin/draft-events/${off.id}/publish`, {});
+  assert.equal(refused.status, 409);
+  assert.equal(override().kind, 'combined');
+  f.raw.prepare('DELETE FROM schedule_overrides WHERE schedule_id = ?').run(sun);
+
+  // "It is still on": an ordinary date of its service, with what the card says.
+  await f.call('PATCH', `/api/admin/draft-events/${off.id}`, { cancelled: 0 });
+  const on = await f.call('POST', `/api/admin/draft-events/${off.id}/publish`, {});
+  assert.equal(on.status, 201);
+  assert.deepEqual([on.body.cancelled, on.body.event.status], [false, 'approved']);
+  assert.deepEqual([override().kind, override().patch_description], ['modified', 'Father is away.']);
 });
 
 // ── an event at another parish: theirs, with this parish taking part ──

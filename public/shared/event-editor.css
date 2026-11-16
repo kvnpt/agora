@@ -629,6 +629,46 @@
 .ee-feed img.is-mod { padding: 0; margin: 0; background: none; outline: 2px solid var(--ee-mod-line); outline-offset: 1px; }
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
+/* ── A date the poster calls off (event-editor.js refreshCancel) ──
+   The host box's shape in the danger colour: it is the one thing a read can
+   get wrong that keeps somebody from a service, so it does not look like a
+   note. Confirmed, it is solid; as read, dashed, a question. */
+.ee-cancel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--danger) 55%, transparent);
+  border-radius: 12px;
+}
+.ee-card.is-cancel-sure .ee-cancel { border-style: solid; }
+.ee-card.is-open .ee-cancel { margin-top: 8px; }
+.ee-cancel-what b { color: var(--danger); }
+.ee-cancel-notes:empty { display: none; }
+.ee-cancel-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ee-cancel-actions .pill-btn { white-space: normal; text-align: left; }
+.ee-card.is-cancel-sure .ee-cancel [data-act="cancel-yes"] { color: inherit; border-color: var(--border); }
+.ee-card.is-peek .ee-cancel { max-width: 420px; padding: 8px 10px; }
+.ee-card.is-peek .ee-cancel .pill-btn { min-height: 34px; padding: 5px 14px; font-size: 13px; }
+/* Called off, nothing of the card is published but the reason and the
+   poster: the service keeps its own name, time and place, so those fields go
+   until somebody says it is still on. */
+.ee-card.is-cancel [data-row="title"],
+.ee-card.is-cancel [data-row="feast"],
+.ee-card.is-cancel [data-row="event_type"],
+.ee-card.is-cancel [data-row="languages"],
+.ee-card.is-cancel .ee-grid,
+.ee-card.is-cancel [data-hint="zone"],
+.ee-card.is-cancel [data-row="location_override"] { display: none; }
+.ee-feed.is-cancelled .ee-feed-title,
+.ee-feed.is-cancelled .ee-feed-time { text-decoration: line-through; color: var(--ee-muted); }
+.ee-feed-off { color: var(--danger); }
+
 /* ── Another parish's event, this one taking part ──
    The programme's box's look: nothing is wrong, it says where this goes —
    and asks what it replaces here (event-editor.js refreshHost). */

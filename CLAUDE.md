@@ -83,6 +83,9 @@ for them, are in the doc it links to — read that before changing the area.
   date on it. A dated card can be a date of a service in the same read
   (`new:<key>:date`): Publish adds the service, then the date onto it. Reads
   are written in English; the poster keeps the original.
+- A read never cancels. A date a poster calls off (`draft_events.cancelled`)
+  is a question on its own card: nothing publishes it until a person
+  confirms it there, and then only as a tombstone on a service's occurrence.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.

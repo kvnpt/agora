@@ -584,7 +584,7 @@
   const blankFields = () => ({
     title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
-    location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null, discard: null,
+    location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null, discard: null, cancelled: null,
     host_parish_id: '', host_event_id: '',
   });
 
@@ -1112,6 +1112,7 @@
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
         parish_scoped: row.parish_scoped == null ? null : row.parish_scoped ? 1 : 0,
         discard: row.discard == null ? null : row.discard ? 1 : 0,
+        cancelled: row.cancelled == null ? null : Number(row.cancelled),
         host_parish_id: row.host_parish_id || '', host_event_id: row.host_event_id != null ? row.host_event_id : '',
       };
       for (const f of Object.keys(server)) {
@@ -1175,6 +1176,16 @@
               <button type="button" class="pill-btn" data-act="none-replaced">Nothing is replaced</button>
               <button type="button" class="pill-btn" data-act="new-there" hidden></button>
               <button type="button" class="pill-btn" data-act="own"></button>
+            </div>
+          </div>
+          <!-- A date the poster calls off (refreshCancel): before everything,
+               since nothing under it is published while it stands. -->
+          <div class="ee-cancel" hidden>
+            <div class="ee-cancel-what"></div>
+            <div class="ee-cancel-notes"></div>
+            <div class="ee-cancel-actions">
+              <button type="button" class="pill-btn pill-btn-danger" data-act="cancel-yes"></button>
+              <button type="button" class="pill-btn" data-act="cancel-no">It is still on</button>
             </div>
           </div>
           <!-- A date of a regular service (refreshOccurrence): first, since it
@@ -1260,6 +1271,11 @@
         err: node.querySelector('.ee-card-error'),
         zone: node.querySelector('[data-hint="zone"]'),
         feastHint: node.querySelector('[data-hint="feast"]'),
+        cancel: node.querySelector('.ee-cancel'),
+        cancelWhat: node.querySelector('.ee-cancel-what'),
+        cancelNotes: node.querySelector('.ee-cancel-notes'),
+        cancelYes: node.querySelector('[data-act="cancel-yes"]'),
+        cancelNo: node.querySelector('[data-act="cancel-no"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
         occRule: node.querySelector('.ee-occ-rule'),
@@ -1323,6 +1339,8 @@
       // and goes once it is left with nothing more to say (refreshPeek).
       card.els.body.addEventListener('focusout', () => setTimeout(() => refreshCard(card), 0));
       card.els.occLink.addEventListener('click', () => (card.fields.occurrence ? unlinkCard(card, { keep: true }) : relinkCard(card)));
+      card.els.cancelYes.addEventListener('click', () => setCancelled(card, calledOff(card) === 2 ? 1 : 2));
+      card.els.cancelNo.addEventListener('click', () => setCancelled(card, 0));
       card.els.noneReplaced.addEventListener('click', () => setList(card, 'replaces', []));
       card.els.ownBtn.addEventListener('click', () => unlinkHost(card));
       card.els.newThere.addEventListener('click', () => notThatOne(card));
@@ -1428,6 +1446,61 @@
       schedule(card, 0);
       refreshCard(card);
       sync();
+    }
+
+    /**
+     * Does the card call its date off — a programme's "No Liturgy on the
+     * 25th"? 1 as the poster was read, 2 once somebody has confirmed it here,
+     * 0 otherwise (drafts.mjs CARD_FIELDS). Nothing publishes a 1: a false
+     * cancellation keeps somebody from a service that is running.
+     */
+    const calledOff = (card) => Number(card.fields.cancelled) || 0;
+    function setCancelled(card, v) {
+      if (state.publishing || card.publish.state === 'done') return;
+      card.fields.cancelled = v;
+      card.touched.add('cancelled');
+      card.pending.cancelled = v;
+      card.publish = { state: 'idle', message: '' };
+      schedule(card, 0);
+      refreshCard(card);
+      sync();
+    }
+
+    /**
+     * The box at the top of a card that calls its date off: what the poster
+     * says, what publishing would do about it, and the two answers. Confirm
+     * is its own tap on its own card, never part of Publish all: Cancel and a
+     * read are both things that can be wrong, and this is both at once.
+     */
+    function refreshCancel(card) {
+      const c = calledOff(card);
+      card.els.cancel.hidden = !c;
+      // Only on a date of a service: unlinked, the card is an event again,
+      // with every field its own (event-editor.css .is-cancel).
+      card.els.root.classList.toggle('is-cancel', c > 0 && !!card.fields.occurrence);
+      card.els.root.classList.toggle('is-cancel-sure', c === 2);
+      if (!c) return;
+      const occ = card.fields.occurrence;
+      const service = occ ? (isNewOcc(occ) ? linkedService(occ) : ruleOf(occ)) : null;
+      const name = String((service && service.title) || card.fields.title || '').trim() || 'this service';
+      const day = card.fields.date ? dateLabel(card.fields.date) : 'that day';
+      const busy = !!state.publishing || card.publish.state === 'done';
+      // What the read said of the match itself (drafts.mjs matchOccurrences).
+      card.els.cancelNotes.innerHTML = occ ? card.notes.filter(n => n.field === 'cancelled')
+        .map(n => `<div class="ee-note ee-note-read">${esc(n.text)}</div>`).join('') : '';
+      card.els.cancelYes.hidden = !occ;
+      card.els.cancelYes.disabled = busy;
+      card.els.cancelNo.disabled = busy;
+      card.els.cancelYes.setAttribute('aria-pressed', String(c === 2));
+      if (!occ) {
+        card.els.cancelWhat.innerHTML = `<b>The poster says this is not held on ${esc(day)}</b>, but it is not linked to a service on the timetable, so there is nothing to cancel. ${card.unlinkedFrom ? 'Link it again below,' : 'If it is one of the parish’s services, cancel that date from its own card. Otherwise'} say it is still on, or discard it.`;
+      } else if (c === 2) {
+        card.els.cancelWhat.innerHTML = `<b>Cancelled.</b> Publishing marks ${esc(name)}, ${esc(day)} as cancelled. It stays on the page, marked cancelled, so nobody turns up${String(card.fields.description || '').trim() ? ', with the description below as the reason' : ''}.`;
+        card.els.cancelYes.textContent = 'Undo';
+      } else {
+        card.els.cancelWhat.innerHTML = `<b>The poster says this is not held.</b> Check it against the poster: publishing would mark ${esc(name)}, ${esc(day)} as cancelled for everyone.`;
+        card.els.cancelYes.textContent = 'Confirm: it is cancelled';
+      }
     }
 
     /** The rule on file a card is a date of, or null. */
@@ -1779,7 +1852,8 @@
       // no longer matters, as it will not be published.
       card.els.chips.innerHTML = binned
         ? `<span class="ee-chip ee-chip-gone">${hasPassed(card) ? 'date has passed · ' : ''}to discard</span>`
-        : (card.fields.occurrence ? `<span class="ee-chip ee-chip-occ">${isNewOcc(card.fields.occurrence) ? 'new on the timetable' : 'on the timetable'}</span>` : '')
+        : (calledOff(card) === 2 && card.fields.occurrence ? '<span class="ee-chip ee-chip-gone">cancels this date</span>' : '')
+        + (card.fields.occurrence ? `<span class="ee-chip ee-chip-occ">${isNewOcc(card.fields.occurrence) ? 'new on the timetable' : 'on the timetable'}</span>` : '')
         + (hereOnFile(card) ? '<span class="ee-chip ee-chip-occ">on file here</span>'
           : card.fields.host_parish_id ? `<span class="ee-chip ee-chip-occ">${card.fields.host_event_id ? 'taking part' : 'to add'} at ${esc(nameOf(card.fields.host_parish_id))}</span>` : '')
         + (hostPending(card) ? '<span class="ee-chip ee-chip-warn">check replaced services</span>' : '')
@@ -1809,6 +1883,7 @@
       // Only a service is held in a language; for any other kind the row goes.
       const langRow = card.els.root.querySelector('[data-row="languages"]');
       if (langRow) langRow.hidden = (!!card.fields.event_type && !SERVICE_KINDS.has(card.fields.event_type)) || !!card.fields.host_event_id;
+      refreshCancel(card);
       refreshOccurrence(card);
       refreshHost(card);
       refreshRegular(card);
@@ -1853,7 +1928,12 @@
       // "Check replaced services", answered right there on the shut card.
       const asking = hostPending(card);
       card.els.host.classList.toggle('ee-peek-on', asking);
-      return any || asking;
+      // A date called off, still to be confirmed: asked on the shut card too,
+      // with the timetable's line it would cancel.
+      const calling = calledOff(card) === 1;
+      card.els.cancel.classList.toggle('ee-peek-on', calling);
+      card.els.occ.classList.toggle('ee-peek-on', calling && !card.els.occ.hidden);
+      return any || asking || calling;
     }
 
     /** Date's Single day / Multi day pill: Multi day while a last day is set or somebody tapped it. */
@@ -1953,6 +2033,19 @@
       const feast = s.feast || String((base && base.feast) || '').trim();
       // A row in the feed names no place of its own (next.js eventRow): only a new one shows.
       const where = mod.has('where') ? placeLabel(f) : '';
+      // Called off: the row as a cancelled one is in the feed, the service's
+      // own name and time struck, and nothing of the card's but the reason.
+      if (base && calledOff(card)) {
+        const t = summaryParts({ ...f, start_time: base.start_time, end_time: base.end_time }, { thisYear: +today().slice(0, 4) });
+        const why = String(f.description || '').trim();
+        return `<div class="ee-feed is-cancelled">
+          <span class="ee-feed-when">${t.time ? `<span class="ee-feed-time">${esc(t.time)}<span class="ee-sum-mer">${t.ampm}</span></span>` : ''}<span class="ee-sum-day">${esc(t.day)}</span><span class="ee-feed-kind ee-feed-off">Cancelled</span></span>
+          <span class="ee-feed-body">
+            <span class="ee-feed-title">${esc(String(base.title || '').trim() || title || 'Untitled')}</span>
+            ${why ? `<span class="ee-feed-desc">${esc(why)}</span>` : ''}
+          </span>
+        </div>`;
+      }
       return `<div class="ee-feed">
           <span class="ee-feed-when">${s.time ? `<span class="ee-feed-time${m('start_time')}">${esc(s.time)}<span class="ee-sum-mer">${s.ampm}</span></span>` : ''}<span class="ee-sum-day">${esc(s.day)}</span>${word ? `<span class="ee-feed-kind${m('event_type')}" style="color:${col}">${esc(word)}</span>` : ''}</span>
           <span class="ee-feed-body">
@@ -1977,7 +2070,7 @@
       const day = cardWeekday(card.fields, card.hints);
       const show = !!(state.draft && state.draft.poster_path) && day != null
         && !card.fields.occurrence && !card.fields.end_date && !card.multi
-        && !card.fields.also_at.length && !card.fields.replaces.length && !card.fields.host_parish_id
+        && !card.fields.also_at.length && !card.fields.replaces.length && !card.fields.host_parish_id && !calledOff(card)
         && card.publish.state !== 'done' && !!state.parish && may('schedule.create', state.parish.id);
       card.els.regular.hidden = !show;
       if (show) card.els.regular.setAttribute('aria-label', `Held every ${DAY_NAMES[day]}: put it on the timetable instead`);
@@ -1985,6 +2078,7 @@
     }
 
     function chipText(c) {
+      if (c.field === 'cancelled') return /not linked/.test(c.text) ? 'nothing to cancel' : 'confirm the cancellation';
       if (c.level === 'block') return c.text.replace(/^Needs /, 'needs ').replace(/\.$/, '');
       if (c.field === 'date' && c.level === 'warn' && /poster says/.test(c.text)) return 'check the date';
       if (c.field === 'date' && c.level === 'info') return 'year assumed';
@@ -2466,6 +2560,11 @@
       const hosted = events.filter(c => c.fields.host_parish_id && !hereOnFile(c)).length;
       if (hosted && state.parish) {
         text += ` ${hosted === 1 ? 'One is' : `${hosted} are`} at another parish, so ${state.parish.name} is set as taking part — check the services ${hosted === 1 ? 'it replaces' : 'they replace'} here.`;
+      }
+      // Dates the poster calls off: each asks on its own card.
+      const off = events.filter(c => calledOff(c)).length;
+      if (off) {
+        text += ` ${off === 1 ? 'One says a service is' : `${off} say a service is`} not held that day: nothing is cancelled until you confirm it on ${off === 1 ? 'its card' : 'each card'}.`;
       }
       // Its own, already on file: filled in, not made twice.
       if (here) {

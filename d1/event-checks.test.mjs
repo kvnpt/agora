@@ -37,6 +37,19 @@ test('the printed weekday is checked against the date', () => {
   assert.deepStrictEqual(C.checkDraftEvent({ ...ok, printed_weekday: 'Σάββατο' }), []);
 });
 
+test('a date called off blocks Publish until a person confirms it, and always without a service to cancel', () => {
+  const card = { title: 'Divine Liturgy', date: '2030-01-27', start_time: '09:00', event_type: 'liturgy', occurrence: '7:2030-01-27' };
+  const blocks = (f) => C.blockers(C.checkDraftEvent(f)).map(c => c.field);
+  assert.deepStrictEqual(blocks(card), []);
+  assert.deepStrictEqual(blocks({ ...card, cancelled: 1 }), ['cancelled'], 'as the poster was read');
+  assert.match(C.checkDraftEvent({ ...card, cancelled: 1 })[0].text, /Confirm the cancellation/);
+  assert.deepStrictEqual(blocks({ ...card, cancelled: 2 }), [], 'confirmed');
+  assert.deepStrictEqual(blocks({ ...card, cancelled: 0 }), [], 'still on');
+  const loose = { ...card, occurrence: '', languages: ['English'], cancelled: 2 };
+  assert.deepStrictEqual(blocks(loose), ['cancelled'], 'confirmed or not, there is nothing to cancel');
+  assert.match(C.checkDraftEvent(loose)[0].text, /not linked to one on the timetable/);
+});
+
 test('an assumed year, a past date and an overnight end are said', () => {
   const checks = C.checkDraftEvent(
     { ...ok, date: '2026-10-01', year_printed: 0, start_time: '23:00', end_time: '02:30' },
