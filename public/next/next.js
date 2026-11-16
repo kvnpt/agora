@@ -35,6 +35,46 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
+
+  // ── Drawing ───────────────────────────────────────────────────────────
+  //
+  // A box is written as a string, and written again when the map moves, a
+  // day is tapped, a sign-in answers. paint() makes the box read as the
+  // string says and touches nothing that already does (shared/morph.js): a
+  // row still wanted stays the element it was, and a logo or poster on screen
+  // is never made a second time. Set whole (innerHTML), every picture was a
+  // new one, blank for a frame or more: the flashing (Kevin, 16 Nov 2026).
+  // A box a script fills by hand since (the week bar) is an island there:
+  // data-keep.
+  const paint = (el, html) => window.AgoraMorph.morph(el, html);
+
+  // Which pictures the page has drawn, and which it could not. One not yet
+  // drawn waits its turn (lazy, low priority: on a slow phone a logo shared
+  // the line with the map's fonts and tiles, and the map is what the page is
+  // waiting on). One drawn already is in the browser's hands, and asked for
+  // lazily again it was blank until the browser next looked: so it is asked
+  // for outright, to be drawn with its row. One that failed is not asked for
+  // again for a minute (a thumbnail Cloudflare will not cut, not at all).
+  const PIC = { seen: new Set(), bad: new Map(), kept: [] };
+  for (const i of document.images) if (i.complete && i.naturalWidth) PIC.seen.add(i.getAttribute('src'));
+  const picBad = (src) => { const t = PIC.bad.get(src); return t != null && (src.startsWith('/cdn-cgi/') || Date.now() - t < 60000); };
+  /** A picture's address and how it is to be fetched, as its attributes. */
+  const pic = (src) => `src="${esc(src)}" alt=""${PIC.seen.has(src) ? ' decoding="sync"' : ' loading="lazy" fetchpriority="low"'}`;
+  document.addEventListener('load', (ev) => {
+    const i = ev.target;
+    if (i && i.tagName === 'IMG') { PIC.seen.add(i.getAttribute('src')); PIC.bad.delete(i.getAttribute('src')); }
+  }, true);
+  // A picture that did not come. A thumbnail falls back to the whole poster
+  // (posterThumb); a logo leaves its initials; a row goes without its poster.
+  document.addEventListener('error', (ev) => {
+    const i = ev.target;
+    if (!i || i.tagName !== 'IMG' || !i.hasAttribute('src')) return;
+    PIC.bad.set(i.getAttribute('src'), Date.now());
+    const full = i.getAttribute('data-full'), box = i.parentNode;
+    if (full) { i.removeAttribute('data-full'); i.setAttribute('src', full); return; }
+    if (i.classList.contains('ethumb') || (box && box.classList.contains('av'))) i.remove();
+    else if (box && box.classList.contains('pimg')) box.classList.add('noimg');
+  }, true);
   // The wide layout (next.css): cards come in from the right, not up from the foot.
   const WIDE = matchMedia('(min-width: 1080px)');
   const DAY = 86400000;
@@ -1023,7 +1063,8 @@
     const was = el.innerHTML;
     btn._copied = true;
     el.innerHTML = '<span class="url-copied">COPIED</span>';
-    setTimeout(() => { btn._copied = false; el.innerHTML = was; if (btn.id === 'page-link') renderLink(); else fitLinks(btn.parentNode); }, 900);
+    // Back as it was, unless its card was drawn again meanwhile and it says its link already.
+    setTimeout(() => { btn._copied = false; if (el.querySelector('.url-copied')) el.innerHTML = was; if (btn.id === 'page-link') renderLink(); else fitLinks(btn.parentNode); }, 900);
   }
 
   // ── The feed, from the bundle ─────────────────────────────────────────
@@ -1056,25 +1097,54 @@
   // poster itself is 250–370 KB, for a picture 44 px wide in Today. `width`
   // is in image pixels, enough for a 3x screen. Where resizing is off the
   // thumbnail's address answers 404, and the image falls back to the whole
-  // poster (THUMB_FALLBACK, first in each onerror) before giving up as before.
-  function posterThumb(path, width) {
+  // poster (the page's error listener, by `data-full`); once one has, the
+  // whole poster is what is asked for. '' for a poster that will not come.
+  function posterThumb(path, width, cls = '') {
     const p = String(path || '');
-    if (!p.startsWith('/posters/')) return `src="${esc(p)}"`;
-    return `src="/cdn-cgi/image/width=${width},quality=78,format=auto,fit=scale-down${esc(p)}" data-full="${esc(p)}"`;
+    const thumb = p.startsWith('/posters/') ? `/cdn-cgi/image/width=${width},quality=78,format=auto,fit=scale-down${p}` : '';
+    if (picBad(p) && (!thumb || picBad(thumb))) return '';
+    const c = cls ? `class="${cls}" ` : '';
+    return thumb && !picBad(thumb) ? `<img ${c}${pic(thumb)} data-full="${esc(p)}">` : `<img ${c}${pic(p)}>`;
   }
-  const THUMB_FALLBACK = "if(this.dataset.full){this.src=this.dataset.full;this.removeAttribute('data-full');return}";
 
   // ── Avatars ───────────────────────────────────────────────────────────
-  //
-  // A logo, like a poster's thumbnail, is fetched at low priority: on a slow
-  // phone it shared the line with the map's fonts and tiles, and the map is
-  // what the page is waiting on.
+
+  /**
+   * The logos nearest where the map is looking, asked for before they are
+   * wanted: a parish that comes into view as the map moves has its logo in
+   * hand, where it came a moment after its row, a white disc until then.
+   * Once the map has drawn and the page is idle, one at a time, at low
+   * priority, so the map's tiles never wait on them; and not at all for
+   * somebody saving data.
+   */
+  const WARM = 40;
+  let warming = null;
+  function warmLogos() {
+    if (warming || !map || !S.mapLoaded || (navigator.connection && navigator.connection.saveData)) return;
+    const c = map.getCenter(), o = { lat: c.lat, lng: c.lng };
+    const want = () => [...new Set(S.parishes.filter(p => p.logo_path && isFinite(p.lat) && p.lat != null)
+      .sort((a, b) => km(o, a) - km(o, b)).slice(0, WARM).map(p => p.logo_path))].filter(src => !PIC.seen.has(src) && !picBad(src));
+    if (!want().length) return;
+    const idle = (fn) => (window.requestIdleCallback ? window.requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 400));
+    const next = () => {
+      const src = want()[0];
+      if (!src) { warming = null; return; }
+      // Kept (warming), so the browser keeps it drawn-ready until a row asks.
+      const i = warming = new Image();
+      i.fetchPriority = 'low';
+      i.onload = () => { PIC.seen.add(src); PIC.kept.push(i); idle(next); };
+      i.onerror = () => { PIC.bad.set(src, Date.now()); idle(next); };
+      i.src = src;
+    };
+    warming = true;
+    S.mapLoaded.then(() => idle(next));
+  }
 
   function avatar(p, cls = '') {
     if (!p) return `<span class="av ${cls}"></span>`;
     const c = jColor(p.jurisdiction);
-    if (p.logo_path) return `<span class="av ${cls}" style="--j:${c}"><img src="${esc(p.logo_path)}" alt="" loading="lazy" fetchpriority="low" onerror="this.remove()"><b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
-    return `<span class="av ${cls}" style="--j:${c}"><b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
+    const logo = p.logo_path && !picBad(p.logo_path) ? `<img ${pic(p.logo_path)}>` : '';
+    return `<span class="av ${cls}" style="--j:${c}">${logo}<b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
   }
 
   // ── Icons ─────────────────────────────────────────────────────────────
@@ -1165,6 +1235,7 @@
   window.applyFilters = window.applyNonViewportFilters = (evs) => evs.filter(e => (S.todayMode && !S.mapCard ? visible(e) : eventPasses(e, { scoped: false })));
   window.agoraOnViewportMapPhase = () => onView();
 
+  let dotAt = null;   // where the map last drew you (S.loc is a new object each time it is found)
   function syncMap() {
     if (!map) return;
     // In a card, the card's parishes and nothing of the page's.
@@ -1178,6 +1249,9 @@
     mapState.userLat = S.loc ? S.loc.lat : null;
     mapState.userLng = S.loc ? S.loc.lng : null;
     window.updateMap(mapState);
+    // The blue dot is the map's own from its start, drawn where you were then:
+    // where you are found later (Near me, Nearest) has to be told to it.
+    if (S.loc !== dotAt) { dotAt = S.loc; window.agoraUpdateUserLocation(mapState.userLat, mapState.userLng); }
   }
   /** The open parish card's parish wears its logo on the map, as at /. */
   function setMapFocus(pid) {
@@ -1205,6 +1279,7 @@
 
   function onView() {
     if (!map) return;
+    warmLogos();
     // In a card, the card's: what it lists follows it (cardMoved).
     if (S.mapCard) return cardMoved();
     S.bounds = map.getBounds();
@@ -1271,6 +1346,8 @@
     } else {
       const box = document.createElement('div');
       box.className = 'card-map';
+      // The card drawn again leaves it be (paint: an island, CARD_MAP).
+      box.dataset.keep = 'map';
       el.querySelector('.sheet-scroll').prepend(box);
       box.appendChild($('#map'));
       // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
@@ -1459,7 +1536,8 @@
     closeFilters();
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
-    if (!on) clipToday();
+    if (on) renderParishRow();
+    else clipToday();
     syncDock();
     setTimeout(() => map && map.resize(), 30);
     setTimeout(() => map && map.resize(), 320);
@@ -1565,7 +1643,7 @@
     return { title, blurb: n && n <= NAMES_SHOWN ? namesOf(ps) : title === count ? what : count, name };
   }
   function pillLogo(p) {
-    if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy" fetchpriority="low"></span>`;
+    if (p.logo_path) return `<span class="pill-logo avatar-logo"><img ${pic(p.logo_path)}></span>`;
     const text = String(p.acronym || (p.name || '?')[0]).toUpperCase();
     return `<span class="pill-logo avatar-acronym" style="--avatar-ink:${shown(jColor(p.jurisdiction))}"><span class="avatar-acronym-text" data-len="${Math.min(text.length, 5)}">${esc(text)}</span></span>`;
   }
@@ -1595,7 +1673,7 @@
     chip.classList.toggle('fab', fab);
     $('#viewport').classList.toggle('chip-one', fab && !!one);
     const n = Math.min(3, ps.length);
-    chip.innerHTML = fab
+    paint(chip, fab
       ? one
         ? `<span class="iv-logos n1">${avatar(one, 'stack')}</span><span class="iv-name">${esc(one.full_name || one.name)}</span><span class="inview-go">${I.chev}</span>`
         : ps.length
@@ -1605,9 +1683,9 @@
         ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
         : ps.length
           ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-          : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
+          : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`);
     // The dock's, in a line: its short name where the chip has room for the full one.
-    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
+    paint($('.dock-chip'), `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`);
   }
   /**
    * Nothing in view is a way out, not a dead end (Kevin's friend, zoomed in
@@ -1632,15 +1710,19 @@
     map.fitBounds(b, { padding: 50, maxZoom: 13, duration: 700 });
   }
   function renderParishRow() {
+    $('#inview-n').textContent = viewParishes().length;
+    $('#btn-favourites').hidden = !favIds().length;
+    // Every parish as a pill is the full-screen map's alone (next.css): three
+    // hundred logos are not drawn, each time the map moves, for a row nobody
+    // can see. Going full screen draws it (setFullscreen).
+    if (!document.body.classList.contains('map-full')) return;
     const o = S.loc || (map ? map.getCenter() : null);
     const vp = S.inView;
     let ps = S.parishes.filter(p => p.id !== '_unassigned' && parishPasses(p));
     ps = o ? ps.map(p => ({ p, d: isFinite(p.lat) && p.lat != null ? km(o, p) : Infinity })).sort((a, b) => a.d - b.d).map(x => x.p)
       : ps.sort((a, b) => String(a.acronym || a.name).localeCompare(String(b.acronym || b.name)));
     if (vp) ps = [...ps.filter(p => vp.has(p.id)), ...ps.filter(p => !vp.has(p.id))];
-    $('#inview-n').textContent = viewParishes().length;
-    $('#btn-favourites').hidden = !favIds().length;
-    $('#parish-pills').innerHTML = ps.map(p => {
+    paint($('#parish-pills'), ps.map(p => {
       const tone = !vp || vp.has(p.id) ? 'on' : 'off';
       const star = isFav(p.id) ? '<span class="pill-fav" aria-hidden="true">★</span>' : '';
       let dist = '';
@@ -1649,7 +1731,7 @@
         dist = `<span class="pill-dist ${distClass(k)}">${esc(fmtKm(k))}</span>`;
       }
       return `<button class="parish-pill pill-${tone}" type="button" data-parish="${esc(p.id)}" style="--pill-ring:${shown(jColor(p.jurisdiction))}" title="${esc(p.name || '')}" aria-label="${esc(p.name || p.acronym || '')}">${pillLogo(p)}${star}${dist}</button>`;
-    }).join('');
+    }).join(''));
     const list = $('#parish-pills');
     if (list.scrollLeft) list.scrollLeft = 0;
   }
@@ -1753,7 +1835,7 @@
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${sub}
           ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
-        ${e.poster_path ? `<img class="ethumb" ${posterThumb(e.poster_path, 160)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.remove()">` : ''}
+        ${e.poster_path ? posterThumb(e.poster_path, 160, 'ethumb') : ''}
       </button>`;
   }
 
@@ -1808,7 +1890,7 @@
       html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang, full: true, mode, near: true }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
     }
     const box = $('#today');
-    box.innerHTML = html;
+    paint(box, html);
     box.hidden = !html;
     // Yours, not the map's: the pin between them goes, and the edge is the card's own (next.css).
     box.classList.toggle('mine', !!mode);
@@ -1904,7 +1986,8 @@
     // A slot of rows, as a Calendar's: each row its own stretch of the rule,
     // in the colour of the jurisdiction it is held in; a parish card's one
     // stretch a slot, in the parish's.
-    const slot = (es, o = {}) => `<div class="slot${here ? '' : ' rows'}">${es.map((e, i) => {
+    // `key`: what the slot is among the others, so drawn again it is the one it was (paint).
+    const slot = (es, o = {}) => `<div class="slot${here ? '' : ' rows'}" data-key="${esc(o.key)}">${es.map((e, i) => {
       seen.push(e.id);
       return eventRow(e, { ...o, now: o.live ? o.live.has(e) : o.now, here, focus, lang, same: i > 0, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
     }).join('')}</div>`;
@@ -1917,14 +2000,14 @@
       let div = '';
       if (!isEvening(s.rows[0])) day = true;
       else if (!eve) { eve = true; if (day) div = EVENING; }
-      return div + slot(s.rows, o);
+      return div + slot(s.rows, { ...o, key: s.time });
     }).join('');
     // Nearest: each part of the day nearest first, on now or later, each row
     // saying how far and then when, those as far as each other one slot; the
     // morning named when the evening follows it, its times no longer in order.
     const nearRows = (es, live = new Set(), n = Infinity) => {
-      const part = (rs) => TL.slotsOf(byNear(rs).slice(0, n), kmLabel).map(x => slot(x.rows, { live, nearFirst: true })).join('');
-      const m = part(es.filter(e => !isEvening(e))), ev = part(es.filter(isEvening));
+      const part = (rs, of) => TL.slotsOf(byNear(rs).slice(0, n), kmLabel).map(x => slot(x.rows, { live, nearFirst: true, key: `${of} ${x.time}` })).join('');
+      const m = part(es.filter(e => !isEvening(e)), 'day'), ev = part(es.filter(isEvening), 'eve');
       return `${m && ev ? MORNING : ''}${m}${m && ev ? EVENING : ''}${ev}`;
     };
     let title = 'Today', k = t, body = '';
@@ -1951,7 +2034,7 @@
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
       const nk = local(next).date;
-      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${slot([next], { lit: true })}`;
+      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${slot([next], { lit: true, key: 'next' })}`;
     }
     const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
@@ -2049,17 +2132,17 @@
   }
   const secHead = (title, act = '') => `<header class="shelf-head"><h2>${esc(title)}</h2>${act}</header>`;
   function shelf(el, title, sub, cards) {
-    el.innerHTML = `${secHead(title)}${sub ? `<p class="shelf-sub">${esc(sub)}</p>` : ''}<div class="shelf-row">${cards}</div>`;
+    paint(el, `${secHead(title)}${sub ? `<p class="shelf-sub">${esc(sub)}</p>` : ''}<div class="shelf-row">${cards}</div>`);
   }
   function renderCollections() {
     shelf($('#shelf-collections'), 'Collections', null, remember(curated()).map(collCard).join(''));
     // Languages: a chip each, its letters in its own script.
-    $('#shelf-languages').innerHTML = `${secHead('Languages')}<div class="lang-row">${remember(languageCollections()).map(c => `<button class="lchip" type="button" data-coll="${esc(c.id)}">
-        <span ${lookAttrs(c, 'lglyph')}>${esc(c.glyph || '')}</span><span>${esc(c.short || c.title)}</span><small>${c.ids.length}</small></button>`).join('')}</div>`;
+    paint($('#shelf-languages'), `${secHead('Languages')}<div class="lang-row">${remember(languageCollections()).map(c => `<button class="lchip" type="button" data-coll="${esc(c.id)}">
+        <span ${lookAttrs(c, 'lglyph')}>${esc(c.glyph || '')}</span><span>${esc(c.short || c.title)}</span><small>${c.ids.length}</small></button>`).join('')}</div>`);
     // Jurisdictions: a row each, in its colour, two to a line.
-    $('#shelf-jurisdictions').innerHTML = `${secHead('Jurisdictions')}<div class="juris-grid">${remember(jurisCollections()).map(c => `<button class="jrow" type="button" data-coll="${esc(c.id)}" style="--j:${shown(c.color || '#64748b')}">
+    paint($('#shelf-jurisdictions'), `${secHead('Jurisdictions')}<div class="juris-grid">${remember(jurisCollections()).map(c => `<button class="jrow" type="button" data-coll="${esc(c.id)}" style="--j:${shown(c.color || '#64748b')}">
         <span class="jmark">${c.logo ? `<img src="${esc(c.logo)}" alt="">` : I.cross}</span>
-        <span class="jt"><b>${esc(JURIS[c.jurisdiction]?.short || c.title)}</b><small>${c.ids.length} ${c.ids.length === 1 ? 'parish' : 'parishes'}</small></span></button>`).join('')}</div>`;
+        <span class="jt"><b>${esc(JURIS[c.jurisdiction]?.short || c.title)}</b><small>${c.ids.length} ${c.ids.length === 1 ? 'parish' : 'parishes'}</small></span></button>`).join('')}</div>`);
     renderLists();
   }
   // Saved (bookmarks), saved views and lists made by hand: a tint and a sign each.
@@ -2093,8 +2176,8 @@
     }).join('');
     const el = $('#favs');
     el.hidden = !rows;
-    el.innerHTML = rows ? `${secHead('Favourites', `<button class="shelf-act" type="button" data-coll="list-fav">Timetables${I.chev}</button>`)}
-      <div class="hlist">${rows}</div>` : '';
+    paint(el, rows ? `${secHead('Favourites', `<button class="shelf-act" type="button" data-coll="list-fav">Timetables${I.chev}</button>`)}
+      <div class="hlist">${rows}</div>` : '');
   }
   /** Your other lists, bookmarks and saved views, as rows: only once there is one. */
   /** What a filter set asks of a parish's services, and no more: what, which language, when. */
@@ -2142,8 +2225,8 @@
       ...savedViews().map(v => row(`data-view="${esc(v.path)}"`, VIEW_LOOK, viewTitle(v.path), v.path)),
     ];
     $('#shelf-lists').hidden = !rows.length;
-    $('#shelf-lists').innerHTML = rows.length ? `${secHead('Your lists')}<div class="hlist">${rows.join('')}
-        <button class="hrow new" type="button" data-newlist><span class="hic">${I.plusSm}</span><span class="ht"><b>New list</b></span></button></div>` : '';
+    paint($('#shelf-lists'), rows.length ? `${secHead('Your lists')}<div class="hlist">${rows.join('')}
+        <button class="hrow new" type="button" data-newlist><span class="hic">${I.plusSm}</span><span class="ht"><b>New list</b></span></button></div>` : '');
     renderPanel();
     // Today's buttons come with your first bookmark or star, and yours
     // (Today and the map) follows them as they change.
@@ -2171,8 +2254,8 @@
     });
   }
   /** A poster on the shelf, and what it is under it: its own words are on it already. */
-  const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img ${posterThumb(e.poster_path, 640)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.parentNode.classList.add('noimg')"></span>
+  const posterCard = (e, from, img = posterThumb(e.poster_path, 640)) => `<button class="poster" type="button" data-event="${esc(e.id)}">
+          <span class="pimg${img ? '' : ' noimg'}">${img}</span>
           <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
             ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
         </button>`;
@@ -2199,7 +2282,7 @@
       list = uniq.map(e => [e, away(e)]).sort((a, b) => a[1] - b[1]).slice(0, 12).map(x => x[0]);
     }
     list = list.sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
-    if (!list.length) { el.innerHTML = ''; return; }
+    if (!list.length) { paint(el, ''); return; }
     const cards = list.map(e => {
       const p = S.byId.get(e.parish_id);
       const d = distOf(p);
@@ -2277,7 +2360,7 @@
    * own stretch, in the colour of the jurisdiction it is held in.
    */
   const slotsHTML = (rows, row, byVenue) => TL.slotsOf(rows, e => local(e).hm)
-    .map(s => `<div class="slot${byVenue ? ' rows' : ''}">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0, tint: byVenue ? venueColor(e) : null })).join('')}</div>`).join('');
+    .map(s => `<div class="slot${byVenue ? ' rows' : ''}" data-key="${esc(s.time)}">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0, tint: byVenue ? venueColor(e) : null })).join('')}</div>`).join('');
   /** Where a row is held, as a colour: its venue parish's jurisdiction, or its own parish's. */
   const venueColor = (e) => parishColor(S.byId.get(e.location_parish_id) || S.byId.get(e.parish_id));
   function daysHTML(list, { start, days, linkFor, empty = false, none = 'Nothing in view', row = {}, byVenue = false }) {
@@ -2285,7 +2368,7 @@
     // Those at one time nearest first; a collection's under Nearest, each
     // part of each day by how far, those as far one slot (Kevin, 14 Nov 2026).
     const nearby = byVenue && nearOn();
-    const nearSlots = (es) => kmSlotsOf(es).map(x => `<div class="slot rows">${x.rows.map((e, i) => eventRow(e, { ...row, nearFirst: true, same: i > 0, tint: venueColor(e) })).join('')}</div>`).join('');
+    const nearSlots = (es, of) => kmSlotsOf(es).map(x => `<div class="slot rows" data-key="${esc(`${of} ${x.time}`)}">${x.rows.map((e, i) => eventRow(e, { ...row, nearFirst: true, same: i > 0, tint: venueColor(e) })).join('')}</div>`).join('');
     for (const e of byTimeNear(list)) {
       const k = local(e).date;
       if (!byDay.has(k)) byDay.set(k, []);
@@ -2300,7 +2383,7 @@
       if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>${esc(none)}</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
       const part = nearby ? nearSlots : (rs) => slotsHTML(rs, row, byVenue);
-      out.push(`<section class="sday" data-date="${k}">${head}${nearby && morning.length && evening.length ? MORNING : ''}${part(morning)}${evening.length ? EVENING + part(evening) : ''}</section>`);
+      out.push(`<section class="sday" data-date="${k}">${head}${nearby && morning.length && evening.length ? MORNING : ''}${part(morning, 'day')}${evening.length ? EVENING + part(evening, 'eve') : ''}</section>`);
     }
     return out.join('');
   }
@@ -2583,10 +2666,12 @@
     if (n) goBack(n);
   }
 
+  /** A card's name in its bar, and a line under it. */
+  const barTitle = (title, sub) => `<b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}`;
   function glassBar(title, sub, { share = true } = {}) {
     return `<div class="glassbar">
         ${share ? `<button class="gbtn" type="button" data-act="share" aria-label="Share">${I.share}</button>` : '<span class="gbtn-sp"></span>'}
-        <div class="gtitle"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+        <div class="gtitle">${barTitle(title, sub)}</div>
         <button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button>
       </div>`;
   }
@@ -3096,26 +3181,14 @@
     // Read in the list (its week bar held at the top), the same day is in view after.
     const wk = keep && el.querySelector('.cu-band > .wk'), bar = el.querySelector('.glassbar');
     const stay = wk && bar && wk.getBoundingClientRect().top <= bar.getBoundingClientRect().bottom + 1 ? dayInView(el) : null;
-    await swapDecoded(box, el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus));
+    // The days still wanted stay as they are, rows, logos and posters (paint).
+    paint(box, el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus));
     if (stay) toDay(el, stay, { smooth: false });
     const acts = el.querySelector('.cal-acts');
-    if (acts) acts.innerHTML = calActsHTML(el);
+    if (acts) paint(acts, calActsHTML(el));
     watchMore(el);
     weekAfterList(el);
     if (el._month && window.NextMonth) window.NextMonth.paint(el);
-  }
-  /**
-   * A box's contents drawn again with its pictures already decoded, so the
-   * parishes' logos and the posters do not blink out and back as the new
-   * ones load (Kevin, 7 Nov 2026). The browser has them already; a picture
-   * that takes longer than a moment is not waited for.
-   */
-  async function swapDecoded(box, html) {
-    const next = document.createElement('div');
-    next.innerHTML = html;
-    const imgs = [...next.querySelectorAll('img')];
-    if (imgs.length) await Promise.race([Promise.all(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : null))), new Promise(r => setTimeout(r, 250))]);
-    box.replaceChildren(...next.childNodes);
   }
   /**
    * The next fortnight under the days a card's Calendar shows, added below
@@ -3213,6 +3286,7 @@
           weekday: weekdayOf,
           timeHTML,
           avatar,
+          paint,
           pick: pickMonthDay,
           picked: (el) => (monthView(el) ? el._from || todayKey() : null),
           refresh: refreshComingUp,
@@ -3234,12 +3308,12 @@
     const off = !on && el._off && el._off.size;
     if (!on) { el._off = null; el._notices = null; }
     const acts = el.querySelector('.cal-acts');
-    if (acts) acts.innerHTML = calActsHTML(el);
+    if (acts) paint(acts, calActsHTML(el));
     if (on) {
       try { await loadMonth(); } catch (err) {
         console.warn(err);
         el._month = false;
-        if (acts) acts.innerHTML = calActsHTML(el);
+        if (acts) paint(acts, calActsHTML(el));
         toast('Month could not load. Check your connection and try again.');
         return;
       }
@@ -3288,7 +3362,7 @@
     for (const c of stack) {
       viewWeek(c);
       const acts = c.querySelector('.cal-acts');
-      if (acts) acts.innerHTML = calActsHTML(c);
+      if (acts) paint(acts, calActsHTML(c));
     }
     monthFollow();
   }
@@ -3367,8 +3441,14 @@
   const dotsHTML = (es) => es.slice(0, 4).map(e => `<i class="${tombOf(e) ? 'tomb' : ''}" style="--c:${kindColour(e)}"></i>`).join('') + (es.length > 4 ? '<b>+</b>' : '');
 
   /** A card's Calendar head: the month's name (it opens the month), Today when the list is elsewhere, its Filters (`acts`), and its weeks. */
-  function weekBarHTML(from, acts) {
+  function weekBarHTML(from, acts, kept = false) {
     const t = todayKey(), last = addDays(t, 365);
+    // An island (paint): its dots, its swiped week, the month open in it and
+    // its listeners are this page's own doing, in no markup. A card drawn
+    // again keeps the bar it has (`kept`: only its place is said), until the
+    // day turns and its year of weeks starts a day on.
+    const keep = `data-keep="wk:${t}"`;
+    if (kept) return `<div class="wk" ${keep}></div>`;
     const weeks = [];
     for (let w = sundayOf(t); w <= last; w = addDays(w, 7)) {
       const days = [];
@@ -3379,7 +3459,7 @@
       weeks.push(`<div class="wk-week" data-week="${w}">${days.join('')}</div>`);
     }
     // Month, on a phone: no chevron from the first paint (viewWeek).
-    return `<div class="wk${oneDay() ? ' mview' : ''}">
+    return `<div class="wk${oneDay() ? ' mview' : ''}" ${keep}>
         <div class="wk-head">
           <h2 class="wk-title"><button class="wk-month" type="button" data-wk-month aria-expanded="false" title="The whole month"><span>${esc(monthWords(from || t))}</span>${CHEV}</button></h2>
           <div class="wk-acts">
@@ -3409,10 +3489,26 @@
     if (wk) el.style.setProperty('--wk-h', `${w}px`);
     return { bar: h, wk: w };
   }
-  /** A card's week bar wired up: its dots as its weeks come into view, its size for what sticks under it. */
+  /** Has the card today's week bar already: one a card drawn again keeps (weekBarHTML)? */
+  const weekKept = (el) => !!el.querySelector(`.cu-band > .wk[data-keep="wk:${todayKey()}"]`);
+  /**
+   * A card's week bar wired up: its dots as its weeks come into view, its
+   * size for what sticks under it. The bar the card had, kept as the card was
+   * drawn again, is wired already: its dots again (the list under it
+   * changed), its Filters' count, and the day it is on.
+   */
   function initWeek(el) {
     const wk = el.querySelector('.cu-band > .wk');
     if (!wk) return;
+    if (el._wk === wk) {
+      const acts = wk.querySelector('.cal-acts');
+      if (acts) paint(acts, calActsHTML(el));
+      el._wkCur = null;
+      weekAfterList(el);
+      viewWeek(el);
+      return;
+    }
+    el._wk = wk;
     if (el._wkIO) el._wkIO.disconnect();
     if (el._wkRO) el._wkRO.disconnect();
     const strip = wk.querySelector('.wk-strip');
@@ -3679,7 +3775,7 @@
   function paintFavCount(pid) {
     for (const el of document.querySelectorAll(`[data-pid="${CSS.escape(pid)}"] .ph`)) {
       const p = S.byId.get(pid);
-      if (p) el.innerHTML = parishTopHTML(p);
+      if (p) paint(el, parishTopHTML(p));
     }
   }
   /**
@@ -3721,27 +3817,28 @@
     }
     // Its names, logo, link and buttons, which an edit to its details changes.
     const bar = el.querySelector('.gtitle');
-    if (bar) bar.innerHTML = `<b>${esc(p.name)}</b>${JURIS[p.jurisdiction]?.long ? `<small>${esc(JURIS[p.jurisdiction].long)}</small>` : ''}`;
+    // Each part written only where it differs (paint): its logo and its posters stay on screen.
+    if (bar) paint(bar, barTitle(p.name, JURIS[p.jurisdiction]?.long));
     const top = el.querySelector('.ph');
-    if (top) top.innerHTML = parishTopHTML(p);
+    if (top) paint(top, parishTopHTML(p));
     const acts = el.querySelector('.actions');
-    if (acts) acts.innerHTML = actionsHTML(p);
+    if (acts) paint(acts, actionsHTML(p));
     const own = el.querySelector('.p-links');
-    if (own) { own.innerHTML = linksHTML(p); own.hidden = !own.innerHTML; }
+    if (own) { const html = linksHTML(p); paint(own, html); own.hidden = !html; }
     el._segs = segsFor({ parish: p, focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     el.style.setProperty('--j', jColor(p.jurisdiction));
     const sum = el.querySelector('.summary');
-    if (sum) sum.innerHTML = summaryHTML(p);
+    if (sum) paint(sum, summaryHTML(p));
     paintParishToday(el);
     const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
-    if (times) times.innerHTML = timesHTML(p, el._focus);
+    if (times) paint(times, timesHTML(p, el._focus));
     const on = el.querySelector('.p-whatson');
-    if (on) { on.innerHTML = parishWhatsOnHTML(p.id); on.hidden = !on.innerHTML; }
-    if (details) details.innerHTML = detailsHTML(p);
+    if (on) { const html = parishWhatsOnHTML(p.id); paint(on, html); on.hidden = !html; }
+    if (details) paint(details, detailsHTML(p));
     const sug = el.querySelector('.p-suggest');
-    if (sug) sug.innerHTML = suggestEditHTML(p.id);
+    if (sug) paint(sug, suggestEditHTML(p.id));
     paintAddBadge(el);
     refreshComingUp(el);
   }
@@ -3769,13 +3866,14 @@
     const box = el.querySelector('.ptoday');
     if (!box) return;
     const pid = el.dataset.pid, focus = el._focus;
-    box.innerHTML = parishTodayHTML(pid, focus, null);
-    box.hidden = !box.innerHTML;
+    const html = parishTodayHTML(pid, focus, null);
+    paint(box, html);
+    box.hidden = !html;
     if (!focus) return;
     const ask = el._todayAsk = {};
     nextLit(pid, focus).then(next => {
       if (el._todayAsk !== ask || !el.isConnected) return;
-      box.innerHTML = parishTodayHTML(pid, focus, next || 'none');
+      paint(box, parishTodayHTML(pid, focus, next || 'none'));
     });
   }
   /** "Talks", "Liturgies on Wednesdays", "Evening services in English": what a focus asks. */
@@ -4005,7 +4103,7 @@
     try { await ensureLoaded(end); } catch (err) { console.warn(err); return; }
     if (!stack.includes(el)) return;
     const box = el.querySelector('.ev-cal-box');
-    if (box) box.innerHTML = calendarHTML(el._event, el._match);
+    if (box) paint(box, calendarHTML(el._event, el._match));
   }
 
   function openParish(pid, { entry = true, from = null, focus } = {}) {
@@ -4231,7 +4329,16 @@
   }
 
   /** A collection's card as it now is: its bar's title, and everything under the bar. */
-  function collectionHTML(c, { from = null, days = CU_DAYS, origin = null } = {}) {
+  // Where the card's map stands in its markup, while the card has it (mapToCard).
+  const CARD_MAP = '<div class="card-map" data-keep="map"></div>';
+  /**
+   * A collection's card: its bar's words (`title`), what is under the bar
+   * (`body`), and the parishes past the first thirty (`rest`). `map`: the
+   * card's map is at its top. `on`: the collection less the parishes its
+   * Month has switched off, for its Calendar. `keptWeek`: the card has its
+   * week bar already (weekKept).
+   */
+  function collectionHTML(c, { from = null, days = CU_DAYS, origin = null, map: hasMap = false, on = c, keptWeek = false } = {}) {
     const o = origin || sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
@@ -4258,7 +4365,7 @@
         || nextOf(p.id, answers);
       // Its lines, or nothing: a parish with no times says no more (Kevin, 29 Oct 2026).
       const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only: asked, among: cf }) : '';
-      return `<article class="citem">
+      return `<article class="citem" data-key="${esc(p.id)}">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
             <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}${parishLangs(p).length ? ` · ${esc(parishLangs(p).slice(0, 2).join(', '))}` : ''}</small>
@@ -4273,8 +4380,7 @@
     const won = collWhatsOnHTML(c);
     const badges = filterBadges(cf);
     const stripe = stripeOf(c, ps);
-    const html = `${glassBar(c.title, `${ps.length}${c.of ? ` of ${c.of}` : ''} places`)}
-      <div class="sheet-scroll">
+    const body = `${hasMap ? CARD_MAP : ''}
         <div ${lookAttrs(c, 'chero')}>
           ${stripe ? `<span class="cstripe" style="background:${stripe}"></span>` : ''}
           <div class="ckind"><span class="ckicker">${esc(c.kicker || '')}</span>${badges.map(badgeHTML).join('')}</div>
@@ -4297,13 +4403,12 @@
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          ${weekBarHTML(from, calMenuHTML(collFilterCount(c), oneDay()))}
+          ${weekBarHTML(from, calMenuHTML(collFilterCount(c), oneDay()), keptWeek)}
           <div class="near-float">${nearBtnHTML(true)}</div>
-          <div class="cu">${collFeedHTML(c, days, from)}</div>
+          <div class="cu">${collFeedHTML(on, days, from)}</div>
         </section>` : ''}
-        <div class="toolbar-space"></div>
-      </div>`;
-    return { html, rest: () => ps.slice(LIMIT).map(item).join('') };
+        <div class="toolbar-space"></div>`;
+    return { title: barTitle(c.title, `${ps.length}${c.of ? ` of ${c.of}` : ''} places`), body, rest: () => ps.slice(LIMIT).map(item).join('') };
   }
   function openCollection(c, { entry = true, from = null } = {}) {
     // Its frame and its map first: what it lists is what the map shows (Kevin, 13 Nov 2026).
@@ -4329,20 +4434,16 @@
     // Nearest first: to you; else, kept to its map, to the map's middle;
     // else from where the page's map was looking, as before it had a map.
     const origin = S.loc || (S.mapCard && S.mapCard.el === el && !c.of && !c.here && pageView ? { lng: pageView.center[0], lat: pageView.center[1] } : null);
-    const { html, rest } = collectionHTML(c, { from: el._from, days, origin });
-    const box = document.createElement('div');
-    box.innerHTML = html;
     const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
+    // Only what changed is drawn (paint): the map at its top and the week bar
+    // stay as they are, a parish still listed is the row it was, logo and
+    // all, and its timetables stay open if they were. Its Calendar is its
+    // parishes' less those its Month has switched off.
+    const { title, body, rest } = collectionHTML(c, { from: el._from, days, origin, map: !!scroller.querySelector(':scope > .card-map'), on: collOn(el), keptWeek: weekKept(el) });
     const m = scroller.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    // Its timetables stay open if they were.
-    const open = !!scroller.querySelector('.cstack input:checked');
-    // Everything again but the map at its top, which stays as it is.
-    const keep = scroller.querySelector(':scope > .card-map');
-    for (const n of [...scroller.childNodes]) if (n !== keep) n.remove();
-    scroller.insertAdjacentHTML('beforeend', box.querySelector('.sheet-scroll').innerHTML);
-    if (open) { const i = scroller.querySelector('.cstack input'); if (i) i.checked = true; }
-    if (bar) bar.innerHTML = box.querySelector('.gtitle').innerHTML;
+    paint(scroller, body);
+    if (bar) paint(bar, title);
     el._rest = rest;
     el._days = days;
     fitLinks(el);
@@ -4450,7 +4551,7 @@
     const tabs = JURIS_ORDER.filter(j => all.some(p => p.jurisdiction === j));
     const item = (p) => {
       const d = distOf(p);
-      return `<article class="citem">
+      return `<article class="citem" data-key="${esc(p.id)}">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">${avatar(p, 'md')}
             <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</small></span></button>
           <a class="cgive" href="${esc(p.donation_url)}" target="_blank" rel="noopener" aria-label="${esc(`Donate to ${p.name}`)}">${I.heart}</a>
@@ -4476,8 +4577,8 @@
   function setDonate(el, juris) {
     el._juris = juris || null;
     el._segs = donateSegs(el._juris);
-    el.querySelector('.gtitle').innerHTML = `<b>Donate</b>${el._juris ? `<small>${esc(JURIS[el._juris]?.long || '')}</small>` : ''}`;
-    el.querySelector('.sheet-scroll').innerHTML = donateBodyHTML(el._juris);
+    paint(el.querySelector('.gtitle'), barTitle('Donate', el._juris ? JURIS[el._juris]?.long : null));
+    paint(el.querySelector('.sheet-scroll'), donateBodyHTML(el._juris));
     fitLinks(el);
     syncURL();
   }
@@ -4651,13 +4752,11 @@
     el._segs = el._match ? matchSegs(el._match, e.id) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const bar = el.querySelector('.gtitle');
-    if (bar) bar.innerHTML = `<b>${esc(e.title)}</b>${p ? `<small>${esc(p.name)}</small>` : ''}`;
-    const scroller = el.querySelector('.sheet-scroll');
-    const top = scroller.scrollTop;
-    scroller.innerHTML = eventBodyHTML(e, el._match);
-    scroller.scrollTop = top;
+    if (bar) paint(bar, barTitle(e.title, p ? p.name : ''));
+    // Where it differs only (paint): its poster stays on screen, and the card where it was scrolled to.
+    paint(el.querySelector('.sheet-scroll'), eventBodyHTML(e, el._match));
     const tools = el.querySelector('.floatbar');
-    if (tools) tools.innerHTML = eventTools(e);
+    if (tools) paint(tools, eventTools(e));
     fitLinks(el);
   }
   // ── Bookmarks (Save, Saved on the page) ───────────────────────────────
@@ -4695,7 +4794,7 @@
   function afterMarks() {
     for (const el of stack) {
       if (el._event) { const b = el.querySelector('[data-act="bookmark"]'); if (b) b.outerHTML = bookmarkButton(el._event); }
-      if (el.classList.contains('bookmarks')) el.querySelector('.sheet-scroll').innerHTML = bookmarksBodyHTML();
+      if (el.classList.contains('bookmarks')) paint(el.querySelector('.sheet-scroll'), bookmarksBodyHTML());
     }
     renderLists();
   }
@@ -4935,7 +5034,7 @@
     if (!fpop) return;
     const sc = fpop.scope, el = fpopEl();
     if (sc !== 'page' && !stack.includes(sc)) return closeFilters();
-    el.innerHTML = sc === 'page' ? panelHTML() : cardFiltersHTML(sc);
+    paint(el, sc === 'page' ? panelHTML() : cardFiltersHTML(sc));
     el.querySelectorAll('.fsec').forEach(sec => {
       const on = [...sec.querySelectorAll('.fbody .fpill.on')].map(x => x.textContent.trim());
       sec.querySelector('.fsum').textContent = on.join(', ').replace(/, only\b/g, ' only') || 'Any';
@@ -5234,13 +5333,13 @@
       <div class="sheet-scroll"><div class="sr-results" id="sr-results">${searchResultsHTML(initial)}</div></div>`, 'search');
     const input = el.querySelector('#sr-input');
     let t = null;
-    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value); }, 70); });
+    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { paint(el.querySelector('#sr-results'), searchResultsHTML(input.value)); }, 70); });
     // Enter searches and puts the keyboard away, so the results are in sight; a result opens with a tap.
     input.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       clearTimeout(t);
-      el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value);
+      paint(el.querySelector('#sr-results'), searchResultsHTML(input.value));
       rememberQuery(input.value);
       input.blur();
     });
@@ -5254,7 +5353,7 @@
     const input = el && el.querySelector('#sr-input');
     if (!input) return;
     input.value = q;
-    el.querySelector('#sr-results').innerHTML = searchResultsHTML(q);
+    paint(el.querySelector('#sr-results'), searchResultsHTML(q));
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────
@@ -5290,7 +5389,7 @@
     const stay = wk && bar && wk.getBoundingClientRect().top <= bar.getBoundingClientRect().bottom + 1 ? dayInView(el) : null;
     const c = el._shown || shownOf(el);
     const box = el.querySelector('.ctoday');
-    if (box) box.innerHTML = todayHTML(feedFor(2).filter(inCollection(c)), { lang: (c.f || {}).lang || null, near: true });
+    if (box) paint(box, todayHTML(feedFor(2).filter(inCollection(c)), { lang: (c.f || {}).lang || null, near: true }));
     for (const b of el.querySelectorAll('[data-near-sort]')) b.setAttribute('aria-pressed', String(nearOn()));
     await refreshComingUp(el, { keep: false });
     if (stay) toDay(el, stay, { smooth: false });
@@ -5374,7 +5473,7 @@
       return;
     }
     if ((b = t.closest('[data-more-events]')) && searchState) {
-      b.previousElementSibling.innerHTML = searchState.es.slice(0, 60).map(e => eventRow(e, { showDay: true })).join('');
+      paint(b.previousElementSibling, searchState.es.slice(0, 60).map(e => eventRow(e, { showDay: true })).join(''));
       b.remove();
       return;
     }
@@ -5745,6 +5844,9 @@
   // ── Boot ──────────────────────────────────────────────────────────────
 
   async function boot() {
+    // A page kept for no signal (sw.js) can be older than this file: one from
+    // before morph.js names no such script, and nothing here draws without it.
+    if (!window.AgoraMorph) await loadScript('/shared/morph.js');
     // The WhatsApp reply's ?draft=241, before the address is tidied.
     const linkedDraft = new URLSearchParams(location.search).get('draft');
     const arrivedAt = location.pathname + location.search;

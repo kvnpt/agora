@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 import { servePage, pageOf, indexedCollections } from './pages.mjs';
 import { timetableModel } from '../lib/lite-timetable.mjs';
 import { previewImage } from '../lib/page-head.mjs';
+import { ROW_THUMB } from '../lib/page-card.mjs';
 import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
@@ -577,6 +578,20 @@ test("an event's card says its kind in a pill, and its subtitle under its title"
   const poster = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type, poster_path)
     VALUES (?, 'manual', 'Talk night', '2026-10-11T08:00:00Z', 'talk', 'approved', 'headless', '/posters/t.jpg') RETURNING id`).get(PARISH).id;
   assert.match(card((await get(`/${poster}`)).html), /<div class="ev-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/div>\s*<h1>Talk night<\/h1>/);
+});
+
+test("a row's poster is the page's own thumbnail, at the page's address for it", async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type, poster_path)
+    VALUES (?, 'manual', 'Talk night', '2026-10-11T08:00:00Z', 'talk', 'approved', 'headless', '/posters/t.jpg?v=3')`).run(PARISH);
+  const c = card((await get('/sgr')).html);
+  // Cut to the row's size, the whole poster named for where there is nothing to cut it (a Preview).
+  assert.match(c, /<img class="ethumb" src="\/cdn-cgi\/image\/width=160,quality=78,format=auto,fit=scale-down\/posters\/t\.jpg\?v=3" data-full="\/posters\/t\.jpg\?v=3" alt="" loading="lazy" onerror="[^"]+">/);
+  // The page's row takes this one's place asking for the same address, so it has the picture already (next.js posterThumb).
+  const page = fs.readFileSync(new URL('../../public/next/next.js', import.meta.url), 'utf8');
+  assert.ok(page.includes(`/cdn-cgi/image/width=\${width},quality=78,format=auto,fit=scale-down\${p}`), 'next.js cuts its thumbnails the same way');
+  assert.ok(page.includes(`posterThumb(e.poster_path, 160, 'ethumb')`), 'and a row\'s to the same width');
+  assert.equal(ROW_THUMB, 'width=160,quality=78,format=auto,fit=scale-down');
 });
 
 test('the home page is the site, indexable; anything else is the page with its words, noindex', async () => {

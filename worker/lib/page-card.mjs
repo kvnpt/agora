@@ -120,6 +120,21 @@ function avatar(p, cls, color) {
   const tag = esc(String(p.acronym || p.name || '?').slice(0, 3));
   return `<span class="av ${cls}" style="--j:${color}">${p.logo_path ? `<img src="${esc(p.logo_path)}" alt="">` : ''}<b>${tag}</b></span>`;
 }
+/**
+ * A row's poster, small: the thumbnail the page's own row asks for, at the
+ * same address (next.js posterThumb), cut by the zone's image
+ * transformations. The whole poster is 250–370 KB for a picture 44 px wide,
+ * and the page's row, taking this one's place, asked for the thumbnail
+ * anyway: two fetches, and the picture gone and back between them. Where
+ * there are no transformations (a Preview, wrangler dev) the address answers
+ * 404 and the whole poster stands in, as on the page.
+ */
+export const ROW_THUMB = 'width=160,quality=78,format=auto,fit=scale-down';
+function thumbHTML(path) {
+  const p = String(path);
+  if (!p.startsWith('/posters/')) return `<img class="ethumb" src="${esc(p)}" alt="" loading="lazy">`;
+  return `<img class="ethumb" src="/cdn-cgi/image/${ROW_THUMB}${esc(p)}" data-full="${esc(p)}" alt="" loading="lazy" onerror="if(this.dataset.full){this.src=this.dataset.full;this.removeAttribute('data-full')}">`;
+}
 const tel = (s) => String(s).replace(/[^\d+]/g, '');
 const TOMB = { cancelled: 'Cancelled', combined: 'Combined', break: 'Break' };
 const shown = (e) => !e.is_tombstone && (!e.status || e.status === 'approved') && !e.break_from && !e.combined_into_event_id;
@@ -181,7 +196,7 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null, current
         ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
         ${away}
         ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
-      ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy">` : ''}
+      ${e.poster_path ? thumbHTML(e.poster_path) : ''}
     </a>`;
 }
 

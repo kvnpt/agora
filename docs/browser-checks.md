@@ -185,6 +185,29 @@ browser script:
 - **The dev bypass makes every browser an admin.** For a visitor, answer
   `/api/admin/ping` with a 403 in the context (`ctx.route`).
 
+## Pictures that blink
+
+A list drawn again must keep its pictures (`paint`,
+[architecture.md](architecture.md)). Chromium cannot show you a blink: it draws
+a picture it holds the moment its element exists, so a film of production's
+map moving shows nothing wrong there, and nor does WebKitGTK. It is Safari on
+a phone that draws the new element late. Count the cause instead: `<img>`
+elements made while nothing new came into view.
+
+```js
+// before the action; then act; then read window.__made
+const known = new WeakSet(document.images); window.__made = 0;
+new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {
+  for (const i of n.nodeType !== 1 ? [] : n.tagName === 'IMG' ? [n] : n.querySelectorAll('img'))
+    if (!known.has(i)) { known.add(i); window.__made++; }   // a moved one is not made again
+}))).observe(document.documentElement, { childList: true, subtree: true });
+```
+
+Do the action once unmeasured first, so nothing counted is a first fetch. To
+check a paint is right, wrap `AgoraMorph.morph` and compare the box afterwards
+with a `<template>` holding the same markup (islands aside): the two must be
+`isEqualNode`.
+
 ## Useful handles the page exposes
 
 ```js
