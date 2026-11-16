@@ -27,7 +27,7 @@ import linkWords from '../../public/shared/link-words.js';
 import lines from '../../public/shared/timetable-lines.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { previewLogo } from './juris-logos.mjs';
-import { jurisLabel, weekFrom, parishSlug, isNarrowed, time12 } from './lite-page.mjs';
+import { jurisLabel, weekFrom, parishSlug, time12 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 /** The accent when the page is not one jurisdiction's: the app's own blue (next.css --accent). */

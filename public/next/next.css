@@ -863,7 +863,6 @@ body.map-full .parish-row {
 .shelf-act { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--accent); font-size: 14px; font-weight: 600; }
 .shelf-act svg { width: 14px; height: 14px; }
 .shelf-sub { margin: -4px var(--pad) 8px; color: var(--text-2); font-size: 13.5px; }
-.shelf-empty { margin: 0 var(--pad); color: var(--text-3); font-size: 14px; line-height: 1.4; }
 .shelf-row {
   display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
   padding: 2px var(--pad) 6px; scroll-padding: 0 var(--pad);
@@ -1480,10 +1479,6 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .lrow + .lrow { border-top: 1px solid var(--line); }
 .lrow > svg { color: var(--accent); flex: none; }
 .lic { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 17px; }
-/* A row's icon that is not one of the line icons: the cross, or the
-   jurisdiction's own logo where /admin has one. */
-.lrow-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--accent); }
-.lrow-ic img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px; }
 .ln { flex: 1; display: flex; flex-direction: column; }
 .ln small { color: var(--text-2); font-size: 13px; }
 .lck { color: var(--accent); opacity: 0; }
@@ -1718,12 +1713,6 @@ body.dialog-open { overflow: hidden; }
   .form-sheet-back.fs-nested.in .form-sheet { transform: translateY(24px); }
 }
 @media (prefers-reduced-motion: reduce) { .form-sheet-back .form-sheet, .form-sheet-back { transition: none; } .fs-ways { animation: none; } }
-.escalate-modal-sub { margin: -10px 0 14px; font-size: 13px; color: var(--text-2); }
-.donate-close {
-  position: absolute; top: 12px; right: 14px; width: 28px; height: 28px;
-  font-size: 22px; line-height: 1; color: var(--text-2); text-align: center;
-}
-.donate-close:hover { color: var(--text); }
 /* askChoice: one question, its answers, each saying what it will do. */
 .choice-modal { max-width: 420px; }
 .choice-body { margin: 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }

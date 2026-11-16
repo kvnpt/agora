@@ -36,8 +36,6 @@
  */
 export const PROPOSABLE = ['parish.delete', 'parish.acronym', 'colors.edit', 'event.combine'];
 
-/** The one that is a scope refusal rather than a capability refusal. */
-export const SCOPE_PROPOSABLE = 'event.combine';
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 

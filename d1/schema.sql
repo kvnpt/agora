@@ -1006,12 +1006,13 @@ CREATE TABLE parish_notices_seen (
 -- itself — the address, the phone number, whether a Vespers exists at all —
 -- and it exists because a parish has several sources and they disagree.
 --
--- The ladder is written down once, in public/shared/source-tiers.js:
+-- The ladder was written down once, in public/shared/source-tiers.js (retired
+-- with the rulings, and removed in November 2026 when nothing read it):
 --
 --   admin > parish site/social > jurisdiction directory > search > directory > null
 --
--- and `outranks` there is the only comparison anyone makes. This table stores
--- the rulings; that file stores the order.
+-- and `outranks` there was the only comparison anyone made. This table stored
+-- the rulings; that file stored the order.
 --
 -- THE CASE THAT PAID FOR IT. St Mary Magdalene, Elimbah publishes two Vespers
 -- on its Antiochian directory page. Neither has run for years — confirmed by
@@ -1069,7 +1070,7 @@ CREATE TABLE info_overrides (
   --               way to say a thing beats two.
   decision     TEXT NOT NULL CHECK(decision IN ('pin','suppress')),
 
-  -- Where the BETTER information came from — one of source-tiers.js. Not the
+  -- Where the BETTER information came from — a rung of the ladder above. Not the
   -- tier being refused: a scrape may write here only if it outranks this.
   tier         TEXT NOT NULL CHECK(tier IN ('admin','parish','jurisdiction','search','directory')),
 

@@ -92,13 +92,6 @@
   const jColor = (j) => (window.agoraJurisdictionColor ? window.agoraJurisdictionColor(j) : '#888');
 
   // Kinds, in the groups the app's toolbar already uses: Services, Talks, Socials.
-  const GROUPS = [
-    { id: 'services', label: 'Services', kinds: ['liturgy', 'prayer', 'feast'] },
-    { id: 'talks', label: 'Talks', kinds: ['talk'] },
-    { id: 'socials', label: 'Socials', kinds: ['social', 'youth'] },
-    { id: 'other', label: 'Other', kinds: ['other'] },
-  ];
-  const groupOf = (kind) => (GROUPS.find(g => g.kinds.includes(kind)) || GROUPS[3]).id;
   const kindLabel = (k) => (window.AgoraEventTypes ? window.AgoraEventTypes.eventTypeLabel(k) : k);
   function roundel(kind, big) {
     const c = window.AgoraEventTypes.kindColors(kind || 'other', dark());
@@ -110,12 +103,6 @@
     const c = window.AgoraEventTypes.kindColors(kind || 'other', !light && dark());
     return `<span class="kpill" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(kindLabel(kind || 'other'))}</span>`;
   }
-
-  const parseLangs = (v) => {
-    if (!v) return null;
-    if (Array.isArray(v)) return v;
-    try { const a = JSON.parse(v); return Array.isArray(a) ? a : null; } catch { return null; }
-  };
 
   // ── State ─────────────────────────────────────────────────────────────
 
@@ -1037,28 +1024,25 @@
     lastLink = key;
     fitLinks(btn.parentNode);
   }
-  /** A day's link to the clipboard, and a tick where its icon was. */
-  async function copyDay(btn) {
-    const url = location.origin + btn.dataset.copyDay;
-    try { await navigator.clipboard.writeText(url); } catch {
+  /** Words to the clipboard, the old way where the new one is refused. */
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); } catch {
       const ta = document.createElement('textarea');
-      ta.value = url; document.body.appendChild(ta); ta.select();
+      ta.value = text; document.body.appendChild(ta); ta.select();
       try { document.execCommand('copy'); } catch { /* nothing more to try */ }
       ta.remove();
     }
+  }
+  /** A day's link to the clipboard, and a tick where its icon was. */
+  async function copyDay(btn) {
+    await copyText(location.origin + btn.dataset.copyDay);
     btn.classList.add('copied');
     btn.innerHTML = CHECK;
     clearTimeout(btn._t);
     btn._t = setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON; }, 1200);
   }
   async function copyLink(btn) {
-    const url = location.origin + btn.dataset.copy;
-    try { await navigator.clipboard.writeText(url); } catch {
-      const ta = document.createElement('textarea');
-      ta.value = url; document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
-      ta.remove();
-    }
+    await copyText(location.origin + btn.dataset.copy);
     const el = btn.querySelector('.url-text');
     const was = el.innerHTML;
     btn._copied = true;
@@ -1222,7 +1206,6 @@
   window.agoraStateRef = mapState;
   window.openParishSheet = (id) => openParish(id);
   window.agoraOpenEventSheet = (id) => openEvent(id);
-  window.agoraClearParishFocus = () => {};
   window.agoraIsFavourite = (id) => isFav(id);
   window.rawJurisColor = (j) => jColor(j);
   // No sheet covers this map, so a fit or a grape's fly-in centres on the
@@ -1651,13 +1634,13 @@
     renderInViewChip();
     renderParishRow();
   }
+  /** Parishes as a stack of logos shows them: logos first, then those with times, then the nearest. */
+  const stackRank = (ps, o = sortOrigin()) => ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
+    || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
+    || (o ? km(o, a) - km(o, b) : 0));
   function renderInViewChip() {
     const ps = viewParishes();
-    const o = sortOrigin();
-    // Logos first, then parishes with times, then the nearest.
-    const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
-      || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
-      || (o ? km(o, a) - km(o, b) : 0));
+    const ranked = stackRank(ps);
     const logos = (n) => `<span class="stackrow">${ranked.slice(0, n).map(p => avatar(p, 'stack')).join('')}</span>`;
     const place = esc(S.place || '');
     const one = ps.length === 1 ? ps[0] : null;
@@ -2260,20 +2243,26 @@
             ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
         </button>`;
 
+  /**
+   * The things with a poster still to come that `pass`: the three weeks the
+   * feed holds (one-offs, and rule occurrences that carry their own), then
+   * the stored one-offs after them, to `horizon`. Regular services are the
+   * timetable's; What's on is for the things that happen once.
+   */
+  function posterPool(pass, horizon = Infinity) {
+    const now = Date.now();
+    return feedFor(21)
+      .concat((window.agoraBundle.raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
+      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && pass(e));
+  }
+  /** Whose poster it is, under it. */
+  const posterFrom = (p, more = '') => `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${more}</span></span>`;
   function renderWhatsOn() {
     const el = $('#shelf-whatson');
-    const raw = window.agoraBundle.raw;
-    if (!raw) return;
-    const now = Date.now();
-    const horizon = now + 60 * DAY;
+    if (!window.agoraBundle.raw) return;
     // The map's: where it is looking, and what its tabs and Filters ask, as
     // Today is (Kevin, 6 Nov 2026).
-    // One-offs with posters first, then rule occurrences that carry their own.
-    const pool = feedFor(21)
-      .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
-      // Regular services are the timetable's; this shelf is for the things that happen once.
-      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
-    const uniq = oncePerPoster(pool);
+    const uniq = oncePerPoster(posterPool(eventPasses, Date.now() + 60 * DAY));
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
     if (list.length < 2) {
@@ -2286,7 +2275,7 @@
     const cards = list.map(e => {
       const p = S.byId.get(e.parish_id);
       const d = distOf(p);
-      return posterCard(e, `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span>`);
+      return posterCard(e, posterFrom(p, d != null ? ` · ${distHTML(d, 'span')}` : ''));
     }).join('');
     shelf(el, "What's on", whatsOnWords(), cards);
   }
@@ -3707,18 +3696,14 @@
    * parish's. None, no section.
    */
   function parishWhatsOnHTML(pid) {
-    const raw = window.agoraBundle.raw;
-    if (!raw) return '';
-    const now = Date.now();
-    const pool = feedFor(21)
-      .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
-      .filter(e => e.poster_path && visible(e) && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventParishIds(e).includes(pid));
-    const list = oncePerPoster(pool).slice(0, 12);
+    if (!window.agoraBundle.raw) return '';
+    const list = oncePerPoster(posterPool(e => visible(e) && eventParishIds(e).includes(pid))).slice(0, 12);
+    return whatsOnHTML(list, e => (e.parish_id !== pid ? S.byId.get(e.parish_id) : null));
+  }
+  /** A card's What's on: its posters in a row, each saying whose where `whose` names a parish. None, no section. */
+  function whatsOnHTML(list, whose) {
     if (!list.length) return '';
-    const cards = list.map(e => {
-      const host = e.parish_id !== pid ? S.byId.get(e.parish_id) : null;
-      return posterCard(e, host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : '');
-    }).join('');
+    const cards = list.map(e => { const p = whose(e); return posterCard(e, p ? posterFrom(p) : ''); }).join('');
     return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
   }
   function detailsHTML(p) {
@@ -4273,29 +4258,15 @@
   }
   /** What's on at a collection's parishes: the page's shelf kept to them and to its filters. */
   function collWhatsOnHTML(c) {
-    const raw = window.agoraBundle.raw;
-    if (!raw || !c.ids.length) return '';
-    const now = Date.now();
-    const ok = inCollection(c);
-    const pool = feedFor(21)
-      .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
-      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && ok(e));
-    const list = oncePerPoster(pool).slice(0, 12);
-    if (!list.length) return '';
-    const cards = list.map(e => {
-      const p = S.byId.get(e.parish_id);
-      return posterCard(e, p ? `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p.name)}</span></span>` : '');
-    }).join('');
-    return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
+    if (!window.agoraBundle.raw || !c.ids.length) return '';
+    return whatsOnHTML(oncePerPoster(posterPool(inCollection(c))).slice(0, 12), e => S.byId.get(e.parish_id));
   }
   /**
    * A collection's parishes folded behind their logos, as the chip under the
    * map has them: logos first, then those with times, then the nearest.
    */
   function stackHTML(ps, times, of = 0, o = sortOrigin()) {
-    const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
-      || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
-      || (o ? km(o, a) - km(o, b) : 0));
+    const ranked = stackRank(ps, o);
     const n = ps.length, what = times ? 'timetables' : 'them';
     return `<label class="cstack"><input type="checkbox" hidden>
         <span class="stackrow">${ranked.slice(0, STACK_LOGOS).map(p => avatar(p, 'stack')).join('')}</span>
@@ -5304,7 +5275,7 @@
     const cs = searchCollections(Q);
     const intent = Q.kind || Q.prayer || Q.days || (Q.lang && !Q.text.some(w => !(w in LANG_WORDS)));
     const sections = [];
-    const evSec = es.length ? `<h3 class="sr-sec">${intent ? 'Services & events' : 'Services & events'}<span>${es.length > 60 ? '60+' : es.length}</span></h3>
+    const evSec = es.length ? `<h3 class="sr-sec">Services & events<span>${es.length > 60 ? '60+' : es.length}</span></h3>
       <div class="sr-group">${es.slice(0, intent ? 8 : 5).map(e => eventRow(e, { showDay: true })).join('')}</div>
       ${es.length > (intent ? 8 : 5) ? `<button class="sr-more" type="button" data-more-events>Show ${Math.min(es.length, 60) - (intent ? 8 : 5)} more</button>` : ''}` : '';
     const parSec = ps.length ? `<h3 class="sr-sec">Parishes<span>${ps.length}</span></h3><div class="sr-group">${ps.slice(0, 6).map(parishResult).join('')}</div>

@@ -87,10 +87,9 @@
 
   var TOTAL = 7;
   var REROLL_CHANCE = 0.2;
-  var cachedSvg = null, cachedIdx = null;
+  var cachedSvg = null;
   try {
     cachedSvg = localStorage.getItem('ls-tree-svg');
-    cachedIdx = localStorage.getItem('ls-tree-idx');
   } catch (e) { /* storage blocked */ }
   var shouldReroll = !cachedSvg || Math.random() < REROLL_CHANCE;
 
@@ -156,7 +155,6 @@
         if (!text) return;
         try {
           localStorage.setItem('ls-tree-svg', text);
-          localStorage.setItem('ls-tree-idx', String(idx));
         } catch (e) { /* storage blocked */ }
         mountTree(text);
       })
