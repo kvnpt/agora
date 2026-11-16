@@ -1,5 +1,26 @@
 # Agora — Orthodox Event Finder for Oceania
 
+## Whose this is
+
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+
+Agora is here so that parishes want to keep their information fresh, and so
+that an inquirer can find the closest English parish. Judge a change against
+those two.
+
+Finish whole tasks: build it, test it, check it in a browser where
+[docs/browser-checks.md](docs/browser-checks.md) says to, and say what you
+verified. A plan or a to-do list is not a result when the work can be done.
+
+Kevin's, never yours alone: merging a PR; a production D1 migration or any
+production SQL (he runs these himself in the D1 console, so give him the SQL
+as one pasteable command and the link); a deploy; and anything outward-facing,
+such as a WhatsApp message or an email to a parish or a user.
+
+A choice that changes what people see or what the data says goes to Kevin on
+its own, one at a time, with a concrete before and after. Never inside a
+batch of other changes.
+
 ## Project
 
 Aggregates Orthodox parish services and events into one location-aware feed.
