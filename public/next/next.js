@@ -1235,6 +1235,7 @@
   window.applyFilters = window.applyNonViewportFilters = (evs) => evs.filter(e => (S.todayMode && !S.mapCard ? visible(e) : eventPasses(e, { scoped: false })));
   window.agoraOnViewportMapPhase = () => onView();
 
+  let dotAt = null;   // where the map last drew you (S.loc is a new object each time it is found)
   function syncMap() {
     if (!map) return;
     // In a card, the card's parishes and nothing of the page's.
@@ -1248,6 +1249,9 @@
     mapState.userLat = S.loc ? S.loc.lat : null;
     mapState.userLng = S.loc ? S.loc.lng : null;
     window.updateMap(mapState);
+    // The blue dot is the map's own from its start, drawn where you were then:
+    // where you are found later (Near me, Nearest) has to be told to it.
+    if (S.loc !== dotAt) { dotAt = S.loc; window.agoraUpdateUserLocation(mapState.userLat, mapState.userLng); }
   }
   /** The open parish card's parish wears its logo on the map, as at /. */
   function setMapFocus(pid) {
