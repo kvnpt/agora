@@ -75,6 +75,9 @@ for them, are in the doc it links to — read that before changing the area.
 - Every link is the one page (`public/index.html`, `public/next/`): the Worker
   writes the link's head and paints its card in, and fails open to the page as
   deployed. In `run_worker_first`, **a negation must never name an image extension**.
+- A box on the page is drawn with `paint` (`public/shared/morph.js`), never
+  `innerHTML`: a row keeps its element and its pictures by its name, and an
+  island (`data-keep`) is the scripts' own.
 - A synthetic id is `"<scheduleId>:YYYY-MM-DD"`. The feed widens, never shrinks.
   A date segment is a FROM, never a single day.
 

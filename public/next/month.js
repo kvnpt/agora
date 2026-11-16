@@ -50,6 +50,7 @@
 //   tomb(e)                'Cancelled', 'Combined', 'Break', or null
 //   today(), addDays(k, n), weekday(k)  dates as the page keeps them
 //   timeHTML(hm), avatar(p, size)
+//   paint(box, html)       a box drawn as the markup says, only what differs changed (shared/morph.js)
 //   pick(el, k)            the card's list to that day
 //   picked(el)             the day the card's Month shows, or null in List
 //   refresh(el)            the card's Calendar again (its parishes switched)
@@ -219,11 +220,15 @@
       if (box) { if (box._io) box._io.disconnect(); box.remove(); }
       return;
     }
+    const tools = `${layersHTML(el)}${noticesPill(el)}`;
     if (box) {
-      // Open already: its days again (the parishes switched, Notices), the
-      // chips left alone. The month in view and those beside it now; the
-      // rest as they are swiped to.
-      syncTools(box, el);
+      // Open already: its days again (the parishes switched, Notices), and
+      // its chips as the card's parishes now are (the card's map moved),
+      // those still there left alone (host.paint). The month in view and
+      // those beside it now; the rest as they are swiped to.
+      const bar = box.querySelector('.mg-tools');
+      host.paint(bar, tools);
+      bar.hidden = !tools;
       box._ver = (box._ver || 0) + 1;
       const months = box.querySelector('.mg-months');
       const i = Math.round(months.scrollLeft / Math.max(1, months.clientWidth));
@@ -232,8 +237,7 @@
     }
     box = document.createElement('div');
     box.className = 'mg mg-small';
-    const tools = `${layersHTML(el)}${noticesPill(el)}`;
-    box.innerHTML = `${tools ? `<div class="mg-tools">${tools}</div>` : ''}
+    box.innerHTML = `<div class="mg-tools"${tools ? '' : ' hidden'}>${tools}</div>
       <div class="mg-wk" aria-hidden="true">${HEAD.map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
       <div class="mg-months">${monthsAhead().map(m => `<div class="mg-month" data-m="${m}" aria-label="${esc(monthTitle(m))}"><div class="mg-grid">${monthDays(el, m, { weeks: 6, empty: true }).map(d => smallDay(d, false)).join('')}</div></div>`).join('')}</div>`;
     wk.querySelector('.wk-head').after(box);
@@ -256,7 +260,7 @@
     }, { passive: true });
     showMonth(el, box, monthOf(host.current(el)), false);
   }
-  /** A small month's days, with what is on them. Its own picture, drawn again: there are none in it. */
+  /** A small month's days, with what is on them: the days that changed, written where they are. */
   async function fillMonth(el, box, g) {
     const ver = box._ver;
     if (g._ver === ver) return;
@@ -270,7 +274,7 @@
     }
     const notices = host.notices(el);
     const picked = host.picked(el);
-    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices, picked)).join('');
+    host.paint(g.querySelector('.mg-grid'), monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices, picked)).join(''));
   }
   function showMonth(el, box, m, smooth) {
     const months = box.querySelector('.mg-months');
@@ -335,15 +339,16 @@
     }
     const m = shownMonth(el);
     const tools = wideEl.querySelector('.mg-tools');
-    // The chips are drawn once for the card, then only switched.
-    if (wideFor !== el) { tools.innerHTML = layersHTML(el); tools.hidden = !tools.innerHTML; }
-    else syncTools(tools, el);
+    // Only what changed is written (host.paint): a chip still there keeps its picture.
+    const chips = layersHTML(el);
+    host.paint(tools, chips);
+    tools.hidden = !chips;
     wideFor = el;
-    wideEl.querySelector('.mg-head').innerHTML = wideHeadHTML(el, m);
+    host.paint(wideEl.querySelector('.mg-head'), wideHeadHTML(el, m));
     const body = wideEl.querySelector('.mg-body');
-    body.innerHTML = wideBodyHTML(el, m, wideFit);
+    host.paint(body, wideBodyHTML(el, m, wideFit));
     const fit = fitRows();
-    if (fit !== wideFit) { wideFit = fit; body.innerHTML = wideBodyHTML(el, m, fit); }
+    if (fit !== wideFit) { wideFit = fit; host.paint(body, wideBodyHTML(el, m, fit)); }
   }
   /** How many rows a big day has room for under its number: every day is as tall as the others. */
   function fitRows() {

@@ -53,6 +53,44 @@ Worker's R2 proxy. Parish pages and the collections are indexable;
 Worker answered these links with separate lite pages and the app sat at `/`;
 v3 replaced both ([history.md](history.md)).
 
+**A box drawn again keeps what it has.** The page writes its lists as strings,
+and for a year put them in whole (`innerHTML`): every row a new element, every
+logo and poster in it a new picture. Safari draws a new picture a frame or more
+after its row even when it holds the file, so each time the map moved, a day
+was tapped or a sign-in answered, the pictures on screen blinked out and back
+(Kevin, 16 Nov 2026: "I still see flashing when scrolling the map or tapping
+days"). Moving the home map six times made 336 pictures, and moving a card's
+map four times 1,566, nearly all of them the ones already showing. So a box is
+drawn with `paint(box, html)` (`next.js`; `public/shared/morph.js`,
+`d1/morph.test.mjs`), which makes it read as the markup says and touches
+nothing that already does: 36 and 30 for the same moves.
+
+- **A row is the element it was, by its name** among its siblings: `data-event`,
+  `data-date`, `data-parish`, `data-coll`, `id`, or `data-key` where none of
+  those says it (a time slot, a collection's parish). A list that reorders moves
+  only the rows out of their order. Furniture with no name is matched by its
+  tag and class. A list whose rows can swap places wants a name on each row.
+- **An island (`data-keep="name"`) is the scripts' own** and is left exactly as
+  it is, children and all: the week bar (its dots, its swiped week, its
+  listeners; `weekBarHTML` writes an empty one when the bar on screen is to
+  stay) and a card's map. A new name is a new island.
+- **A picture is its address.** One seen once is written `decoding="sync"`, to
+  draw with its row; one never seen is `loading="lazy"` and low priority
+  (`pic`). One listener on the document keeps what loaded and what failed
+  (`PIC`): a failed thumbnail falls back to its poster (`data-full`), a failed
+  logo to the initials, and neither is asked for again for a minute. No picture
+  carries an `onerror` of its own but the Worker's painted rows, which are on
+  screen before any script.
+- **The logos near the map are fetched before they are wanted** (`warmLogos`):
+  the forty nearest its centre, one at a time, when the page is idle, never on
+  Save-Data. A parish coming into view then shows its seal with its row.
+
+What a person did to an element that no attribute says stays with it: a shelf
+scrolled sideways is where it was after the map moves, an opened "Show all"
+stays open. Chrome shows none of the blinking (it draws a held picture at
+once, whatever the element), so count pictures made, not frames
+([browser-checks.md](browser-checks.md)).
+
 **Synthetic ids.** A projected occurrence has the id `"<scheduleId>:YYYY-MM-DD"`, e.g.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
@@ -113,8 +151,8 @@ the card's date, as a dated link's (`pickInMonth` → `setCardDate`); ‹ shows
 whenever the picked day or the month in view is not today's. The month's name
 has no chevron and does nothing there. On a laptop Month is the big month
 beside the card (opened or closed by the menu, not kept), so nothing else
-changes. A re-drawn list waits for its logos to decode before it swaps in
-(`swapDecoded`), so nothing flashes. The Worker's first paint titles the
+changes. A re-drawn list is painted over the one on screen (`paint`, below),
+so nothing flashes. The Worker's first paint titles the
 Calendar with its month too (`page-card.mjs` `calHeadHTML`).
 
 **A date segment says where the stream starts.** `/smg/2026-07`,
