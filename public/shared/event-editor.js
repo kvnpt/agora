@@ -3162,7 +3162,6 @@
       strip.hidden = false;
       const SHOWN = 3;
       strip.innerHTML = `<div class="ee-section-title">Saved drafts here</div>` + others.map((d, i) => {
-        const n = d.cards.length;
         const dates = d.cards.map(c => c.date).filter(Boolean).sort();
         const when = dates.length ? ` · ${dateLabel(dates[0])}${dates.length > 1 ? ` – ${dateLabel(dates[dates.length - 1])}` : ''}` : '';
         return `<div class="ee-strip-row" data-draft="${d.id}"${i >= SHOWN ? ' hidden' : ''}>`

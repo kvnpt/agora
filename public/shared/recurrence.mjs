@@ -164,5 +164,3 @@ export function matchesWeekParity(dateStr, parity) {
   return weekAbOf(dateStr) === String(parity).toLowerCase();
 }
 
-/** The two values a fortnightly rule may carry. */
-export const WEEK_PARITIES = ['a', 'b'];

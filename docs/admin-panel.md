@@ -59,7 +59,7 @@ second person uses. Written 16 September 2026, against production.
 > `read_from` — docs/sources-and-ingestion.md. Kept here as the record.)
 > A parish is described by several sources at once and
 > they disagree, and until now the winner was whichever import ran last. The
-> ladder is `public/shared/source-tiers.js`; the rulings made against it are
+> ladder was `public/shared/source-tiers.js` (since removed); the rulings made against it are
 > `info_overrides`; CLAUDE.md has the reasoning. The panel surfaces it three
 > ways — per parish on its card, per jurisdiction on the Jurisdictions tab as
 > "what a re-run will leave alone", and in the dialog that now replaces the

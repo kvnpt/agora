@@ -31,7 +31,7 @@ import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parsePari
 import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
 import { adminEditProvenance, adminSourceName } from '../lib/provenance.mjs';
 import readFromShared from '../../public/shared/read-from.js';
-import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
+import { JURISDICTION_SOURCES, isRerunnable, automationNote,
          daysSince, staleness } from '../lib/jurisdictions.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos, jurisdictionLogoKey, LOGO_JURISDICTIONS } from '../lib/juris-logos.mjs';

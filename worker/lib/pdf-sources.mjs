@@ -122,7 +122,5 @@ export const PDF_SOURCES = [
   },
 ];
 
-export const getPdfSource = (key) => PDF_SOURCES.find(s => s.key === key) || null;
-
 /** Where the extractor writes, and the adapter reads. */
 export const r2KeyFor = (key) => `pdf-schedules/${key}.json`;

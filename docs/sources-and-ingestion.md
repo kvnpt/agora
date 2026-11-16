@@ -61,9 +61,9 @@ only ever a stopgap until somebody owns the parish, and a parish whose source
 turned out to be wrong is not one to keep scraping around the errors — it is one
 to keep by hand. A slot ruling also refuses a *time*, not a service, so it
 locked the survivor of a double-tapped Add at St George (October 2026). Now
-Elimbah would simply be kept by hand. `source-tiers.js` survives for display
-only (`sourceTier` labels where a row's details came from); `info_overrides`
-is unread and stays in the schema until a later cleanup.
+Elimbah would simply be kept by hand. `source-tiers.js` was removed in
+November 2026, when nothing loaded it any more; `info_overrides` is unread and
+stays in the schema until a later cleanup.
 
 An edit in /admin is a claim by a person, and the PATCH route records it
 without being asked (`adminEditProvenance`): a save that changes a detail

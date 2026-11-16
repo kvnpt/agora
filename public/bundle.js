@@ -146,12 +146,6 @@ window.agoraBundle = (function () {
       // triggers, so a caller that forgot the call would draw the old hue and
       // nothing would say why.
       // (The overrides themselves were applied above, before the join.)
-      // …with one exception to "runs during the render this load triggers":
-      // the jurisdiction chips are painted once by initFilters, before this
-      // resolves, and nothing re-paints them afterwards. They are the reason
-      // an override used to move every colour on the page except the row at
-      // the very top of it.
-      if (window.agoraRepaintJurisdictionChips) window.agoraRepaintJurisdictionChips();
       loadedAt = Date.now();
       return raw;
     })();
@@ -186,7 +180,7 @@ window.agoraBundle = (function () {
   }
 
   /** Resolve one id — integer (stored) or "scheduleId:YYYY-MM-DD" (instance). */
-  function resolveEvent(id, from, to) {
+  function resolveEvent(id) {
     if (!raw || !mods) return null;
     const str = String(id);
     const stored = (raw.events || []).find(e => String(e.id) === str);
