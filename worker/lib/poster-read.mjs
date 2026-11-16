@@ -87,7 +87,7 @@ export const readKind = (k) => (READ_KINDS.includes(k) ? k : 'poster');
 const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
 
 /** The fields of one event, in the order the editor's form shows them. */
-const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed', 'after', 'start_time', 'end_time',
+const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed', 'cancelled', 'after', 'start_time', 'end_time',
   'end_date', 'event_type', 'languages', 'venue', 'description', 'notes'];
 
 /** One weekly service off a sign or a flyer: a rule to be, not an event. */
@@ -133,6 +133,10 @@ export const POSTER_SCHEMA = {
           date: nullable({ type: 'string', format: 'date' }),
           weekday_printed: nullable({ type: 'string' }),
           year_printed: { type: 'boolean' },
+          // Before the time, so the reader says a date is called off before it
+          // goes looking for when it is held. A boolean, not a kind of event:
+          // the service is still what it is, and is only not held that day.
+          cancelled: { type: 'boolean', description: 'true only when the image says this is NOT held on this date ("No Liturgy on Sunday 25th", "Bible study cancelled this week"); false otherwise' },
           // Before the time, so the reader says what an event follows before
           // it writes one: "Following English Liturgy at 6pm" is the
           // Liturgy's 6pm, not the movie night's (afterServices, drafts.mjs).
@@ -235,6 +239,7 @@ For each event:
 - date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
+- cancelled: true only when the image says, in so many words, that this is not held on this date: "No Liturgy on Sunday 25 January", "Bible study is cancelled this Wednesday", "No Vespers this Saturday". Then the entry is that service on that date: its title is the service's name as given in the parish's regular services below, its start_time is the time printed for it or null when none is, and its description is the reason only if the image gives one ("Father is away"), else null. One entry per service and date called off. A service moved to another time, day or place is not cancelled: it is that date's entry with its new time or venue. A service the image simply does not list is not cancelled either: say nothing of it. A whole period without a service and no dates named ("no Bible study over January") is not listed in events: say it in the image's notes. false for everything else.
 - after: the service the event follows, when the image gives the event no start time of its own, only that it is after a service: "English Liturgy at 6pm" for "Following English Liturgy at 6pm", "the service" for "Barbecue after the service". With the service's time when one is printed beside it. An event the image gives no time at all, on a day it gives a service for, follows that service too: under "Sunday 13 December, Liturgy 10am", a Christmas fair with "a day of food, fun and festivities" has after "Liturgy at 10am". The event is not that service and not one of its dates: its title, kind and description are its own (a movie night after the Liturgy is Youth or Social, never Liturgy). Empty when the event has a start time of its own.
 - start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note; two services, each with its own name, are two events. An event with after has start_time null: it starts when that service ends, and Agora works that out from the service's end or its usual length. A time printed with the service it follows is that service's time, not the event's: under "Outdoor Movie Night", "Following English Liturgy at 6pm" says the Liturgy is at 6pm, so the movie night's start_time is null, never 18:00.
 - end_date: YYYY-MM-DD of the last day, only for one event that runs over several days; empty otherwise.
@@ -353,8 +358,12 @@ export function buildPosterRequest({ data, mediaType, images = null, context }) 
 const FIELD_NAMES = { venue: 'location_override', weekday_printed: 'printed_weekday' };
 export const draftFieldName = (f) => FIELD_NAMES[f] || f;
 
-/** What the reader writes of an event that is no field of the form: its notes, and the service it follows. */
-const NOT_IN_FORM = new Set(['notes', 'after']);
+/**
+ * What the reader writes of an event that is no field of the form: its notes,
+ * the service it follows, and that it is called off — which reaches the card
+ * with the finished read, squared with the timetable, never a field at a time.
+ */
+const NOT_IN_FORM = new Set(['notes', 'after', 'cancelled']);
 
 /** Which open strings are worth streaming a character at a time. */
 const typesItself = (path) => path.length === 3 && path[0] === 'events'
@@ -752,6 +761,7 @@ function onTheDay(rule, occasion) {
     printed_weekday: DAY_NAMES[day],
     year_printed: occasion.year_printed,
     after: null,
+    cancelled: null,
     read_notes: [...rule.read_notes, { field: 'date',
       text: `Printed as “${DAY_NAMES[day]}”, not every ${DAY_NAMES[day]}; dated from the poster’s ${d} ${MONTHS[m - 1]}.` }],
   };
@@ -788,6 +798,10 @@ function normalizeEvent(e) {
     // The service it follows, as printed: not a field of the card, but what
     // afterServices and matchOccurrences (drafts.mjs) go by.
     after: clean(ev.after, 200),
+    // "No Liturgy on the 25th": 1, to be confirmed by a person before it is
+    // anything (drafts.mjs CARD_FIELDS). Only a plain true: a false one keeps
+    // somebody from a service that is running.
+    cancelled: ev.cancelled === true ? 1 : null,
     read_notes: notes,
   };
 }

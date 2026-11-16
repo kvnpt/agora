@@ -520,6 +520,37 @@ rule's title and gives its own to the subtitle when that is empty: "Games
 Night" on the youth group's Friday is that Friday's `patch_feast`, not a
 `patch_title` that renames the group.
 
+**A date a programme calls off is a cancellation a person confirms.** "No
+Liturgy on Sunday 25 January" used to come back as a note, or as nothing, and
+the Liturgy stayed on the page for somebody to turn up to. The reader now
+gives each event `cancelled` (true only when the image says, in so many words,
+that it is not held that date; a service moved is its new time, and a service
+the image merely leaves out is nothing). Such a card is its service on that
+date: matched like any programme's date, and by its name alone when the poster
+prints no time for it (`calledOff` in `worker/lib/drafts.mjs`: the one rule
+that day of that name or a kin one, never a guess between a morning and an
+evening Liturgy), taking the service's own name and time, with a note saying
+it was matched by name. `draft_events.cancelled` (migration 039) is 1 as read,
+2 once a person has confirmed it, 0 once they say it is still on.
+
+**Nothing publishes a 1.** A false cancellation keeps somebody from a service
+that is running, and it is two things that can each be wrong at once, a read
+and a Cancel. So the card opens with a box in the danger colour, dashed while
+it is a question: what the poster says, the timetable's line it would cancel,
+its row as the feed will show it (struck, CANCELLED), and **Confirm: it is
+cancelled** / **It is still on**. The confirm is a tap on that card, never
+part of Publish all, which stays shut until every such card is answered
+(`checkDraftEvent` blocks, in the editor and again in the Worker). Confirmed,
+Publish writes the tombstone on the occurrence through `applyAdminEdit`
+(`status: 'cancelled'`), with the card's description as the reason and the
+poster, and never a time or a name: the service is still what it is. A date
+already combined into another event is refused, since the combine says where
+everybody went. Still on, it is an ordinary date of its service. Unlinked, or
+never matched, it cannot be published at all: there is no one-off to cancel,
+and the card says so. A whole period without a service and no dates named
+("no Bible study over January") is not read as cancellations; the reader says
+it in the read's notes, and a break on the rule is still a person's to add.
+
 **A service and its own date, off one poster** (Kevin, 5 Nov 2026). St
 Emilia's Mums Group, St Nicholas, Punchbowl, moved to "the first Friday of
 every month" and its poster gave that Friday's coaster-making workshop. The

@@ -79,7 +79,8 @@ export const DRAFTS_DDL = [
   parish_scoped     INTEGER,
   discard           INTEGER,
   host_parish_id    TEXT,
-  host_event_id     INTEGER
+  host_event_id     INTEGER,
+  cancelled         INTEGER
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -96,7 +97,7 @@ const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details', 'source', 'message_text', 'seen_at',
     'images', 'sender_name'],
   draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
-    'host_parish_id', 'host_event_id'],
+    'host_parish_id', 'host_event_id', 'cancelled'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -109,7 +110,7 @@ export async function ensureDraftTables(db) {
       const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
       for (const c of cols) {
         // A pin is a number, the pill and the bin a 0 or 1, an event an id; everything else these add is text.
-        const type = /_(lat|lng)$/.test(c) ? 'REAL' : FLAG_FIELDS.has(c) || c === 'host_event_id' ? 'INTEGER' : 'TEXT';
+        const type = /_(lat|lng)$/.test(c) ? 'REAL' : FLAG_FIELDS.has(c) || c === 'host_event_id' || c === 'cancelled' ? 'INTEGER' : 'TEXT';
         if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} ${type}`).run();
       }
     }
@@ -141,11 +142,21 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * St Nectarios, Burwood's feast): publishing puts it at that parish with this
  * one taking part — or, with `host_event_id`, the event of theirs already on
  * file, adds this parish to it and makes nothing new.
+ * `cancelled` is a programme's "No Liturgy on the 25th": the card is that
+ * service on that date, NOT held. 1 as the poster was read, which nothing
+ * publishes — a false one keeps somebody from a service that is running, so
+ * a person says so first; 2 once they have (CANCEL_CONFIRMED), and Publish
+ * writes the tombstone on the occurrence; 0 when they say it is on after
+ * all, and the card is an ordinary date of its service. A read only ever
+ * gives 1. Only a date of a service on the timetable can be cancelled this
+ * way (event-checks.js).
  */
 export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence',
   'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
-  'host_parish_id', 'host_event_id'];
+  'host_parish_id', 'host_event_id', 'cancelled'];
+/** A cancellation a person has confirmed: the only one Publish writes. */
+export const CANCEL_CONFIRMED = 2;
 /** A pin's two halves: numbers, where every other field here is text. */
 const NUMBER_FIELDS = new Set(['location_lat', 'location_lng']);
 /** The pill and the bin: yes, no, or not said. */
@@ -158,7 +169,7 @@ const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
  * own service the poster puts it at the time of, which it takes the place of.
  */
 const READ_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
-  'languages', 'location_override', 'occurrence', 'host_parish_id', 'host_event_id', 'replaces'];
+  'languages', 'location_override', 'occurrence', 'host_parish_id', 'host_event_id', 'replaces', 'cancelled'];
 
 const MAX_LEN = { title: 200, feast: 200, description: 2000, location_override: 300, ask_reason: 1000 };
 
@@ -216,6 +227,11 @@ export function validateCard(body) {
       patch[f] = f === 'languages' ? langList.clean(list) : (list.length ? JSON.stringify(list) : null);
       continue;
     }
+    if (f === 'cancelled') {
+      if (v != null && ![0, 1, 2].includes(v)) return bad(f, 'A cancellation is read, confirmed, or not one.');
+      patch[f] = v;
+      continue;
+    }
     if (f === 'host_event_id') {
       const n = v == null ? null : Number(v);
       if (n != null && !(Number.isInteger(n) && n > 0)) return bad(f, 'That is not an event on file.');
@@ -259,6 +275,7 @@ export function cardOut(r) {
     discard: r.discard == null ? null : r.discard ? 1 : 0,
     host_parish_id: r.host_parish_id || null,
     host_event_id: r.host_event_id != null ? Number(r.host_event_id) : null,
+    cancelled: r.cancelled == null ? null : Number(r.cancelled),
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -600,6 +617,8 @@ const isServiceKind = (x) => SERVICE_KINDS.has(x && x.event_type);
 export function afterServices(read, rules) {
   const sameDay = (ev, o) => o !== ev && !o.after && o.date === ev.date && !o.end_date && isLocalTime(o.start_time);
   for (const ev of read.events) {
+    // Called off, it follows nothing: it is the service itself, not held.
+    if (ev.cancelled) { ev.after = null; continue; }
     if (!ev.date || ev.end_date) continue;
     let implied = false;
     if (!ev.after && !ev.start_time && !isServiceKind(ev)) {
@@ -699,6 +718,13 @@ export function afterServices(read, rules) {
  * 6 Nov override had "Coaster-making Workshop" in place of the group's name).
  * Not when the card already has a subtitle, which it would lose.
  *
+ * A DATE CALLED OFF (`cancelled`: "No Liturgy on Sunday 25 January") is
+ * matched the same way, and by its name alone when the poster prints no time
+ * for it (calledOff): the timetable has the time. It takes the service's
+ * name and time, since a cancellation changes neither. Unmatched, it is
+ * nothing anybody can publish: there is no one-off to cancel
+ * (event-checks.js says so on the card).
+ *
  * @param {object} read   normalizeRead()'s answer, changed in place
  * @param {Array} rules   the parish's active rules (schedules rows)
  */
@@ -720,7 +746,25 @@ export function matchOccurrences(read, rules) {
         if (!hit) continue;
         used.add(`${hit.id}:${ev.date}`);
         ev.occurrence = `${hit.id}:${ev.date}`;
-        if (partOf(hit, ev)) {
+        if (ev.cancelled) {
+          // Called off, it is the service as the timetable has it: its name,
+          // and its time when the poster printed none or only a part's.
+          if (!ev.start_time) {
+            // Matched on its name alone: said, so the person confirming
+            // checks it is the service the poster means and not its
+            // namesake ("no evening Liturgy" where only the morning's is
+            // on file).
+            ev.read_notes = [...(ev.read_notes || []), { field: 'cancelled',
+              text: `The poster prints no time for this, so it was matched by name to the ${clockText(hit.start_time)} ${hit.title}. Check that is the one it means.` }];
+          }
+          if (!ev.start_time || partOf(hit, ev)) {
+            ev.start_time = hit.start_time;
+            ev.end_time = null;
+            ev.suggested = [...(ev.suggested || []), 'start_time'];
+          }
+          if (ev.title && !sameTitle(hit, ev) && !relatedName(hit.title, ev.title) && !String(ev.feast || '').trim()) ev.feast = ev.title;
+          ev.title = hit.title;
+        } else if (partOf(hit, ev)) {
           const was = `${clockText(ev.start_time)} ${ev.title}`;
           ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
             text: `The poster’s ${was} is part of the regular ${clockText(hit.start_time)} ${hit.title}, so it stays at ${clockText(hit.start_time)}. Change it if the poster moves the whole service.` }];
@@ -808,7 +852,8 @@ function partOf(r, ev) {
  * own start.
  */
 function occurrenceOf(ev, rules, used = new Set(), { exact = false } = {}) {
-  if (!ev.date || !ev.start_time || ev.end_date) return null;
+  if (!ev.date || ev.end_date) return null;
+  if (!ev.start_time) return ev.cancelled && !exact ? calledOff(ev, rules, used) : null;
   const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
   const same = (r) => sameTitle(r, ev);
   const kin = (r) => same(r) || (sameSort(r, ev) && relatedName(r.title, ev.title));
@@ -828,6 +873,22 @@ function occurrenceOf(ev, rules, used = new Set(), { exact = false } = {}) {
     if (named.length === 1 && that.filter(kin).length === 1) hit = named[0];
   }
   return hit && !used.has(`${hit.id}:${ev.date}`) ? hit : null;
+}
+
+/**
+ * The service a card calls off with no time printed: "No Liturgy on Sunday
+ * 25 January" names the service and the day, and the timetable has the time.
+ * The one rule that day of its name or a kin one of the same sort; of
+ * several, the one of the very name; else none — a morning and an evening
+ * Liturgy are two, and nobody guesses which is cancelled.
+ */
+function calledOff(ev, rules, used) {
+  const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date)
+    && !used.has(`${r.id}:${ev.date}`));
+  const kin = that.filter(r => sameTitle(r, ev) || (sameSort(r, ev) && relatedName(r.title, ev.title)));
+  if (kin.length === 1) return kin[0];
+  const named = kin.filter(r => sameTitle(r, ev));
+  return named.length === 1 ? named[0] : null;
 }
 
 /** One rule of several for a card: the one of its name, else the one it starts inside; else none. */

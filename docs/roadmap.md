@@ -27,11 +27,14 @@ Claude Haiku 5.5 into draft events (docs/editing.md). So is most of the
 bulletin's other half: a programme's dated services are matched to their
 occurrences and publish as overrides (the day's saint, a moved time, the
 poster), and a photo of a church sign proposes the weekly services and the
-parish's details, sourced "Church signage". What remains is a programme's
-**cancellation** ("no Liturgy on the 25th") as a tombstone on that occurrence —
-the reader has no field for it yet, and a false one keeps somebody from a
-service that is running, so it wants its own confirm — and the WhatsApp door
-below.
+parish's details, sourced "Church signage". So is a programme's
+**cancellation** ("no Liturgy on the 25th"): read as that service's date called
+off, confirmed by a person on its own card, and published as a tombstone on
+the occurrence (docs/editing.md; 16 Nov 2026). The WhatsApp door below is
+built too (docs/people-and-access.md). What remains is small: a period
+without a service ("no Bible study over January") as a break on the rule,
+which is still added by hand, and a one-off event on file that a later poster
+calls off.
 
 > *Build the bulletin ingest from docs/adapters.md ("Getting the next bulletin
 > in without a VPS"). First door: an admin drops an image on a parish sheet; the

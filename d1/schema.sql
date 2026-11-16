@@ -1260,7 +1260,13 @@ CREATE TABLE draft_events (
   -- their event already on file, it adds this parish to that and makes
   -- nothing new. NULL is the usual: this parish's own event.
   host_parish_id    TEXT,
-  host_event_id     INTEGER
+  host_event_id     INTEGER,
+  -- Migration 039. A programme's "No Liturgy on the 25th": this card is its
+  -- service on that date, NOT held. 1 as the poster was read, which nothing
+  -- publishes; 2 once a person has confirmed it, when Publish writes the
+  -- tombstone on the occurrence; 0 when they say it is on after all. NULL is
+  -- the usual: nothing is called off.
+  cancelled         INTEGER
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
 

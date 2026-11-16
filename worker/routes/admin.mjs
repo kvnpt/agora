@@ -45,7 +45,7 @@ import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, setReadStatus, draftPosterKey, publishBody,
   placeRead, afterServices, moveDraft, onFileHere, oneOffFeast,
-  suggestEnds, occurrenceBody, isNewOccurrence } from '../lib/drafts.mjs';
+  suggestEnds, occurrenceBody, isNewOccurrence, CANCEL_CONFIRMED } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
@@ -2375,14 +2375,31 @@ export function registerAdminRoutes(router) {
       return json({ error: 'That service is not on this parish’s timetable any more — make it an event of its own.' }, 400);
     }
     const before = await env.DB.prepare(
-      'SELECT patch_poster_path FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
+      'SELECT kind, patch_poster_path FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
     ).bind(inst.scheduleId, inst.date).first();
     const span = localSpanToUtc(zone, card.date, card.start_time, card.end_time);
-    const body = { ...occurrenceBody(card, card.poster_path), start_utc: span.start_utc };
-    const v = await readVenue(env.DB, body, { hostParishId: card.parish_id });
-    if (v.error) return json({ error: v.error }, 400);
-    if (v.present) Object.assign(body, v.venue);
-    if (card.end_time) body.end_utc = span.end_utc;
+    let body;
+    if (Number(card.cancelled) === CANCEL_CONFIRMED) {
+      // "No Liturgy on the 25th", confirmed by a person (the checks above
+      // refuse one that is not): the tombstone on that occurrence, as Cancel
+      // on its own card writes it. The service is still what it is, so
+      // nothing of the card is written but the reason, if the poster gave
+      // one, and the poster itself — never a time or a name. Not onto a date
+      // already combined into another event: that says where everybody went,
+      // and a cancellation would take it down.
+      if (before && before.kind === 'combined') {
+        return json({ error: 'That date is already combined into another event, which says where it is held instead. Discard this, or undo the combine first.' }, 409);
+      }
+      body = { status: 'cancelled' };
+      if (card.description && String(card.description).trim()) body.description = card.description;
+      if (card.poster_path) body.poster_path = card.poster_path;
+    } else {
+      body = { ...occurrenceBody(card, card.poster_path), start_utc: span.start_utc };
+      const v = await readVenue(env.DB, body, { hostParishId: card.parish_id });
+      if (v.error) return json({ error: v.error }, 400);
+      if (v.present) Object.assign(body, v.venue);
+      if (card.end_time) body.end_utc = span.end_utc;
+    }
     const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, body);
     if (r.error) return json({ error: r.error }, r.code || 400);
     // The poster it had, if this one replaced it, goes once nothing shows it.
@@ -2390,7 +2407,7 @@ export function registerAdminRoutes(router) {
     if (previous && previous !== card.poster_path) await releaseUnused(env, [previous]);
 
     const remaining = await spendCard(env, card);
-    return json({ event: r.instance, occurrence: true, remaining }, 201);
+    return json({ event: r.instance, occurrence: true, cancelled: body.status === 'cancelled', remaining }, 201);
   }
 
   // ── combine ──

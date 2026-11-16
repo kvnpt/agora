@@ -350,6 +350,24 @@ English and Arabic still ticked; with both moved the cards go and the bar
 says **Done**. **Add to timetable** should write the rule with the poster on
 it.
 
+**Dates called off.** `programme_called_off` is a December 2026 programme at
+Sts Peter & Paul, Doonside (a seed parish): a Sunday with its saint, "no
+evening Liturgy" on the 13th with no time printed, and no Liturgy on the 27th.
+Add the evening service first (`INSERT INTO schedules (parish_id, day_of_week,
+start_time, end_time, title, event_type, week_of_month) VALUES
+('antiochian-stspeterpaul-doonside', 0, '18:00', '19:30', 'English Divine
+Liturgy', 'liturgy', 'second,fourth')`) and apply
+`d1/migrations/039-draft-cancelled.sql`. The two cards should each show the
+dashed red box (`.ee-cancel`) on the shut card, the chip "confirm the
+cancellation", and Publish shut. **Confirm: it is cancelled**
+(`[data-act="cancel-yes"]`) turns the chip to "cancels this date" and the row
+to a struck CANCELLED one; **It is still on** (`[data-act="cancel-no"]`) makes
+it an ordinary date. Publish should write `kind = 'cancelled'` with the
+description and the poster and no `patch_title` or `patch_start_time` for the
+one confirmed, `modified` for the others, and no row in `events`. Unlinking a
+confirmed card (`.ee-occ-link`) should say "nothing to cancel" and shut
+Publish again.
+
 **Past dates and the bin.** `programme_gladesville` is St Andrew,
 Gladesville's November 2026 programme as it was read on 3 Nov 2026, "Sunday 1"
 in 2027. The read should put it back in 2026 with a note, and (on or after
