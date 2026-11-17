@@ -116,6 +116,10 @@ for them, are in the doc it links to — read that before changing the area.
 - Where is a unit of four fields: at home, at another parish, or a place of its
   own with a pin (a square on the map). `worker/lib/venues.mjs` reads it, for
   every route that takes one.
+- A parish is chosen from the one list (`public/shared/parish-picker.js`):
+  a form shows what is chosen and opens the list as a card, never a select or
+  a list of its own. Where an ask is the point it lists every parish, marked,
+  never narrowed to the person's own.
 - Signed in is not editing: details and events open behind their own pencil;
   the timetable carries Add + and a pencil per line, for whoever may edit it.
 

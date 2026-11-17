@@ -31,7 +31,7 @@
    parish says whose it is, and the suggestion moves it in one tap. */
 .ee-parish { display: flex; align-items: center; gap: 10px; }
 .ee-parish label { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--ee-muted); }
-.ee-parish select { flex: 1; min-width: 0; }
+.ee-parish [data-ee="parish"] { flex: 1; min-width: 0; }
 .ee-suggest {
   display: flex;
   align-items: center;
@@ -453,18 +453,6 @@
 .ee-item:hover { background: var(--ee-field); }
 .ee-item input { margin-top: 3px; flex-shrink: 0; }
 .ee-item small { display: block; font-size: 11px; color: var(--ee-muted); }
-.ee-group {
-  position: sticky;
-  top: -4px;
-  z-index: 1;
-  padding: 5px 8px 3px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ee-muted);
-  background: var(--bg, var(--surface));
-}
 .ee-tag { margin-left: 6px; font-size: 10.5px; font-style: normal; color: var(--ee-muted); }
 .ee-tag-ask { color: var(--ee-warn); }
 .ee-empty { padding: 8px; font-size: 12px; text-align: center; color: var(--ee-muted); }
@@ -870,27 +858,8 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .vp-modes button.on { background: var(--accent, #2b6cb0); border-color: var(--accent, #2b6cb0); color: #fff; }
 .vp-pane[hidden] { display: none; }
 .vp-pane { display: flex; flex-direction: column; gap: 6px; }
-.vp-search, .vp-text { width: 100%; box-sizing: border-box; }
-.vp, .vp-search { scroll-margin-top: 12px; }
-.vp-list {
-  display: flex; flex-direction: column;
-  border: 1px solid var(--border-light, var(--border, #e5e7eb));
-  border-radius: 10px;
-  max-height: 260px; overflow-y: auto;
-}
-/* The name first and whole; where it is and how far, small, under it. */
-.vp-item {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 8px 12px;
-  border: 0; border-bottom: 1px solid var(--border-light, #eee);
-  background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
-}
-.vp-item:last-child { border-bottom: 0; }
-.vp-item.on { background: color-mix(in srgb, var(--accent, #2b6cb0) 12%, transparent); font-weight: 600; }
-.vp-item.on .vp-name::before { content: '✓ '; color: var(--accent, #2b6cb0); }
-.vp-meta { font-size: 12px; font-weight: 400; color: var(--ee-muted, #6b7280); }
-.vp-meta:empty { display: none; }
-.vp-empty { padding: 10px 12px; font-size: 13px; color: var(--ee-muted, #6b7280); }
+.vp-text { width: 100%; box-sizing: border-box; }
+.vp { scroll-margin-top: 12px; }
 .vp-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .vp-btn {
   padding: 7px 12px; border: 1px solid var(--border, #d1d5db); border-radius: 999px;

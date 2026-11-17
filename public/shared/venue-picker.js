@@ -5,8 +5,8 @@
 // Three answers, as worker/lib/venues.mjs reads them:
 //
 //   At the parish     nothing set; the parish's church
-//   Another parish    one parish on file, picked from a list nearest-first and
-//                     searched by name or suburb — the way Combine picks them
+//   Another parish    one parish on file, chosen from the one list every
+//                     parish is chosen from (parish-picker.js), nearest first
 //   Somewhere else    the place in words, and a pin: looked up from the
 //                     address (POST /api/admin/geocode, the parish form's own
 //                     lookup) or put on the door by hand where the host offers
@@ -21,28 +21,9 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const EMPTY = { location_parish_id: null, location_override: null, location_lat: null, location_lng: null };
-  const MAX_LIST = 8;
-
-  const km = (a, b) => {
-    if (!a || !b || a.lat == null || b.lat == null) return Infinity;
-    const r = Math.PI / 180;
-    const x = (b.lng - a.lng) * r * Math.cos(((a.lat + b.lat) / 2) * r);
-    const y = (b.lat - a.lat) * r;
-    return Math.sqrt(x * x + y * y) * 6371;
-  };
-
-  // The suburb out of an address: the last part that is not a state, a
-  // postcode or a country, with any state and postcode trailing it taken off
-  // — "12/14 Balmoral Ave, Croydon Park, NSW 2133" is Croydon Park.
-  const NOT_A_PLACE = /^(n\.?s\.?w\.?|vic|qld|s\.?a|w\.?a|tas|n\.?t|a\.?c\.?t|australia|new zealand|nz|\d{4})$/i;
-  const STATE_TAIL = /\s+(n\.?s\.?w\.?|vic|qld|sa|wa|tas|nt|act)\.?(\s+\d{4})?$|\s+\d{4}$/i;
-  function suburbOf(address) {
-    const parts = String(address || '').split(',').map(x => x.trim().replace(STATE_TAIL, '').trim()).filter(Boolean);
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (!NOT_A_PLACE.test(parts[i]) && !/^\d/.test(parts[i])) return parts[i];
-    }
-    return '';
-  }
+  // The list of parishes, and the suburb a row of it shows (parish-picker.js).
+  const picker = () => (typeof module === 'object' && module.exports ? require('./parish-picker.js') : root.AgoraParishPicker);
+  const suburbOf = (address) => picker().suburbOf(address);
 
   /** Which of the three a value is. */
   const modeOf = (v) => (v.location_parish_id ? 'parish'
@@ -67,8 +48,8 @@
       status: '',
     };
     st.mode = modeOf(st.v);
-    const host = o.host || {};
-    const others = (o.parishes || []).filter(p => p && p.id && p.id !== host.id && p.id !== '_unassigned');
+    let host = o.host || {};
+    const othersOf = () => (o.parishes || []).filter(p => p && p.id && p.id !== host.id && p.id !== '_unassigned');
 
     el.classList.add('vp');
     el.innerHTML = `
@@ -77,10 +58,7 @@
         <button type="button" role="radio" data-vp-mode="parish">Another parish</button>
         <button type="button" role="radio" data-vp-mode="custom">Somewhere else</button>
       </div>
-      <div class="vp-pane" data-vp-pane="parish" hidden>
-        <input class="vp-search" type="search" placeholder="Search parishes by name or suburb" autocomplete="off">
-        <div class="vp-list" role="listbox"></div>
-      </div>
+      <div class="vp-pane" data-vp-pane="parish" hidden><div data-vp-parish></div></div>
       <div class="vp-pane" data-vp-pane="custom" hidden>
         <input class="vp-text" placeholder="The place and its address — Bankstown Sports Club, 8 Greenfield Pde, Bankstown" autocomplete="off">
         <div class="vp-actions">
@@ -94,27 +72,17 @@
 
     const emit = () => { if (o.onChange) o.onChange({ ...st.v }); };
 
-    function renderList() {
-      const q = st.q.trim().toLowerCase();
-      const chosen = st.v.location_parish_id;
-      let list = others
-        .filter(p => !q || `${p.name} ${p.address || ''} ${p.jurisdiction || ''}`.toLowerCase().includes(q))
-        .sort((a, b) => km(host, a) - km(host, b) || String(a.name).localeCompare(String(b.name)));
-      // The chosen one always shows, first.
-      const picked = others.find(p => p.id === chosen);
-      list = list.filter(p => p.id !== chosen).slice(0, picked ? MAX_LIST - 1 : MAX_LIST);
-      if (picked) list.unshift(picked);
-      $('.vp-list').innerHTML = list.length ? list.map(p => {
-        const d = km(host, p);
-        // The suburb only where the name does not already say it.
-        const sub = suburbOf(p.address);
-        const where = sub && !String(p.name).toLowerCase().includes(sub.toLowerCase()) ? sub : '';
-        return `<button type="button" role="option" class="vp-item${p.id === chosen ? ' on' : ''}" data-vp-parish="${esc(p.id)}" aria-selected="${p.id === chosen}">
-          <span class="vp-name">${esc(p.name)}</span>
-          <span class="vp-meta">${esc([where, Number.isFinite(d) ? `${d < 10 ? d.toFixed(1) : Math.round(d)} km` : ''].filter(Boolean).join(' · '))}</span>
-        </button>`;
-      }).join('') : '<div class="vp-empty">No parish matches.</div>';
-    }
+    // Which parish: what is chosen, and a tap opens the list.
+    // The other parishes, nearest the one running it first.
+    const around = () => ({
+      parishes: othersOf(),
+      origin: host.lat != null ? { lat: host.lat, lng: host.lng, label: host.name || 'the parish' } : null,
+      first: host.jurisdiction || null,
+    });
+    const which = picker().field($('[data-vp-parish]'), {
+      ...around(), value: st.v.location_parish_id, title: 'Another parish', placeholder: 'Choose the parish…',
+      onChange: (id) => { st.v = { ...EMPTY, location_parish_id: id }; emit(); },
+    });
 
     function renderStatus() {
       const v = st.v;
@@ -131,7 +99,7 @@
         b.setAttribute('aria-checked', String(on));
       });
       el.querySelectorAll('[data-vp-pane]').forEach(p => { p.hidden = p.dataset.vpPane !== st.mode; });
-      if (st.mode === 'parish') renderList();
+      if (st.mode === 'parish') which.set(st.v.location_parish_id);
       if (st.mode === 'custom') renderStatus();
     }
 
@@ -148,21 +116,9 @@
           location_lng: st.v.location_parish_id ? null : st.v.location_lng };
         render();
         emit();
-        // On a phone the list itself is the answer, nearest first: no
-        // keyboard over it until the search is tapped.
-        const touch = root.matchMedia && root.matchMedia('(pointer: coarse)').matches;
-        if (st.mode === 'parish') {
-          if (touch) lift(el);
-          else $('.vp-search').focus({ preventScroll: true });
-        }
+        // Another parish, and none yet: the list, straight away.
+        if (st.mode === 'parish' && !st.v.location_parish_id) which.open();
         if (st.mode === 'custom') $('.vp-text').focus({ preventScroll: true });
-        return;
-      }
-      const item = e.target.closest('[data-vp-parish]');
-      if (item) {
-        st.v = { ...EMPTY, location_parish_id: item.dataset.vpParish };
-        renderList();
-        emit();
         return;
       }
       const act = e.target.closest('[data-vp-act]');
@@ -196,21 +152,6 @@
       }
     });
 
-    // The search to the top of the dialog, so its list sits above the
-    // on-screen keyboard rather than under it; again once the keyboard has
-    // finished opening, since that moves things.
-    function lift(target) {
-      const go = () => target.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      requestAnimationFrame(go);
-      const vv = root.visualViewport;
-      if (!vv) return;
-      let t = null;
-      const again = () => { clearTimeout(t); t = setTimeout(go, 60); };
-      vv.addEventListener('resize', again);
-      setTimeout(() => vv.removeEventListener('resize', again), 1000);
-    }
-    $('.vp-search').addEventListener('focus', (e) => lift(e.target));
-    $('.vp-search').addEventListener('input', (e) => { st.q = e.target.value; renderList(); });
     $('.vp-text').addEventListener('input', (e) => {
       const words = e.target.value.trim() || null;
       // A looked-up pin described the old words; a hand-placed one stays.
@@ -231,6 +172,8 @@
         $('.vp-text').value = st.v.location_override || '';
         render();
       },
+      /** Another parish runs it now (a draft moved): the list is the rest, from there. */
+      setHost(h) { host = h || {}; which.update(around()); },
     };
   }
 

@@ -448,7 +448,8 @@ published: the draft waits for a person, like any other. What is worth knowing:
   drafts a day; rows go after 30 days.
 
 **A draft can change parish until it is published.** The editor's first row is
-a **Parish** picker — the parishes this person may publish at, by name — in both
+a **Parish** picker — the parishes this person may publish at, from the one
+list every parish is chosen from (below) — in both
 hosts; /admin's own select, which fixed the parish once a draft existed, is
 gone. It exists because of the usual mistake: St Elias, Wollongong's youth night
 dropped while another parish's sheet was open, read perfectly, and then
@@ -764,13 +765,49 @@ into the title instead ("Deanery Vespers @ St George, Redfern", `setCombinedCont
 and one date of a rule each have a **Where** control (`public/shared/venue-picker.js`,
 in every form that asks: a rule's form, Add schedule, an event's edit dialog,
 the add-event editor's cards). **At the parish** is nothing set. **Another
-parish** is one parish on file, picked from a list nearest-first and searched by
-name or suburb, the way Combine picks them — `location_parish_id`, whose name,
+parish** is one parish on file, chosen from the one list every parish is chosen
+from (below), nearest first — `location_parish_id`, whose name,
 address and pin it is. **Somewhere else** is the place in words
 (`location_override`) and a pin (`location_lat`/`lng`): looked up from the
 address through the parish form's own geocoder, or put on the door by hand with
 the parish form's own pin mover. Typing new words drops a looked-up pin (it
 described the old address) but never a hand-placed one.
+
+**A parish is chosen from one list, everywhere** (`public/shared/parish-picker.js`,
+Kevin, 17 Nov 2026: "a well divided list sortable by distance, archdiocese, or
+location and the same everywhere"). Whose event it is (Add event's and Edit
+event's **Parish**), where it is held (**Another parish**), the parishes it
+also appears at (**Include other parishes**, in both forms), the parish
+"Become an editor" is about, and the parishes of a list of your own on the page
+(**Add parishes**) all open the same card. Before, each had its own: a select
+by name, eight nearest with a search, three hundred tick boxes under
+jurisdiction headings, a select grouped by what was in view, and for a new list
+nothing at all.
+
+It is divided three ways, by pills at its top, and the choice is kept per phone
+(`agora_pick_sort`) so it opens as it was left wherever it is opened from:
+**Nearest**, one list by distance in bands (Within 5km, 5 to 15km, …), measured
+from the parish the form is for, or on the page from you (else where the map is
+looking), and said under the pills; **Archdiocese**, the jurisdiction
+collections (`collections.js` `JURISDICTIONS`) in their order, the asker's own
+first; **Location**, a city's parishes (`locations.js`) then the rest of its
+state, regions nearest first. A section folds at its heading: Nearest opens all
+the way down, the others at their first section, and words typed (a name, a
+short name, a suburb, a jurisdiction, a city) open every section they are found
+in. One to choose: a tap is the answer and the card goes. Several: each tap
+counts as it is made, the chosen are chips over the list (and in the form, each
+with its ×), and Done or the way back closes it.
+
+Two things it must never do. It is **not narrowed to what the person may
+write** where an ask is the point: Include other parishes lists every parish
+and marks one that is not theirs "needs an owner" (`tagOf`); a contact's list
+once came back holding only their own parish, which made the ask unreachable by
+the only people it is for. Only whose-event-it-is is narrowed
+(`editableParishes`), since a draft cannot sit where its maker cannot publish.
+And a form shows **what is chosen, not the list**: three hundred rows inside a
+form is the form. `field()` is the row or the chips, `open()` the card
+(`form-sheet.js`; the browser's `<dialog>` in /admin, which has no form cards),
+`mount()` the list itself.
 
 The four fields are **one unit** everywhere (`worker/lib/venues.mjs`): naming
 any part of a place writes all four, a parish venue keeps no words or pin of its

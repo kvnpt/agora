@@ -3061,21 +3061,17 @@
   }
 
   // The foot of the page's "Become an editor" (index.html): the same form,
-  // asking which parish first (those in view, then each jurisdiction's),
+  // asking which parish first, from the one list (parish-picker.js),
   // with "Add me as a permanent editor" ticked and "Something else" chosen
   // (Kevin, 27 Oct 2026). The only parish in view is chosen already.
-  function becomeEditor() {
-    const ps = S.parishes.filter(p => p.id !== '_unassigned');
+  async function becomeEditor() {
+    const ps = pickable();
     if (!ps.length || !window.AgoraSuggest) return;
-    const byName = (a, b) => String(a.name).localeCompare(String(b.name));
-    const seen = S.inView && S.inView.size < ps.length ? ps.filter(p => S.inView.has(p.id)).sort(byName) : [];
-    const rest = ps.filter(p => !seen.includes(p));
-    const parishes = [
-      { label: 'In view', parishes: seen },
-      ...JURIS_ORDER.map(j => ({ label: JURIS[j].long, parishes: rest.filter(p => p.jurisdiction === j).sort(byName) })),
-      { label: 'Other', parishes: rest.filter(p => !JURIS[p.jurisdiction]).sort(byName) },
-    ].filter(g => g.parishes.length);
-    window.AgoraSuggest.open({ title: 'Become an editor', parishes, parishId: seen.length === 1 ? seen[0].id : null, about: 'Something else', editor: true });
+    try { await loadPicker(); } catch (err) { console.error(err); toast('Could not open the form. Check the connection and try again.'); return; }
+    // The one parish in view is the one meant; else the list, nearest first.
+    const seen = S.inView ? ps.filter(p => S.inView.has(p.id)) : [];
+    window.AgoraSuggest.open({ title: 'Become an editor', parishes: ps, origin: pickOrigin(), first: pickFirst(),
+      parishId: seen.length === 1 ? seen[0].id : null, about: 'Something else', editor: true });
   }
   // The directories the parishes were read from (docs/parish-ingestion.md),
   // each by its jurisdiction, for the Disclaimer.
@@ -3243,18 +3239,19 @@
     const pid = el.dataset.pid;
     return feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
   }
+  /** A stylesheet that comes with a script loaded when it is wanted. */
+  const loadCss = (href) => new Promise((resolve, reject) => {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = href;
+    l.onload = resolve;
+    l.onerror = () => { l.remove(); reject(new Error(`Could not load ${href}`)); };
+    document.head.appendChild(l);
+  });
   let monthReady = null;
   function loadMonth() {
     if (!monthReady) {
-      const css = new Promise((resolve, reject) => {
-        const l = document.createElement('link');
-        l.rel = 'stylesheet';
-        l.href = '/next/month.css';
-        l.onload = resolve;
-        l.onerror = () => { l.remove(); reject(new Error('Could not load /next/month.css')); };
-        document.head.appendChild(l);
-      });
-      monthReady = Promise.all([css, loadScript('/next/month.js')]).then(() => {
+      monthReady = Promise.all([loadCss('/next/month.css'), loadScript('/next/month.js')]).then(() => {
         window.NextMonth.init({
           list: cardList,
           parishes: (el) => cardParishes(el),
@@ -4292,7 +4289,8 @@
       const n = Math.min(NEAREST, pool);
       return `<div class="tt-none">No ${esc(what)} in this map area.</div><button class="wide-btn" type="button" data-act="coll-nearest">${n === 1 ? 'Show the nearest' : `Show the nearest ${n}`}</button>`;
     }
-    if (c.listId) return '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>';
+    // A list with nothing in it offers the parishes to put in it (Kevin, 17 Nov 2026).
+    if (c.listId) return `<div class="tt-none">${c.listId === 'fav' ? 'Nothing starred yet.' : 'Nothing in this list yet.'}</div><button class="wide-btn solid" type="button" data-act="addparishes">Add parishes</button>`;
     if (c.id === 'inview') return `<div class="tt-none">No ${placeNoun(0)} in view.</div><button class="wide-btn" type="button" data-nearest>${esc(nearestWords())}</button>`;
     const all = c.juris && c.f ? byFilters({ ...c, ids: null, juris: null }) : null;
     const n = all ? all.ids.length : 0;
@@ -4358,6 +4356,7 @@
           <h1>${esc(c.title)}</h1>
           <div class="chero-acts">
             ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Create list</span></button>`}
+            ${c.listId ? `<button class="hbtn" type="button" data-act="addparishes">${I.plus}<span>Add parishes</span></button>` : ''}
             <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
             ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
             <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
@@ -5117,6 +5116,74 @@
     const el = pushSheet(html, 'mini');
     el.dataset.pid = pid;
   }
+  // ── Choosing parishes (shared/parish-picker.js) ───────────────────────
+  //
+  // The one list wherever a parish is chosen: here for a list of your own,
+  // and in the forms an editor opens (editing.js, the add-event editor).
+  // Loaded when it is first wanted, with its stylesheet, as Month is.
+
+  let pickerReady = null;
+  function loadPicker() {
+    if (!pickerReady) {
+      pickerReady = Promise.all([loadCss('/shared/parish-picker.css'), loadScript('/shared/parish-picker.js')]).then(() => window.AgoraParishPicker);
+      pickerReady.catch(() => { pickerReady = null; });
+    }
+    return pickerReady;
+  }
+  /** Where "how far" is from, as the page's rows measure it: you, else where the map is looking. */
+  function pickOrigin() {
+    if (S.loc) return { ...S.loc, label: 'you' };
+    const o = sortOrigin();
+    return o ? { ...o, label: 'the middle of the map' } : null;
+  }
+  /** The page's one jurisdiction, when it is under one (/greek): the picker's first section. */
+  const pickFirst = () => { const js = jList(S.juris); return js.length === 1 ? js[0] : null; };
+  const pickable = () => S.parishes.filter(p => p.id !== '_unassigned');
+  /** A list's card again, wherever it is open: it has other parishes now. */
+  function refreshListCards(listId) {
+    renderLists();
+    followList();
+    const c = COLL.get('list-' + listId);
+    if (!c) return;
+    for (const el of stack) {
+      if (!el._coll || el._coll.listId !== listId) continue;
+      el._coll = c;
+      el._segs = c.segs ? collSegs(c, el._from) : null;
+      repaintCollection(el);
+    }
+    syncURL();
+  }
+  /** A list's parishes, chosen from all of them: each tap is kept as it is made. */
+  async function addParishes(listId) {
+    let P;
+    try { P = await loadPicker(); } catch (err) { console.error(err); toast('Could not open the list. Check the connection and try again.'); return; }
+    const l = listById(listId);
+    if (!l) return;
+    let changed = false;
+    P.open({
+      title: 'Add parishes', sub: l.name, closeLabel: 'Close', multiple: true,
+      parishes: pickable(), value: l.ids, origin: pickOrigin(), first: pickFirst(),
+      onChange: (ids) => {
+        changed = true;
+        const now = new Set(ids);
+        if (listId === 'fav') {
+          // A star each, as its card's star is: the count and the map follow.
+          const was = new Set(favIds());
+          for (const id of [...ids.filter(x => !was.has(x)), ...[...was].filter(x => !now.has(x))]) toggleFav(id);
+          return;
+        }
+        const ls = userLists();
+        const mine = ls.find(x => x.id === listId);
+        if (!mine) return;
+        // The newest first, as + on a parish's card adds them.
+        const had = mine.ids || [];
+        mine.ids = [...ids.filter(x => !had.includes(x)).reverse(), ...had.filter(x => now.has(x))];
+        writeLS(LISTS, ls);
+      },
+      onClose: () => { if (changed) refreshListCards(listId); },
+    });
+  }
+
   /** A parish card's ⋯: a menu out of the button, over the card. */
   function openMore(pid, btn) {
     const p = S.byId.get(pid);
@@ -5470,7 +5537,9 @@
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(c); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
-      if (name) { const l = newList(name); toast(`Made “${l.name}”`); }
+      // Its card, and over it the parishes to put in it: a new list was a
+      // blank card with nothing to add from (Kevin, 17 Nov 2026).
+      if (name) { const l = newList(name); const c = COLL.get('list-' + l.id); if (c) openCollection(c); addParishes(l.id); }
       return;
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
@@ -5619,6 +5688,7 @@
         return;
       }
       if (a === 'addlist') return openAddToList(top.dataset.pid);
+      if (a === 'addparishes') return addParishes(top._coll.listId);
       // The bar's +: whoever may add an event adds one; anybody else suggests one.
       if (a === 'addevent') return may('event.edit', top.dataset.pid) ? addEventAt(top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
       if (a === 'more') return openMore(top.dataset.pid, b);
@@ -5756,7 +5826,7 @@
   const EDITING_SCRIPTS = [
     '/shared/read-from.js', '/shared/acronym-suggest.js', '/shared/logo-image.js',
     '/shared/kind-picker.js', '/shared/lang-picker.js', '/shared/event-checks.js',
-    '/shared/sse.js', '/shared/signs.js', '/shared/venue-picker.js',
+    '/shared/sse.js', '/shared/signs.js', '/shared/parish-picker.js', '/shared/venue-picker.js',
     '/shared/event-editor.js', '/shared/time-field.js', '/shared/rule-form.js',
     '/next/editing.js',
   ];
@@ -5779,7 +5849,7 @@
   }
   function editing() {
     if (!editingReady) {
-      editingReady = Promise.all(EDITING_SCRIPTS.map(loadScript)).then(() => {
+      editingReady = Promise.all([...EDITING_SCRIPTS.map(loadScript), loadPicker()]).then(() => {
         // What editing.js works on: this page, through the same questions it asks itself.
         window.NextEdit.init({
           parish: (id) => S.byId.get(id),

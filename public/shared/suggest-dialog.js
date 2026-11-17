@@ -209,12 +209,13 @@
    * editor" for them.
    *
    * Opened from no parish (the foot of the page's "Become an editor"), it
-   * asks which first: `parishes` are the groups to choose from, as
-   * [{ label, parishes: [{ id, name }] }], with `parishId`, if any, chosen
-   * already. A service time to pick comes with the parish picked, from
-   * `servicesFor` when the page gives it one.
+   * asks which first, from the one list every parish is chosen from
+   * (parish-picker.js): `parishes` are the parishes, `origin` where "how far"
+   * is from and `first` the jurisdiction listed first, with `parishId`, if
+   * any, chosen already. A service time to pick comes with the parish
+   * picked, from `servicesFor` when the page gives it one.
    */
-  function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '', editor = false, parishes = null, title = 'Suggest an edit' }) {
+  function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '', editor = false, parishes = null, origin = null, first = null, title = 'Suggest an edit' }) {
     close();
     const picking = Array.isArray(parishes) && parishes.length > 0;
     let pid = parishId || '';
@@ -244,11 +245,7 @@
     if (picking) services = servicesOf(pid);
     sheet.body.innerHTML = `
         <form class="detail-edit-form sg-form" novalidate>
-          ${picking ? `<div class="edit-row">
-            <select id="sg-parish" name="parish" aria-label="Which parish?">
-              <option value="">Which parish?</option>
-              ${parishes.map(g => `<optgroup label="${esc(g.label)}">${g.parishes.map(p => `<option value="${esc(p.id)}"${p.id === pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</optgroup>`).join('')}
-            </select></div>` : ''}
+          ${picking ? '<div class="edit-row"><div id="sg-parish" data-sg-parish></div></div>' : ''}
           <div class="edit-row">
             <select id="sg-about" name="about" aria-label="What is it about? (optional)">${aboutOptions(services)}
             </select></div>
@@ -301,12 +298,18 @@
     sync();
     form.addEventListener('change', sync);
     // Another parish, its own service times; what was chosen stays chosen where it can.
-    if (picking) f.parish.addEventListener('change', () => {
-      pid = f.parish.value;
-      const was = f.about.value;
-      f.about.innerHTML = aboutOptions(servicesOf(pid));
-      if ([...f.about.options].some(o => o.value === was)) f.about.value = was;
-    });
+    const whose = picking ? root.AgoraParishPicker.field(wrap.querySelector('[data-sg-parish]'), {
+      parishes, value: pid || null, origin, first, title: 'Which parish?', placeholder: 'Which parish?',
+      onChange: (id) => {
+        pid = id || '';
+        const was = f.about.value;
+        f.about.innerHTML = aboutOptions(servicesOf(pid));
+        if ([...f.about.options].some(o => o.value === was)) f.about.value = was;
+        err.hidden = true;
+        typed = true;
+        sync();
+      },
+    }) : null;
 
     // The poster: on the dialog at once, from the file itself. It is not
     // shrunk or sent here; the suggest page does both, after the sign-in.
@@ -355,7 +358,7 @@
       if (!pid) {
         err.textContent = 'Choose the parish.';
         err.hidden = false;
-        f.parish.focus();
+        if (whose) whose.open();
         return null;
       }
       const v = {};
@@ -422,7 +425,7 @@
 
     /** Their message to send, and the card watching for it to arrive. */
     function waiting(t) {
-      const name = parishName || ((f.parish && f.parish.selectedOptions[0]) || {}).textContent || 'the parish';
+      const name = parishName || ((parishes || []).find(p => p.id === pid) || {}).name || 'the parish';
       const shown = `+${t.number}`;
       sheet.body.innerHTML = `
         <div class="sg-wa-step">

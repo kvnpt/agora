@@ -271,45 +271,6 @@
     };
   }
 
-  function haversineKm(lat1, lng1, lat2, lng2) {
-    const rad = (x) => x * Math.PI / 180;
-    const a = Math.sin(rad(lat2 - lat1) / 2) ** 2
-      + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
-    return 6371 * 2 * Math.asin(Math.sqrt(a));
-  }
-
-  /** "12 km" — the distance that decides the order, said out loud. */
-  const kmLabel = (km) => (km == null || !Number.isFinite(km))
-    ? '' : (km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`);
-
-  /**
-   * Every parish the event could be listed at, own parish first.
-   *
-   * NOT narrowed to the ones this account may write: a parish contact's list
-   * once came back holding only their own parish, which made the ask
-   * unreachable by the only people it is for. `_needsAsk` marks the rest.
-   *
-   * Then the event's own jurisdiction, then distance from the EVENT'S parish —
-   * a deanery liturgy at Redfern is attended by the parishes near Redfern, and
-   * the order is the same for everybody who opens it.
-   */
-  function orderParishRows(parish, parishes, may) {
-    const km = (p) => (parish.lat != null && p.lat != null)
-      ? haversineKm(parish.lat, parish.lng, p.lat, p.lng) : Infinity;
-    const others = (parishes || [])
-      .filter(p => p.id !== parish.id && p.id !== '_unassigned')
-      .map(p => ({ ...p, _needsAsk: !may('event.edit', p.id), _km: km(p) }))
-      .sort((a, b) => {
-        const ah = a.jurisdiction === parish.jurisdiction ? 0 : 1;
-        const bh = b.jurisdiction === parish.jurisdiction ? 0 : 1;
-        return ah - bh
-          || String(a.jurisdiction || '').localeCompare(String(b.jurisdiction || ''))
-          || a._km - b._km
-          || String(a.name || '').localeCompare(String(b.name || ''));
-      });
-    return [{ ...parish, _isOwn: true }, ...others];
-  }
-
   /**
    * Is anything ticked on this card that the person may not write themselves?
    * `parishOf(id)` names the parish of a replace target, from the candidates.
@@ -324,7 +285,7 @@
 
   /**
    * The parishes a draft can belong to, for the picker: the ones this person
-   * may add events to, by name. Unlike orderParishRows this IS narrowed — a
+   * may add events to, by name. Unlike the parishes an event also appears at, this IS narrowed — a
    * draft is somewhere the person can publish, and the Worker refuses a move
    * anywhere else. The current parish is always in it, so the picker can show
    * where the draft is even when the list somehow does not hold it.
@@ -725,8 +686,8 @@
     el.className = 'ee';
     el.innerHTML = `
       <div class="ee-parish">
-        <label for="${uid}-parish">Parish</label>
-        <select id="${uid}-parish" data-ee="parish"></select>
+        <label id="${uid}-parish">Parish</label>
+        <div data-ee="parish" role="group" aria-labelledby="${uid}-parish"></div>
       </div>
       <div class="ee-suggest" data-ee="suggest" aria-live="polite" hidden></div>
       <div class="ee-suggest ee-intent" data-ee="intent" aria-live="polite" hidden></div>
@@ -1239,7 +1200,7 @@
           <details class="ee-combine">
             <summary>Include other parishes…</summary>
             <div class="ee-section-title">Also appears at</div>
-            <div class="ee-list" data-list="also"></div>
+            <div data-list="also"></div>
             <div class="ee-section-title">Replaces at those parishes</div>
             <div class="ee-list" data-list="replaces"><div class="ee-empty">Pick a date to see what it could replace</div></div>
             <div class="ee-hint">Whatever is ticked here stops being its own card and shows as a tombstone pointing at this event — nothing disappears.</div>
@@ -2231,30 +2192,21 @@
 
     // ── the combine, per card ──
 
-    let parishRows = null;    // ordered from the draft's parish; a move starts them again
-    const rowsFor = () => parishRows || (parishRows = orderParishRows(state.parish, opts.parishes, may));
-
+    // The parishes it also appears at, as chips, and a tap opens the one
+    // list every parish is chosen from (parish-picker.js): every parish, the
+    // draft's own in and staying in, and one that is not this person's to
+    // write marked, which turns the publish into an ask.
     function renderCombine(card) {
-      const rows = rowsFor();
-      const ticked = new Set(card.fields.also_at);
-      let lastJuris = null;
-      card.els.also.innerHTML = rows.map(p => {
-        let head = '';
-        if (!p._isOwn && p.jurisdiction !== lastJuris) {
-          lastJuris = p.jurisdiction;
-          const j = String(p.jurisdiction || 'Other');
-          head = `<div class="ee-group">${esc(j.charAt(0).toUpperCase() + j.slice(1))} Orthodox</div>`;
-        }
-        const tag = p._isOwn ? '<em class="ee-tag">own</em>' : p._needsAsk ? '<em class="ee-tag ee-tag-ask">needs an owner</em>' : '';
-        const sub = p._isOwn ? '' : kmLabel(p._km);
-        return `${head}<label class="ee-item"><input type="checkbox" value="${esc(p.id)}"${p._isOwn ? ' checked disabled' : ticked.has(p.id) ? ' checked' : ''}>`
-          + `<span>${esc(p.name)}${tag}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`;
-      }).join('');
-      card.els.also.querySelectorAll('input:not([disabled])').forEach(cb => cb.addEventListener('change', () => {
-        const list = [...card.els.also.querySelectorAll('input:not([disabled]):checked')].map(x => x.value);
-        setList(card, 'also_at', list);
-        renderReplaces(card);
-      }));
+      const o = {
+        multiple: true, title: 'Add parishes', add: 'Add parishes',
+        parishes: (opts.parishes || []).filter(p => p.id !== '_unassigned'),
+        value: card.fields.also_at, fixed: [state.parish.id], fixedTag: 'own',
+        origin: originOf(state.parish), first: state.parish.jurisdiction,
+        tagOf: (p) => (may('event.edit', p.id) ? '' : 'needs an owner'),
+        onChange: (ids) => { setList(card, 'also_at', ids); renderReplaces(card); },
+      };
+      if (card.alsoField) card.alsoField.update(o);
+      else card.alsoField = root.AgoraParishPicker.field(card.els.also, o);
       if (card.candidates == null) loadCandidates(card);
       else renderReplaces(card);
     }
@@ -3292,12 +3244,22 @@
     // cards move with the draft, on the Worker, which also takes off a venue
     // that was only the new parish's own address (moveDraft).
 
+    // Whose it is: the one list every parish is chosen from
+    // (parish-picker.js), holding the parishes this person may add to.
+    let parishField = null;
+    /** Where "how far" is from in this editor's lists: the parish it is at. */
+    const originOf = (p) => (p && p.lat != null ? { lat: p.lat, lng: p.lng, label: p.name } : null);
     function renderPicker() {
-      const sel = $('parish');
-      const list = editableParishes(opts.parishes, may, state.parish);
-      sel.innerHTML = (state.parish ? '' : '<option value="">Choose the parish…</option>')
-        + list.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
-      sel.value = state.parish ? state.parish.id : '';
+      const o = {
+        parishes: editableParishes(opts.parishes, may, state.parish),
+        value: state.parish ? state.parish.id : null,
+        title: 'Choose the parish', placeholder: 'Choose the parish…', lone: true,
+        origin: originOf(state.parish) || (opts.pickOrigin ? opts.pickOrigin() : null),
+        first: state.parish ? state.parish.jurisdiction : null,
+        onChange: (id) => moveTo(id),
+      };
+      if (parishField) parishField.update(o);
+      else parishField = root.AgoraParishPicker.field($('parish'), o);
       el.classList.toggle('ee-no-parish', !state.parish);
     }
 
@@ -3322,7 +3284,6 @@
     /** Point everything that hangs off the parish at a new one. */
     function setParish(next) {
       state.parish = next;
-      parishRows = null;
       // Its languages up front are its jurisdiction's (lang-picker.js).
       if (root.AgoraLangPicker && root.AgoraLangPicker.setJurisdiction) root.AgoraLangPicker.setJurisdiction(el, next && next.jurisdiction);
       // Another parish, another timetable: what a sign is set beside, and what
@@ -3333,6 +3294,8 @@
       for (const c of state.cards) {
         c.unlinkedFrom = '';
         if (c.els && c.els.zone) c.els.zone.textContent = tzHint();
+        // Where it is held is chosen from the other parishes, nearest this one.
+        if (c.venue && c.venue.setHost) c.venue.setHost(next || {});
         // The day's services are looked up in the parish's zone, and "replaces"
         // shows the new parish's: both start again, and a tick on a service the
         // list no longer shows goes with them (renderReplaces).
@@ -3349,10 +3312,10 @@
 
     /** Move the draft — or, before there is one, just the editor — to another parish. */
     async function moveTo(pid) {
-      const sel = $('parish');
+      const stay = () => parishField.set(state.parish ? state.parish.id : null);
       const next = parishById(pid);
       if (!next || (state.parish && next.id === state.parish.id)) {
-        sel.value = state.parish ? state.parish.id : '';
+        stay();
         return;
       }
       if (!state.parish) { setParish(next); begin(); return; }
@@ -3369,7 +3332,7 @@
         const r = await http('PATCH', `/api/admin/drafts/${state.draft.id}`, { parish_id: next.id });
         state.moving = false;
         if (!r.ok) {
-          sel.value = state.parish.id;
+          stay();
           sync();
           return showError((r.body && r.body.error) || 'The draft could not be moved — check the connection.');
         }
@@ -3387,8 +3350,6 @@
       showMessage(`Moved to ${next.name}. Nothing is published until you say so.`, 'note');
       sync();
     }
-
-    $('parish').addEventListener('change', (e) => moveTo(e.target.value));
 
     // ── publishing ──
 
@@ -3411,7 +3372,7 @@
       // Not while the poster is read (the Worker squares the read with the
       // parish it started at), published, or already on its way somewhere.
       const still = reading || state.publishing || state.moving;
-      $('parish').disabled = still;
+      if (parishField) parishField.disable(still);
       const mv = el.querySelector('[data-ee="move-suggested"]');
       if (mv) mv.disabled = still;
       // A sign's draft ends with Done where Publish would be: what it adds is
@@ -3633,7 +3594,7 @@
   // the same size the editor stores one (admin.html suggestPage).
   // readClipboardImage and friends too: the timetable's "Add an image"
   // (editing.js addService) has the same Paste pill.
-  const api = { open, summaryLine, summaryParts, serviceLine, serviceWhen, dateChanges, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
+  const api = { open, summaryLine, summaryParts, serviceLine, serviceWhen, dateChanges, draftTitle, timeRange, dateLabel, askNeeded,
     textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, joinPictures, pictureLayout, senderOf,
     MAX_PICTURES, cardWeekday, serviceFromCard,
     occDate, occOf, isNewOcc, serviceRunsOn,

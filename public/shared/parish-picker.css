@@ -1,0 +1,160 @@
+/* The parish picker (parish-picker.js): one list wherever a parish is chosen.
+ *
+ * Written against the tokens the page (next.css) and /admin (admin.html)
+ * both define, with a fallback wherever the two name a thing differently, so
+ * it reads as part of whichever it is in, light or dark. Inputs are 16px:
+ * iOS Safari zooms the page on focus for anything smaller. Nothing here
+ * sticks and nothing scrolls sideways. */
+
+.pp, .pp-fieldbox, .pp-chosen, .pp-dialog {
+  --pp-card: var(--card, var(--surface, #fff));
+  --pp-soft: var(--card-2, var(--surface-2, #f3f4f6));
+  --pp-line: var(--line, var(--border-light, rgba(60, 60, 67, .14)));
+  --pp-muted: var(--text-2, var(--muted, #6b7280));
+  --pp-accent: var(--accent, #007aff);
+  --pp-ok: var(--success, #16a34a);
+  --pp-warn: var(--warn, #b45309);
+  color: var(--text);
+}
+.pp [hidden], .pp-chosen [hidden] { display: none !important; }
+.pp button, .pp-fieldbox button, .pp-chosen button, .pp-dialog button {
+  font: inherit; color: inherit; background: none; border: 0; margin: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pp { display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Find, and how it is sorted ── */
+.pp-find {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 0 12px; min-height: 44px;
+  border-radius: 12px; background: var(--pp-soft); color: var(--pp-muted);
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+.pp-find svg { flex: none; }
+.pp .pp-find input {
+  flex: 1; min-width: 0; width: auto; height: 44px; margin: 0; padding: 0;
+  border: 0; outline: 0; background: none; box-shadow: none; border-radius: 0;
+  font: inherit; font-size: 16px; color: var(--text); -webkit-appearance: none; appearance: none;
+}
+.pp-find:focus-within { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pp-accent) 55%, transparent); }
+.pp-sortrow { display: flex; flex-direction: column; gap: 6px; }
+.pp-sorts { display: flex; gap: 6px; }
+.pp-sorts:empty { display: none; }
+.pp .pp-sort {
+  flex: 1; min-height: 36px; padding: 6px 10px; border-radius: 999px;
+  border: 1px solid var(--border, #d0d0d0); background: var(--pp-card);
+  font-size: 13.5px; font-weight: 600; color: var(--pp-muted); text-align: center; white-space: nowrap;
+}
+.pp .pp-sort.on { background: var(--text); border-color: var(--text); color: var(--pp-card); }
+.pp-from { font-size: 12.5px; color: var(--pp-muted); padding: 0 2px; }
+.pp-from:empty { display: none; }
+.pp-note { margin: 0 0 12px; font-size: 14px; line-height: 1.4; color: var(--text-2, var(--muted, #6b7280)); }
+
+/* ── Chosen, as chips ── */
+.pp-chips, .pp-chosen { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pp-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px;
+  padding: 3px 4px 3px 4px; border-radius: 999px;
+  background: var(--pp-soft); font-size: 13px; font-weight: 600; line-height: 1.2;
+}
+.pp-chip > span:not(.pp-av) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+.pp-chip:has(.pp-x) > span:not(.pp-av) { padding-right: 0; }
+.pp-chip .pp-x {
+  flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  color: var(--pp-muted);
+}
+.pp-chip .pp-x:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.pp-chosen .pp-add {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 14px 4px 10px;
+  border-radius: 999px; border: 1px solid color-mix(in srgb, var(--pp-accent) 55%, transparent);
+  color: var(--pp-accent); font-size: 13.5px; font-weight: 600;
+}
+.pp-chosen .pp-add:disabled { opacity: .45; cursor: default; }
+
+/* ── Sections ── */
+.pp-list { display: flex; flex-direction: column; gap: 10px; }
+.pp-sec { border: 1px solid var(--pp-line); border-radius: 14px; background: var(--pp-card); overflow: hidden; }
+.pp .pp-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 8px 12px 8px 14px;
+  text-align: left; background: var(--pp-soft);
+}
+.pp-head b { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -.005em; }
+.pp-head small { flex: none; font-size: 12.5px; font-weight: 500; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
+.pp-mine { color: var(--pp-ok); font-weight: 600; }
+.pp-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--j, #888); }
+.pp-chev { flex: none; display: inline-grid; place-items: center; color: var(--pp-muted); transition: transform .15s ease; }
+.pp-sec.open > .pp-head .pp-chev { transform: rotate(90deg); }
+.pp-sec.open > .pp-head { border-bottom: 1px solid var(--pp-line); }
+.pp-none { padding: 18px 14px; border-radius: 14px; background: var(--pp-soft); color: var(--pp-muted); font-size: 14.5px; }
+
+/* ── A parish ── */
+.pp .pp-row, .pp-fieldbox .pp-field {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px;
+  text-align: left;
+}
+.pp-row + .pp-row { border-top: 1px solid var(--pp-line); }
+.pp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pp-t b { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.pp-t small { font-size: 12.5px; line-height: 1.3; color: var(--pp-muted); }
+.pp-tag { font-style: normal; font-weight: 600; }
+.pp-tag.warn { color: var(--pp-warn); }
+.pp-km { flex: none; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pp-km.near { color: #007aff; }
+.pp-km.mid { color: #4da3ff; }
+.pp-km.far { color: #a3cbff; }
+.pp-ck {
+  flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  color: var(--pp-muted); box-shadow: inset 0 0 0 1.5px var(--border, #d0d0d0);
+}
+.pp-ck > span { display: inline-grid; place-items: center; }
+.pp-ck .pp-ck-on { display: none; }
+.pp-row.on .pp-ck { background: var(--pp-accent); color: #fff; box-shadow: none; }
+.pp-row.on .pp-ck-on { display: inline-grid; }
+.pp-row.on .pp-ck-off { display: none; }
+/* One to choose: no ring to tick, only the one chosen says so. */
+.pp-list:not([aria-multiselectable]) .pp-ck { box-shadow: none; color: transparent; }
+.pp-list:not([aria-multiselectable]) .pp-row.on .pp-ck { background: none; color: var(--pp-accent); }
+.pp-row:disabled { cursor: default; }
+.pp-row:disabled .pp-ck { background: var(--pp-muted); opacity: .55; }
+@media (hover: hover) { .pp-row:not(:disabled):hover { background: color-mix(in srgb, var(--text) 4%, transparent); } }
+
+.pp-av {
+  --s: 34px;
+  position: relative; flex: none; width: var(--s); height: var(--s); border-radius: 50%;
+  background: #fff; color: var(--j, #888); box-shadow: inset 0 0 0 1px var(--j, #888);
+  display: inline-grid; place-items: center; overflow: hidden;
+  font-size: calc(var(--s) * .3); font-weight: 750; letter-spacing: -.02em;
+}
+.pp-av b { font-weight: inherit; font-size: inherit; }
+.pp-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.pp-av.xs { --s: 24px; font-size: 7.5px; }
+
+/* ── In a form: the one chosen, a row to tap ── */
+.pp-fieldbox { display: block; min-width: 0; }
+.pp-fieldbox .pp-field {
+  border: 1px solid var(--border, #d0d0d0); border-radius: 12px; background: var(--pp-card); min-height: 52px;
+}
+.pp-fieldbox .pp-field.none .pp-t b { font-weight: 500; color: var(--pp-muted); }
+.pp-fieldbox .pp-field:disabled { cursor: default; opacity: .6; }
+.pp-fieldbox .pp-field.lone:disabled { opacity: 1; border-color: transparent; padding-left: 0; background: none; }
+.pp-fieldbox .pp-field .pp-chev { transform: none; }
+
+/* ── As a card (form-sheet.js), over a form or the page ── */
+.pp-backdrop { z-index: 3300; }
+.pp-backdrop .form-sheet .frame-body.pp-body { padding-left: 14px; padding-right: 14px; }
+
+/* ── Where the page has no form cards (/admin): the browser's dialog ── */
+.pp-dialog {
+  width: min(560px, calc(100vw - 24px)); max-height: min(86dvh, 760px); padding: 0; border: 0; border-radius: 16px;
+  background: var(--pp-card); color: var(--text); box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+  margin: auto; overflow: hidden;
+}
+.pp-dialog[open] { display: flex; flex-direction: column; }
+.pp-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.pp-dbar {
+  flex: none; display: grid; grid-template-columns: minmax(72px, auto) 1fr minmax(72px, auto); align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--pp-line);
+}
+.pp-dbar b { text-align: center; font-size: 16px; }
+.pp-dialog .pp-dclose { justify-self: start; min-height: 36px; padding: 0 12px; border-radius: 999px; font-weight: 600; color: var(--pp-accent); }
+.pp-dbody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px; }
+.pp-dbody .form-actions { display: none; }

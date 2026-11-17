@@ -29,22 +29,6 @@ test('languages travel as a list and are typed as a line', () => {
   assert.strictEqual(E.langsToText(['Greek', 'English']), 'Greek, English');
 });
 
-test('also-appears-at lists every parish: own first, then its jurisdiction by distance', () => {
-  const own = { id: 'a', name: 'A', jurisdiction: 'greek', lat: -33.9, lng: 151.2 };
-  const rows = E.orderParishRows(own, [
-    { id: 'far', name: 'Far', jurisdiction: 'greek', lat: -27.5, lng: 153.0 },
-    { id: 'ant', name: 'Ant', jurisdiction: 'antiochian', lat: -33.9, lng: 151.2 },
-    own,
-    { id: 'near', name: 'Near', jurisdiction: 'greek', lat: -33.8, lng: 151.2 },
-    { id: '_unassigned', name: 'x' },
-  ], (cap, pid) => pid === 'a' || pid === 'near');
-  assert.deepStrictEqual(rows.map(r => r.id), ['a', 'near', 'far', 'ant']);
-  assert.ok(rows[0]._isOwn);
-  assert.deepStrictEqual(rows.slice(1).map(r => r._needsAsk), [false, true, true], 'marked, not hidden');
-  assert.strictEqual(E.kmLabel(rows[1]._km), '11 km');
-  assert.strictEqual(E.kmLabel(4.26), '4.3 km');
-});
-
 test('an ask is needed when anything ticked is somebody else’s', () => {
   const may = (cap, pid) => pid === 'mine';
   const parishOf = (rid) => ({ '7': 'mine', '3:2026-11-15': 'theirs' }[rid]);
