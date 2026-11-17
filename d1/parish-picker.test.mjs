@@ -1,6 +1,6 @@
 // public/shared/parish-picker.js — the parts that are not the DOM: how the
-// one list of parishes is divided (by distance, by archdiocese, by location),
-// what a search finds, and the line under a parish's name. The list itself,
+// one list of parishes is divided (by jurisdiction, by location) and ordered
+// (nearest first, A to Z), what a search finds, and the line under a parish's name. The list itself,
 // and every door to it, is checked in a browser (docs/browser-checks.md).
 
 import test from 'node:test';
@@ -26,24 +26,35 @@ const ps = [
 const redfern = { lat: -33.892, lng: 151.209 };
 const ids = (secs) => secs.map(s => [s.label, s.rows.map(r => r.p.id)]);
 
-test('nearest: one list by distance, divided where the page’s distance colours change', () => {
-  const secs = P.sectionsOf(ps, { sort: 'near', origin: redfern });
-  assert.deepEqual(ids(secs), [
-    ['Within 5km', ['sgr', 'hts']],
-    ['5 to 15km', ['snp']],
-    ['50 to 200km', ['wol']],
-    ['Over 200km', ['cbr', 'dub', 'mel', 'akl', 'old']],
-  ]);
-  assert.ok(secs[0].rows[0].km < secs[0].rows[1].km);
+test('two ways to divide it, and distance is an order, never a division of its own', () => {
+  assert.deepEqual(P.SORTS.map(([k]) => k), ['juris', 'place']);
+  // What an older phone kept ("near") is the jurisdictions.
+  assert.deepEqual(P.sectionsOf(ps, { sort: 'near', origin: redfern }).map(s => s.label),
+    P.sectionsOf(ps, { sort: 'juris', origin: redfern }).map(s => s.label));
 });
 
-test('nearest with nowhere to measure from is the archdioceses, by name', () => {
-  const secs = P.sectionsOf(ps, { sort: 'near' });
+test('A to Z: by name in each section, and a row still says how far', () => {
+  const secs = P.sectionsOf(ps, { sort: 'juris', order: 'az', origin: redfern });
+  assert.deepEqual(ids(secs), [
+    ['Greek Orthodox', ['hts', 'wol', 'cbr']],
+    ['Antiochian Orthodox', ['sgr', 'snp']],
+    ['Serbian Orthodox', ['dub', 'akl', 'mel']],
+    ['Other', ['old']],
+  ]);
+  assert.ok(secs[0].rows[0].km < 5);
+  // Locations as locations.js lists them, not nearest first.
+  assert.deepEqual(P.sectionsOf(ps, { sort: 'place', order: 'az', origin: redfern }).map(s => s.label),
+    P.sectionsOf(ps, { sort: 'place' }).map(s => s.label));
+});
+
+test('nearest first with nowhere to measure from is by name', () => {
+  const secs = P.sectionsOf(ps, { sort: 'juris' });
   assert.equal(secs[0].label, 'Greek Orthodox');
   assert.deepEqual(secs[0].rows.map(r => r.p.id), ['hts', 'wol', 'cbr']);
+  assert.equal(secs[0].rows[0].km, Infinity);
 });
 
-test('archdiocese: the jurisdiction collections in their order, the asker’s own first, nearest first in each', () => {
+test('jurisdiction: the jurisdiction collections in their order, the asker’s own first, nearest first in each', () => {
   const secs = P.sectionsOf(ps, { sort: 'juris', origin: redfern, first: 'serbian' });
   assert.deepEqual(ids(secs), [
     ['Serbian Orthodox', ['dub', 'mel', 'akl']],
@@ -77,14 +88,14 @@ test('every parish is listed, whoever asks: never the unassigned bucket, and not
   // A contact's list once came back holding only their own parish, which made
   // the ask unreachable by the only people it is for. Whose a parish is, is a
   // word beside its name (`tagOf`), never a reason to leave it out.
-  for (const sort of ['near', 'juris', 'place']) {
-    const got = P.sectionsOf(ps, { sort, origin: redfern }).flatMap(s => s.rows.map(r => r.p.id)).sort();
+  for (const [sort, order] of [['juris', 'near'], ['juris', 'az'], ['place', 'near'], ['place', 'az']]) {
+    const got = P.sectionsOf(ps, { sort, order, origin: redfern }).flatMap(s => s.rows.map(r => r.p.id)).sort();
     assert.deepEqual(got, ps.map(p => p.id).filter(id => id !== '_unassigned').sort(), sort);
   }
 });
 
 test('words typed find a parish by its name, short name, suburb, jurisdiction or city', () => {
-  const found = (q) => P.sectionsOf(ps, { sort: 'near', origin: redfern, q }).flatMap(s => s.rows.map(r => r.p.id));
+  const found = (q) => P.sectionsOf(ps, { sort: 'place', origin: redfern, q }).flatMap(s => s.rows.map(r => r.p.id));
   assert.deepEqual(found('nicholas'), ['snp', 'cbr']);
   assert.deepEqual(found('SGR'), ['sgr']);
   assert.deepEqual(found('surry'), ['hts']);
@@ -106,13 +117,13 @@ test('where a parish is: its city, or its state or country', () => {
 });
 
 test('the line under a name: the jurisdiction, and a suburb only where the name does not say it', () => {
-  assert.equal(P.subOf(ps[0], 'near'), 'Antiochian');
+  assert.equal(P.subOf(ps[0], 'place'), 'Antiochian');
   assert.equal(P.subOf(ps[0], 'juris'), '', 'its section says the jurisdiction');
-  assert.equal(P.subOf(ps[5], 'near'), 'Serbian');
-  assert.equal(P.subOf({ name: 'St Dionysios, Gosford', jurisdiction: 'greek', address: '21 Nurses Road, Central Mangrove, NSW, 2250' }, 'near'), 'Greek · Central Mangrove');
+  assert.equal(P.subOf(ps[5], 'place'), 'Serbian');
+  assert.equal(P.subOf({ name: 'St Dionysios, Gosford', jurisdiction: 'greek', address: '21 Nurses Road, Central Mangrove, NSW, 2250' }, 'place'), 'Greek · Central Mangrove');
   // Not a state, a postcode, a country or a street corner.
-  assert.equal(P.subOf({ name: 'St. Nicholas Church, Fairfield', jurisdiction: 'russian', address: '5 Barbara St, Fairfield, NSW 2165 Australia' }, 'near'), 'Russian');
-  assert.equal(P.subOf({ name: 'St Athanasios, Rookwood', jurisdiction: 'greek', address: 'Cnr. Weekes & Carpenter Ave Rookwood' }, 'near'), 'Greek');
+  assert.equal(P.subOf({ name: 'St. Nicholas Church, Fairfield', jurisdiction: 'russian', address: '5 Barbara St, Fairfield, NSW 2165 Australia' }, 'place'), 'Russian');
+  assert.equal(P.subOf({ name: 'St Athanasios, Rookwood', jurisdiction: 'greek', address: 'Cnr. Weekes & Carpenter Ave Rookwood' }, 'place'), 'Greek');
   assert.equal(P.subOf({ name: 'Our Lady, Northcote', jurisdiction: 'greek', address: '7 Hartington Street, Northcote, VIC. 3070' }, 'juris'), '');
 });
 

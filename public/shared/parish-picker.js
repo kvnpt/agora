@@ -4,17 +4,21 @@
 // "Become an editor" is about (Kevin, 17 Nov 2026: "a well divided list
 // sortable by distance, archdiocese, or location and the same everywhere").
 //
-// One list, three ways to divide it:
+// One list, two ways to divide it, a switch from one to the other:
 //
-//   Nearest       by how far, in bands (Within 5km, 5–15km, …), from whoever
-//                 asks: you, or the parish the form is for
-//   Archdiocese   the jurisdiction collections (collections.js JURISDICTIONS),
+//   Jurisdiction  the jurisdiction collections (collections.js JURISDICTIONS),
 //                 in their order, the asker's own first
 //   Location      a city's parishes (locations.js), then the rest of its state
 //
-// A section folds at its heading. The sort is kept per phone, so the list
-// opens as it was left, wherever it is opened from. Words typed find a parish
-// by its name, its short name, its suburb, its jurisdiction or its city.
+// and two orders inside a section, the pair of arrows the page's Nearest
+// button is: nearest first (from whoever asks: you, or the parish the form
+// is for), or A to Z. Distance is an order, never a division of its own
+// (Kevin, 17 Nov 2026: "dont have nearest first as a category").
+//
+// A section folds at its heading, words typed or not. Both choices are kept
+// per phone, so the list opens as it was left, wherever it is opened from.
+// Words typed find a parish by its name, its short name, its suburb, its
+// jurisdiction or its city.
 //
 // Three doors, one list:
 //   mount(el, o)   the list itself, in a box
@@ -37,8 +41,9 @@
 
   // ── What is not the DOM ───────────────────────────────────────────────
 
-  const SORTS = [['near', 'Nearest'], ['juris', 'Archdiocese'], ['place', 'Location']];
+  const SORTS = [['juris', 'Jurisdiction'], ['place', 'Location']];
   const SORT_KEY = 'agora_pick_sort';
+  const ORDER_KEY = 'agora_pick_order';   // 'near' | 'az'
 
   function km(a, b) {
     if (!a || !b || !isFinite(a.lat) || !isFinite(b.lat) || a.lat == null || b.lat == null) return Infinity;
@@ -50,9 +55,6 @@
   // The page's own (next.js fmtKm): whole kilometres, a decimal only under one.
   const fmtKm = (d) => (Math.round(d * 10) < 10 ? `${Math.max(1, Math.round(d * 10)) / 10}km` : `${Math.round(d)}km`);
   const distClass = (d) => (d <= 5 ? 'near' : d <= 15 ? 'mid' : 'far');
-
-  // How far, as headings: the page's distance blues change at 5 and 15.
-  const BANDS = [[5, 'Within 5km'], [15, '5 to 15km'], [50, '15 to 50km'], [200, '50 to 200km'], [Infinity, 'Over 200km']];
 
   const JURIS_SHORT = { greek: 'Greek', antiochian: 'Antiochian', serbian: 'Serbian', russian: 'Russian', romanian: 'Romanian', macedonian: 'Macedonian' };
   /** The jurisdictions as the collections list them: [[key, 'Greek Orthodox'], …]. */
@@ -124,27 +126,22 @@
   /**
    * The parishes in their sections: [{ key, label, jurisdiction?, rows: [{ p, km }] }].
    *
-   *   sort     'near' | 'juris' | 'place'; 'near' with nowhere to measure from is 'juris'
-   *   origin   { lat, lng }, where distance is measured from (or null)
-   *   first    the jurisdiction that goes first under Archdiocese (the asker's own)
+   *   sort     'juris' | 'place': what the sections are
+   *   order    'near' | 'az': nearest first inside a section, or by name.
+   *            Nearest with nowhere to measure from is by name.
+   *   origin   { lat, lng }, where distance is measured from (or null); a
+   *            row says how far whichever the order
+   *   first    the jurisdiction that goes first under Jurisdiction (the asker's own)
    *   q        words typed
    */
-  function sectionsOf(parishes, { sort = 'near', origin = null, first = null, q = '' } = {}) {
-    const from = origin && origin.lat != null && isFinite(origin.lat) ? origin : null;
+  function sectionsOf(parishes, { sort = 'juris', order: by = 'near', origin = null, first = null, q = '' } = {}) {
+    const measured = origin && origin.lat != null && isFinite(origin.lat) ? origin : null;
     const rows = (parishes || []).filter(p => p && p.id && p.id !== '_unassigned' && matches(p, q))
-      .map(p => ({ p, km: from ? km(from, p) : Infinity }));
+      .map(p => ({ p, km: measured ? km(measured, p) : Infinity }));
+    const from = by === 'az' ? null : measured;
     const order = from ? byKm : byName;
-    const mode = sort === 'near' && !from ? 'juris' : sort;
 
-    if (mode === 'near') {
-      rows.sort(byKm);
-      const out = BANDS.map(([max, label]) => ({ key: `km-${max}`, label, max, rows: [] }));
-      const none = { key: 'km-none', label: 'No pin on file', rows: [] };
-      for (const r of rows) (isFinite(r.km) ? out.find(b => r.km <= b.max) : none).rows.push(r);
-      return [...out, none].filter(s => s.rows.length).map(({ max, ...s }) => s);
-    }
-
-    if (mode === 'juris') {
+    if (sort !== 'place') {
       const known = jurisdictions();
       const keys = known.map(([j]) => j);
       const out = new Map([...(first && keys.includes(first) ? [first] : []), ...keys]
@@ -155,7 +152,7 @@
     }
 
     // Location: a region's cities, then the rest of it. Regions nearest
-    // first, else as locations.js lists them; cities the same way.
+    // first; A to Z, as locations.js lists them. Cities the same way.
     const L = locations();
     const rank = new Map((L ? L.LOCATIONS : []).map((l, i) => [l.slug, i]));
     const secs = new Map();
@@ -206,6 +203,8 @@
   const PLUS = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
   const CHEV = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
   const FIND = '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>';
+  // The page's Nearest button's sign (next.js SORT_ICON): a pair of arrows, up and down.
+  const ORDER = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20V4M4.5 7.5 8 4l3.5 3.5M16 4v16M12.5 16.5 16 20l3.5-3.5"/></svg>';
   const X = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 
   const colorOf = (j) => (root && root.agoraJurisdictionColor ? root.agoraJurisdictionColor(j) : '#888');
@@ -226,8 +225,8 @@
   }
   const paint = (el, html) => { if (root.AgoraMorph) root.AgoraMorph.morph(el, html); else el.innerHTML = html; };
 
-  function readSort() { try { return root.localStorage.getItem(SORT_KEY); } catch { return null; } }
-  function keepSort(s) { try { root.localStorage.setItem(SORT_KEY, s); } catch { /* this page only */ } }
+  function kept(k) { try { return root.localStorage.getItem(k); } catch { return null; } }
+  function keep(k, v) { try { root.localStorage.setItem(k, v); } catch { /* this page only */ } }
 
   /**
    * The list, in a box.
@@ -239,7 +238,7 @@
    *   value      the id chosen, or the ids
    *   fixed      ids that are in and stay in (an event's own parish), tagged `fixedTag`
    *   origin     { lat, lng, label }: where "how far" is from, and its words ("you", a parish's name)
-   *   first      the jurisdiction listed first under Archdiocese
+   *   first      the jurisdiction listed first under Jurisdiction
    *   tagOf      (p) => '' | 'needs an owner': a word beside a parish's name
    *   onChange   (ids) => void, as each is tapped (multiple)
    *   onPick     (id) => void (one)
@@ -248,27 +247,23 @@
     const st = {
       o,
       q: '',
-      sort: null,
-      folds: new Map(),          // `${sort}:${key}` → open?
+      sort: SORTS.some(([k]) => k === kept(SORT_KEY)) ? kept(SORT_KEY) : SORTS[0][0],
+      az: kept(ORDER_KEY) === 'az',
+      folds: new Map(),          // `${sort}:${key}` → open? (`q:` before it, while words are typed)
       value: new Set(o.multiple ? (o.value || []) : (o.value ? [o.value] : [])),
     };
     const fixed = () => new Set(st.o.fixed || []);
     const from = () => (st.o.origin && st.o.origin.lat != null ? st.o.origin : null);
-    const sorts = () => SORTS.filter(([k]) => k !== 'near' || from());
-    const pickSort = () => {
-      const kept = readSort();
-      const can = sorts().map(([k]) => k);
-      st.sort = can.includes(st.sort) ? st.sort : can.includes(kept) ? kept : can[0];
-    };
-    pickSort();
-
     el.classList.add('pp');
     dropBadLogos(el);
     el.innerHTML = `
       <label class="pp-find">${FIND}<input type="search" placeholder="Find a parish" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Find a parish"></label>
       <div class="pp-chips" data-pp-chips hidden></div>
       <div class="pp-sortrow">
-        <div class="pp-sorts" role="group" aria-label="Sort by"></div>
+        <div class="pp-bar">
+          <div class="pp-sorts" role="group" aria-label="Divide by"></div>
+          <button type="button" class="pp-order" data-pp-order>${ORDER}</button>
+        </div>
         <div class="pp-from"></div>
       </div>
       <div class="pp-list" role="listbox"${o.multiple ? ' aria-multiselectable="true"' : ''}></div>`;
@@ -277,11 +272,17 @@
     const byId = () => new Map((st.o.parishes || []).map(p => [p.id, p]));
 
     function renderSorts() {
-      const list = sorts();
-      $('.pp-sorts').innerHTML = list.length > 1 ? list.map(([k, label]) =>
-        `<button type="button" class="pp-sort${k === st.sort ? ' on' : ''}" data-pp-sort="${k}" aria-pressed="${k === st.sort}">${esc(label)}</button>`).join('') : '';
-      const o2 = from();
-      $('.pp-from').textContent = o2 && o2.label ? `Distances from ${o2.label}` : '';
+      $('.pp-sorts').innerHTML = SORTS.map(([k, label]) =>
+        `<button type="button" class="pp-sort${k === st.sort ? ' on' : ''}" data-pp-sort="${k}" aria-pressed="${k === st.sort}">${esc(label)}</button>`).join('');
+      // The arrows: nearest first, or A to Z. Nowhere to measure from, and
+      // there is one order and no button.
+      const o2 = from(), near = !!o2 && !st.az;
+      const order = $('[data-pp-order]');
+      order.hidden = !o2;
+      order.setAttribute('aria-pressed', String(near));
+      order.setAttribute('aria-label', near ? 'Nearest first. Sort A to Z' : 'A to Z. Sort nearest first');
+      order.title = near ? 'Nearest first' : 'A to Z';
+      $('.pp-from').textContent = !o2 ? '' : near ? `Nearest first${o2.label ? `, from ${o2.label}` : ''}` : 'A to Z';
       $('.pp-sortrow').hidden = (st.o.parishes || []).length < 2;
     }
 
@@ -307,20 +308,19 @@
     }
 
     function renderList() {
-      const secs = sectionsOf(st.o.parishes, { sort: st.sort, origin: from(), first: st.o.first || null, q: st.q });
+      const secs = sectionsOf(st.o.parishes, { sort: st.sort, order: st.az ? 'az' : 'near', origin: from(), first: st.o.first || null, q: st.q });
       const list = $('.pp-list');
       if (!secs.length) {
         paint(list, `<div class="pp-none">${st.q.trim() ? `No parish matches “${esc(st.q.trim())}”.` : 'No parishes to choose from.'}</div>`);
         return;
       }
-      // Nearest is one list, open all the way down; the others open at their
-      // first section. Words typed open every section they are found in.
-      const searching = !!st.q.trim();
+      // Open at the first section; words typed open every section they are
+      // found in, and so do a few parishes. A heading tapped folds its own
+      // either way: what was folded while searching is forgotten with the words.
       const few = secs.reduce((n, s) => n + s.rows.length, 0) <= 12;
       const isOpen = (s, i) => {
-        if (searching || few || secs.length === 1) return true;
-        const k = `${st.sort}:${s.key}`;
-        return st.folds.has(k) ? st.folds.get(k) : (st.sort === 'near' || i === 0);
+        const k = foldKey(s.key);
+        return st.folds.has(k) ? st.folds.get(k) : (searching() || few || i === 0);
       };
       paint(list, secs.map((s, i) => {
         const open = isOpen(s, i);
@@ -335,6 +335,9 @@
           </section>`;
       }).join(''));
     }
+
+    const searching = () => !!st.q.trim();
+    const foldKey = (key) => `${searching() ? 'q:' : ''}${st.sort}:${key}`;
 
     function render() { renderSorts(); renderChips(); renderList(); }
 
@@ -359,14 +362,21 @@
       const s = e.target.closest('[data-pp-sort]');
       if (s) {
         st.sort = s.dataset.ppSort;
-        keepSort(st.sort);
+        keep(SORT_KEY, st.sort);
+        renderSorts();
+        renderList();
+        return;
+      }
+      if (e.target.closest('[data-pp-order]')) {
+        st.az = !st.az;
+        keep(ORDER_KEY, st.az ? 'az' : 'near');
         renderSorts();
         renderList();
         return;
       }
       const h = e.target.closest('[data-pp-sec]');
       if (h) {
-        st.folds.set(`${st.sort}:${h.dataset.ppSec}`, h.getAttribute('aria-expanded') !== 'true');
+        st.folds.set(foldKey(h.dataset.ppSec), h.getAttribute('aria-expanded') !== 'true');
         renderList();
         return;
       }
@@ -375,7 +385,11 @@
       const row = e.target.closest('[data-pp-id]');
       if (row && !row.disabled) toggle(row.dataset.ppId);
     });
-    find.addEventListener('input', () => { st.q = find.value; renderList(); });
+    find.addEventListener('input', () => {
+      st.q = find.value;
+      if (!searching()) for (const k of [...st.folds.keys()]) if (k.startsWith('q:')) st.folds.delete(k);
+      renderList();
+    });
     // Enter is "search", not the form's Save.
     find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); find.blur(); } });
 
@@ -383,7 +397,7 @@
     return {
       get: () => (st.o.multiple ? [...st.value] : ([...st.value][0] || null)),
       set(v) { st.value = new Set(st.o.multiple ? (v || []) : (v ? [v] : [])); renderChips(); renderList(); },
-      update(next) { st.o = { ...st.o, ...next }; pickSort(); render(); },
+      update(next) { st.o = { ...st.o, ...next }; render(); },
       focus: () => find.focus({ preventScroll: true }),
     };
   }
@@ -467,7 +481,7 @@
       }
       const p = st.value ? m.get(st.value) : null;
       const lone = st.o.lone && p && (st.o.parishes || []).length === 1;
-      const sub = p ? subOf(p, 'near') : '';
+      const sub = p ? subOf(p) : '';
       el.innerHTML = `<button type="button" class="pp-field${p ? '' : ' none'}${lone ? ' lone' : ''}" data-pp-open aria-haspopup="dialog"${st.disabled || lone ? ' disabled' : ''}>
           ${p ? `${avatar(p)}<span class="pp-t"><b>${esc(p.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>`
             : `<span class="pp-t"><b>${esc(st.o.placeholder || 'Choose a parish…')}</b></span>`}
@@ -507,7 +521,7 @@
     };
   }
 
-  const api = { mount, open, field, sectionsOf, placeOf, matches, suburbOf, subOf, fmtKm, km, SORTS, BANDS };
+  const api = { mount, open, field, sectionsOf, placeOf, matches, suburbOf, subOf, fmtKm, km, SORTS };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraParishPicker = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

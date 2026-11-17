@@ -36,15 +36,25 @@
   font: inherit; font-size: 16px; color: var(--text); -webkit-appearance: none; appearance: none;
 }
 .pp-find:focus-within { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pp-accent) 55%, transparent); }
+/* Jurisdiction or Location: one switch, left or right. Beside it the arrows,
+   the page's Nearest button: nearest first (on), or A to Z. */
 .pp-sortrow { display: flex; flex-direction: column; gap: 6px; }
-.pp-sorts { display: flex; gap: 6px; }
-.pp-sorts:empty { display: none; }
+.pp-bar { display: flex; align-items: center; gap: 8px; }
+.pp-sorts { flex: 1; min-width: 0; display: flex; padding: 3px; border-radius: 12px; background: var(--pp-soft); }
 .pp .pp-sort {
-  flex: 1; min-height: 36px; padding: 6px 10px; border-radius: 999px;
-  border: 1px solid var(--border, #d0d0d0); background: var(--pp-card);
-  font-size: 13.5px; font-weight: 600; color: var(--pp-muted); text-align: center; white-space: nowrap;
+  flex: 1; min-width: 0; min-height: 34px; padding: 5px 10px; border-radius: 9px;
+  font-size: 14px; font-weight: 600; color: var(--pp-muted); text-align: center; white-space: nowrap;
 }
-.pp .pp-sort.on { background: var(--text); border-color: var(--text); color: var(--pp-card); }
+.pp .pp-sort.on { background: var(--pp-card); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 .5px rgba(0, 0, 0, .06); }
+@media (prefers-color-scheme: dark) { .pp .pp-sort.on { background: color-mix(in srgb, var(--text) 22%, var(--pp-card)); } }
+.pp .pp-order {
+  flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  color: var(--pp-muted);
+}
+.pp .pp-order[aria-pressed="true"] {
+  color: var(--dist, var(--pp-accent)); background: color-mix(in srgb, var(--dist, var(--pp-accent)) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dist, var(--pp-accent)) 55%, transparent);
+}
 .pp-from { font-size: 12.5px; color: var(--pp-muted); padding: 0 2px; }
 .pp-from:empty { display: none; }
 .pp-note { margin: 0 0 12px; font-size: 14px; line-height: 1.4; color: var(--text-2, var(--muted, #6b7280)); }
@@ -71,29 +81,32 @@
 .pp-chosen .pp-add:disabled { opacity: .45; cursor: default; }
 
 /* ── Sections ── */
-.pp-list { display: flex; flex-direction: column; gap: 10px; }
-.pp-sec { border: 1px solid var(--pp-line); border-radius: 14px; background: var(--pp-card); overflow: hidden; }
+/* No boxes: a heading is told from its parishes by its size and by the line
+   under it, which is the heavier of the two (Kevin, 17 Nov 2026). */
+.pp-list { display: flex; flex-direction: column; }
 .pp .pp-head {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 8px 12px 8px 14px;
-  text-align: left; background: var(--pp-soft);
+  display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: 50px; padding: 16px 2px 9px;
+  text-align: left; border-bottom: 1.5px solid color-mix(in srgb, var(--text) 62%, transparent);
 }
-.pp-head b { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -.005em; }
-.pp-head small { flex: none; font-size: 12.5px; font-weight: 500; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
+.pp-sec:first-child > .pp-head { padding-top: 6px; min-height: 40px; }
+.pp-head b { flex: 1; min-width: 0; font-size: 19px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; }
+.pp-head small { flex: none; font-size: 13px; font-weight: 500; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
 .pp-mine { color: var(--pp-ok); font-weight: 600; }
-.pp-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--j, #888); }
-.pp-chev { flex: none; display: inline-grid; place-items: center; color: var(--pp-muted); transition: transform .15s ease; }
+.pp-dot { flex: none; align-self: center; width: 10px; height: 10px; border-radius: 50%; background: var(--j, #888); }
+.pp-chev { flex: none; align-self: center; display: inline-grid; place-items: center; color: var(--pp-muted); transition: transform .15s ease; }
 .pp-sec.open > .pp-head .pp-chev { transform: rotate(90deg); }
-.pp-sec.open > .pp-head { border-bottom: 1px solid var(--pp-line); }
 .pp-none { padding: 18px 14px; border-radius: 14px; background: var(--pp-soft); color: var(--pp-muted); font-size: 14.5px; }
 
 /* ── A parish ── */
 .pp .pp-row, .pp-fieldbox .pp-field {
-  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px;
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 2px;
   text-align: left;
 }
+.pp-fieldbox .pp-field { padding: 8px 12px; }
 .pp-row + .pp-row { border-top: 1px solid var(--pp-line); }
 .pp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.pp-t b { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.pp-t b { font-size: 15px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+.pp-row.on .pp-t b, .pp-fieldbox .pp-t b { font-weight: 600; }
 .pp-t small { font-size: 12.5px; line-height: 1.3; color: var(--pp-muted); }
 .pp-tag { font-style: normal; font-weight: 600; }
 .pp-tag.warn { color: var(--pp-warn); }
@@ -125,7 +138,10 @@
   font-size: calc(var(--s) * .3); font-weight: 750; letter-spacing: -.02em;
 }
 .pp-av b { font-weight: inherit; font-size: inherit; }
-.pp-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.pp-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; border-radius: 50%; }
+/* A logo is the parish's seal and has no jurisdiction ring under it: the
+   ring showed unevenly round the picture's edge. A hairline, outside it. */
+.pp-av:has(img) { box-shadow: 0 0 0 1px var(--pp-line); }
 .pp-av.xs { --s: 24px; font-size: 7.5px; }
 
 /* ── In a form: the one chosen, a row to tap ── */

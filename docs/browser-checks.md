@@ -432,8 +432,9 @@ docs/editing.md). Its doors, each to be opened when it changes:
 | **Become an editor** | the foot's `[data-become-editor]`, as a visitor: `[data-sg-parish] .pp-field` |
 
 The card is `.pp-backdrop` (`dialog.pp-dialog` in /admin), a row
-`.pp-row[data-pp-id="<parish id>"]` (`.on` when chosen), the sorts
-`[data-pp-sort="near|juris|place"]`, a section's heading `[data-pp-sec]`, the
+`.pp-row[data-pp-id="<parish id>"]` (`.on` when chosen), the switch
+`[data-pp-sort="juris|place"]`, the arrows `[data-pp-order]` (`aria-pressed`
+when nearest first), a section's heading `[data-pp-sec]`, the
 search `.pp-find input`, a chosen chip's × `[data-pp-drop]`, and Done the bar's
 `[data-frame-primary]`. A folded section holds no rows until it is opened or a
 search finds one in it. The seed has twenty parishes; the list is only itself

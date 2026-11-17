@@ -784,18 +784,23 @@ by name, eight nearest with a search, three hundred tick boxes under
 jurisdiction headings, a select grouped by what was in view, and for a new list
 nothing at all.
 
-It is divided three ways, by pills at its top, and the choice is kept per phone
-(`agora_pick_sort`) so it opens as it was left wherever it is opened from:
-**Nearest**, one list by distance in bands (Within 5km, 5 to 15km, …), measured
-from the parish the form is for, or on the page from you (else where the map is
-looking), and said under the pills; **Archdiocese**, the jurisdiction
-collections (`collections.js` `JURISDICTIONS`) in their order, the asker's own
-first; **Location**, a city's parishes (`locations.js`) then the rest of its
-state, regions nearest first. A section folds at its heading: Nearest opens all
-the way down, the others at their first section, and words typed (a name, a
+It is divided two ways, by one switch at its top, left or right:
+**Jurisdiction**, the jurisdiction collections (`collections.js`
+`JURISDICTIONS`) in their order, the asker's own first; **Location**, a city's
+parishes (`locations.js`) then the rest of its state. Beside the switch is a
+pair of arrows, the page's Nearest button, for the order inside a section:
+nearest first (measured from the parish the form is for, or on the page from
+you, else where the map is looking, and said under the switch) or A to Z.
+Distance is an order and never a division of its own: Nearest was a third pill
+with its own bands for an afternoon, and Kevin took it out (17 Nov 2026). Both
+choices are kept per phone (`agora_pick_sort`, `agora_pick_order`) so the list
+opens as it was left wherever it is opened from. A section folds at its
+heading, which is told from its parishes by its size and the heavier line under
+it, never by a box. The list opens at its first section; words typed (a name, a
 short name, a suburb, a jurisdiction, a city) open every section they are found
-in. One to choose: a tap is the answer and the card goes. Several: each tap
-counts as it is made, the chosen are chips over the list (and in the form, each
+in, and a heading still folds its own while they are there. A logo has no
+jurisdiction ring: the colour showed unevenly round the picture's edge. One to
+choose: a tap is the answer and the card goes. Several: each tap counts as it is made, the chosen are chips over the list (and in the form, each
 with its ×), and Done or the way back closes it.
 
 Two things it must never do. It is **not narrowed to what the person may
