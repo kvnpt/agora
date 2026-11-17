@@ -9,6 +9,7 @@
   <title>Admin — Orthodox Services &amp; Events</title>
   <!-- The add-event editor, shared with the app. -->
   <link rel="stylesheet" href="/shared/event-editor.css">
+  <link rel="stylesheet" href="/shared/parish-picker.css">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -1281,6 +1282,11 @@
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
   <script src="/shared/signs.js"></script>
+  <!-- The one list a parish is chosen from: whose event it is, where it is
+       held, the parishes it also appears at. Its archdioceses are the
+       jurisdiction collections. -->
+  <script src="/shared/collections.js"></script>
+  <script src="/shared/parish-picker.js"></script>
   <script src="/shared/venue-picker.js"></script>
   <script src="/shared/event-editor.js"></script>
   <!-- The parish timezone table. Shared for the same reason the colours are:

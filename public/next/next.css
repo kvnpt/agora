@@ -2061,7 +2061,6 @@ body.dialog-open { overflow: hidden; }
 }
 .detail-edit-form .ee-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); }
 .cb-form .ee-item small { font-size: 12.5px; }
-.detail-edit-form .cb-find { margin-bottom: 8px; }
 .cb-ask { margin: 12px 0 0; padding: 12px; border-radius: 12px; background: color-mix(in srgb, #b45309 10%, transparent); }
 .cb-ask p { margin: 0 0 8px; font-size: 14px; line-height: 1.4; }
 

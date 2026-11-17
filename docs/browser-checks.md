@@ -252,7 +252,7 @@ fallback path you need them to disagree, and the only reliable way is to
 ```js
 // Open as an owner: the client predicts no refusal and sends no `propose`.
 await page.locator('.sheet.parish.open .add-box[data-suggest="An event"]').click();
-// …type a card and tick another parish under "Also at other parishes"…
+// …type a card and add another parish under "Include other parishes…" → Add parishes…
 // Narrow the role in D1, then press. The Worker refuses; the card shows the ask.
 execSync(`npx wrangler d1 execute agora --local --command "INSERT INTO admin_roles ..."`);
 await page.locator('.new-event-modal [data-ee="publish"]').click();
@@ -280,8 +280,8 @@ npx wrangler d1 execute agora --local --command \
 The editor (`public/shared/event-editor.js`) is the same component on the page
 (`.new-event-modal`, behind the dotted **Add +** under a card's Calendar) and in
 /admin (`#add-event-editor`, behind **Events** → + Event). Its controls carry
-`data-ee` hooks — `parish` (the picker; /admin has no select of its own any
-more), `suggest` and `move-suggested` (whose poster it is, and the one-tap
+`data-ee` hooks — `parish` (the picker's row: tap its `.pp-field` and the list
+opens; /admin has no select of its own any more), `suggest` and `move-suggested` (whose poster it is, and the one-tap
 move), `poster-input`, `drop`, `status`, `publish`, `save-draft`, `discard`,
 `add-card` — and each field `data-ee-field="title"` and so on.
 
@@ -404,7 +404,7 @@ parish): the suggestion names St Elias, Wollongong and the venue holds its
 address. **Move it there** should leave the picker on St Elias, the suggestion
 gone, the venue empty, and `drafts.parish_id` changed; Publish should land the
 event on St Elias's sheet. As a contact of Punchbowl alone, the suggestion says
-whose it is and offers no button, and the picker holds one parish.
+whose it is and offers no button, and the picker is the one parish, with nothing to open.
 
 **Suggest edits with a poster.** The page needs somebody with no role: insert
 an owner who is not `dev` (`INSERT INTO admin_roles (email, role) VALUES
@@ -416,6 +416,35 @@ input and the select are *hidden* too: the form's `display: block` beats
 `[hidden]`, which is how they first came out visible. A lapsed Access sign-in is
 `page.route('**/api/admin/suggestions/poster**', r => r.abort())` — the form
 should offer **Confirm my email again** and bring back what was typed.
+
+## The parish picker
+
+One list wherever a parish is chosen (`public/shared/parish-picker.js`,
+docs/editing.md). Its doors, each to be opened when it changes:
+
+| Door | How to reach it |
+|---|---|
+| A list's **Add parishes** | home → Your lists → **New list** (a `prompt()`: `page.on('dialog', d => d.accept(d.defaultValue()))`), or `[data-act="addparishes"]` on a list's card |
+| Add event's **Parish** | `.new-event-modal [data-ee="parish"] .pp-field` |
+| **Where → Another parish** | `[data-vp-mode="parish"]`: with none chosen the list opens at once; chosen, `[data-vp-parish] .pp-field` |
+| **Include other parishes** | Add event: `.ee-combine summary`, then `.pp-add`. Edit event: `[data-ev-combine]`, then `.combine-backdrop .pp-add` |
+| Edit event's **Parish** | `[data-ev-parish] .pp-field` (a one-off, for somebody with more than one parish) |
+| **Become an editor** | the foot's `[data-become-editor]`, as a visitor: `[data-sg-parish] .pp-field` |
+
+The card is `.pp-backdrop` (`dialog.pp-dialog` in /admin), a row
+`.pp-row[data-pp-id="<parish id>"]` (`.on` when chosen), the switch
+`[data-pp-sort="juris|place"]`, the arrows `[data-pp-order]` (`aria-pressed`
+when nearest first), a section's heading `[data-pp-sec]`, the
+search `.pp-find input`, a chosen chip's × `[data-pp-drop]`, and Done the bar's
+`[data-frame-primary]`. A folded section holds no rows until it is opened or a
+search finds one in it. The seed has twenty parishes; the list is only itself
+with production's three hundred, which a script can put in the local database
+from `https://orthodoxy.au/api/bundle` (parishes, schedules, events: the
+columns the bundle carries).
+
+A visitor's lists are sent to the account (`/api/admin/saved`), and under the
+dev bypass every browser is `dev`: lists made by one run are there in the
+next, so "Parishes to visit" becomes "Parishes to visit (2)".
 
 ## Screenshots
 

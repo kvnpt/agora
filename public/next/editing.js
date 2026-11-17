@@ -1070,8 +1070,7 @@
       <div class="edit-row"><label>Subtitle</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="The saint or feast, or the topic (optional)" autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
       ${RF().kindRowHTML('Kind', `<select ${f('event_type')} data-kind-picker="buttons">${kinds}</select>`, EV, !!e.parish_scoped)}
-      ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
-        `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
+      ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><div data-ev-parish></div><input type="hidden" ${f('parish_id')} value="${esc(e.parish_id)}"></div>` : ''}
       <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
       ${series ? '' : `<div class="edit-row"><div class="edit-row-head"><label>Date</label>${RF().daysHTML(EV, multi)}</div>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
       <div class="edit-row edit-pair">
@@ -1196,7 +1195,17 @@
       for (const k of VENUE) value[k] = e[k] != null && e[k] !== '' ? e[k] : null;
       root.AgoraVenuePicker.mount(mount, {
         value, host: parish || { id: e.parish_id }, parishes: host.parishes(), geocode, pickPin,
-        onChange: (v) => { for (const k of VENUE) q(k).value = v[k] == null ? '' : v[k]; },
+        onChange: (v) => { for (const k of VENUE) q(k).value = v[k] == null ? '' : v[k]; f.markDirty(); },
+      });
+    }
+    // Whose it is, from the one list every parish is chosen from (parish-picker.js).
+    const whose = form.querySelector('[data-ev-parish]');
+    if (whose) {
+      root.AgoraParishPicker.field(whose, {
+        parishes, value: e.parish_id, title: 'Choose the parish',
+        origin: parish && parish.lat != null ? { lat: parish.lat, lng: parish.lng, label: parish.name } : null,
+        first: parish && parish.jurisdiction,
+        onChange: (id) => { q('parish_id').value = id; f.markDirty(); },
       });
     }
     wirePoster(form.querySelector('[data-ev-poster]'), e.id, { onSeries: toService });
@@ -1477,8 +1486,8 @@
   //
   // One event at several parishes, and in place of their own services that
   // day: the combine (docs/editing.md), as the add-event editor offers it on
-  // every card, with its parish list (nearest first, by jurisdiction) and its
-  // "needs an owner". A tick that is not this person's to make becomes an
+  // every card, its parishes chosen from the one list (parish-picker.js) with
+  // its "needs an owner". A tick that is not this person's to make becomes an
   // ask: their own part goes ahead, and an owner is asked for the rest.
 
   async function combine(id) {
@@ -1491,8 +1500,7 @@
     const f = frame({ title: 'Include other parishes', sub: `${e.title} · ${longDate(date)}`, cls: 'combine-backdrop' });
     f.body.innerHTML = `<div class="detail-edit-form cb-form">
         <div class="ee-section-title">Also appears at</div>
-        <input type="search" class="cb-find" placeholder="Find a parish" autocomplete="off" aria-label="Find a parish">
-        <div class="ee-list" data-list="also"></div>
+        <div data-list="also"></div>
         <div class="ee-section-title">In place of their own services that day</div>
         <div class="ee-list" data-list="replaces"><div class="ee-empty">Loading…</div></div>
         <div class="edit-row-hint">Whatever is ticked here stops being its own card and shows as a tombstone pointing at this event: nothing disappears.</div>
@@ -1512,30 +1520,35 @@
     const alsoBox = form.querySelector('[data-list="also"]');
     const replBox = form.querySelector('[data-list="replaces"]');
     const askBox = form.querySelector('.cb-ask');
-    const find = form.querySelector('.cb-find');
 
     const also = new Set();
     const replaces = new Set();
     let candidates = null;
     let refused = false;
-    const rows = EE.orderParishRows(parish, host.parishes(), host.may);
     const zoneOf = (pid) => (host.parish(pid) || {}).timezone || zone;
 
+    // The parishes, as chips, chosen from the one list every parish is
+    // chosen from (parish-picker.js): every parish, this one in and staying
+    // in, and one that is not this person's to write marked.
+    let alsoField = null;
     const paintAlso = () => {
-      const needle = find.value.trim().toLowerCase();
-      let lastJuris = null;
-      alsoBox.innerHTML = rows.filter(p => p._isOwn || also.has(p.id) || !needle || String(p.name).toLowerCase().includes(needle)).map(p => {
-        let head = '';
-        if (!p._isOwn && p.jurisdiction !== lastJuris) {
-          lastJuris = p.jurisdiction;
-          const j = String(p.jurisdiction || 'Other');
-          head = `<div class="ee-group">${esc(j.charAt(0).toUpperCase() + j.slice(1))} Orthodox</div>`;
-        }
-        const tag = p._isOwn ? '<em class="ee-tag">own</em>' : p._needsAsk ? '<em class="ee-tag ee-tag-ask">needs an owner</em>' : '';
-        const sub = p._isOwn ? '' : EE.kmLabel(p._km);
-        return `${head}<label class="ee-item"><input type="checkbox" value="${esc(p.id)}"${p._isOwn ? ' checked disabled' : also.has(p.id) ? ' checked' : ''}>`
-          + `<span>${esc(p.name)}${tag}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`;
-      }).join('');
+      const o = {
+        multiple: true, title: 'Add parishes', add: 'Add parishes',
+        parishes: host.parishes().filter(p => p.id !== '_unassigned'),
+        value: [...also], fixed: [parish.id], fixedTag: 'own',
+        origin: parish.lat != null ? { lat: parish.lat, lng: parish.lng, label: parish.name } : null,
+        first: parish.jurisdiction,
+        tagOf: (p) => (host.may('event.edit', p.id) ? '' : 'needs an owner'),
+        onChange: (ids) => {
+          also.clear();
+          for (const id of ids) also.add(id);
+          f.markDirty();
+          paintReplaces();
+          paintAsk();
+        },
+      };
+      if (alsoField) alsoField.update(o);
+      else alsoField = root.AgoraParishPicker.field(alsoBox, o);
     };
     const paintReplaces = () => {
       if (candidates == null) return;
@@ -1554,19 +1567,11 @@
       (rid) => ((candidates || []).find(c => String(c.id) === String(rid)) || {}).parish_id ?? null);
     const paintAsk = () => { askBox.hidden = !needsAsk(); };
 
-    alsoBox.addEventListener('change', (ev) => {
-      const cb = ev.target;
-      if (cb.checked) also.add(cb.value); else also.delete(cb.value);
-      paintReplaces();
-      paintAsk();
-    });
     replBox.addEventListener('change', (ev) => {
       const cb = ev.target;
       if (cb.checked) replaces.add(cb.value); else replaces.delete(cb.value);
       paintAsk();
     });
-    find.addEventListener('input', paintAlso);
-
     // What it is combined with now, and what that day holds.
     const get = (url) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     const [cands, current] = await Promise.all([
