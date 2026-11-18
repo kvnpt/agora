@@ -171,15 +171,13 @@ body.docked .dock { transform: none; visibility: visible; }
    and in full screen the parish row along the foot of the map. */
 
 .viewport-card { margin: 4px 0 0; }
-/* On a phone, one card (Kevin, 12 Nov 2026): the map at its head with the
-   parishes it holds on it as a button, and Today on the same plane under
-   it, a pin on the edge between them. */
-.vc-shell {
-  margin: 10px 12px 0;
-  background: var(--card);
-  border-radius: 22px; overflow: hidden;
-  box-shadow: 0 0 0 1px var(--frame);
-}
+/* On a phone, the map the phone's width, straight under the tabs, with no
+   card round it (Kevin, 18 Nov 2026): the parishes it holds on it as a
+   button, and Today on the page under it, a pin on the edge between them.
+   It was a rounded card with the map inside it, a box in a box (12 Nov);
+   then a card the phone's width with the tabs as its head (13 Nov, not
+   taken). Wide, the tabs and the map are the page's head (the wide layout). */
+.vc-shell { margin: 0; }
 
 /* The jurisdiction tabs (app.css .jurisdiction-banner): each in its own
    colour and underlined while none is chosen; the chosen one filled, the
@@ -204,9 +202,11 @@ body.docked .dock { transform: none; visibility: visible; }
 .jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-3); border-bottom-color: transparent; opacity: .6; }
 .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
 
+/* Its height as the card's map and the card's margin over it were, so
+   Today starts where it did. */
 .viewport {
-  position: relative; height: min(44vh, 352px);
-  margin: 0; border-radius: 22px 22px 0 0; overflow: hidden;
+  position: relative; height: min(calc(44vh + 10px), 362px);
+  margin: 0; border-radius: 0; overflow: hidden;
   background: var(--card-2);
   /* Safari clips a WebGL canvas to the radius only on its own layer. */
   isolation: isolate;
@@ -217,6 +217,17 @@ body.docked .dock { transform: none; visibility: visible; }
    card (7 Nov). Back on the page when the card goes (next.js, mapFollow). */
 .card-map { position: relative; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
 .card-map .map-filters { top: auto; bottom: 10px; right: 10px; }
+/* A parish's card has the map too, the parish alone on it, close in
+   (Kevin, 18 Nov 2026; next.js frameParish): one place wants less of it
+   than a collection's many, so its name and its buttons stay in sight. Its
+   bar is over the map, as a collection's is. Wide, the map is beside the
+   card instead, without the page's Filters (body.map-one). */
+@media (max-width: 1079px) {
+  .parish .card-map { height: min(30dvh, 260px); }
+  .parish.has-map .sheet-scroll { padding-top: 0; }
+  .parish.has-map .ph { padding-top: 16px; }
+}
+body.map-beside.map-one .viewport .map-filters { display: none; }
 /* Show all, on a card's map that shows some of its parishes (Kevin, 13 Nov
    2026; next.js syncShowAll): at its foot on the left, as the page's map has
    its parishes' button. */
@@ -247,16 +258,13 @@ body.map-beside .viewport .map-filters { top: 16px; }
   .viewport::after { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5); }
 }
 body.map-full .viewport::after { display: none; }
-/* In the phone's one card the card's own edge frames the map, with the
-   glow inside it; where the map ends and Today begins is Today's own edge
-   (.vc-shell > .today). With no Today, the map is the card, rounded all round. */
+/* On a phone the map runs to the phone's edges: no frame and no glow. The
+   tabs' hairline is its top, and Today's blue edge its foot
+   (.vc-shell > .today); with no Today, a hairline. */
 @media (max-width: 1079px) {
-  .viewport::after { box-shadow: inset 0 0 12px 3px rgba(255, 255, 255, .9); }
-}
-@media (max-width: 1079px) and (prefers-color-scheme: dark) {
   .viewport::after { box-shadow: none; }
+  .vc-shell:not(:has(> .today:not([hidden]))) > .viewport::after { box-shadow: inset 0 -1px 0 var(--hair); }
 }
-.vc-shell:not(:has(> .today:not([hidden]))) > .viewport { border-radius: 22px; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -677,11 +685,11 @@ body.map-full .parish-row {
 /* A Today with the day and the evening divides them, as a day of the feed does. */
 .today[hidden] { display: none; }
 .today .eve { position: relative; padding: 10px 18px 2px; }
-/* In the phone's one card, on the map's plane under it, with a pin on the
-   edge between them: what is on is what is on where the map is looking.
-   The edge is blue, as how far is, and the pin breaks it. Yours (your
+/* On a phone, on the page straight under the map, with a pin on the edge
+   between them: what is on is what is on where the map is looking. The
+   edge is blue, as how far is, and the pin breaks it. Yours (your
    bookmarks or favourites, next.js todayMine) are not the map's: no pin,
-   and the edge the card's own outline, all the way across (Kevin, 12 Nov 2026). */
+   and the edge a plain one, all the way across (Kevin, 12 Nov 2026). */
 .vc-shell > .today {
   position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible;
   border-top: 1px solid color-mix(in srgb, var(--dist) 75%, transparent);
@@ -689,7 +697,7 @@ body.map-full .parish-row {
 .vc-shell > .today.mine { border-top-color: var(--frame); }
 .vc-shell > .today.mine::before, .vc-shell > .today.mine::after { content: none; }
 .vc-shell > .today::before {
-  content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--card);
+  content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--bg);
 }
 .vc-shell > .today::after {
   content: ''; position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 20px;
