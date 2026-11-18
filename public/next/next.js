@@ -1204,7 +1204,12 @@
     cameraOwned: true,
   };
   window.agoraStateRef = mapState;
-  window.openParishSheet = (id) => openParish(id);
+  // The parish tapped on its own card's map is the card already open.
+  window.openParishSheet = (id) => {
+    const top = stack[stack.length - 1];
+    if (top && top.classList.contains('parish') && top.dataset.pid === id) return;
+    openParish(id);
+  };
   window.agoraOpenEventSheet = (id) => openEvent(id);
   window.agoraIsFavourite = (id) => isFav(id);
   window.rawJurisColor = (j) => jColor(j);
@@ -1299,26 +1304,46 @@
   // map and its tiles. On a wide screen the card is a panel beside the
   // page's map, in full view: the map stays where it is, over the dimmed
   // page, and is the card's until it closes (`beside`).
+  //
+  // A parish's card has the map too, the parish alone on it, close in on
+  // its streets (Kevin, 18 Nov 2026): the same map moved in, under its bar,
+  // and beside it on a wide screen. It is the map of one place: no Filters
+  // on it (the card has its own) and nothing to show all of.
 
-  let pageView = null, pageScroll = null;
+  let pageView = null, pageScroll = null, pageFull = false;
   const viewOf = () => { const c = map.getCenter(); return { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() }; };
   const pinned = (ids) => ids.some(id => { const p = S.byId.get(id); return p && p.lat != null && isFinite(p.lat); });
-  /** The map where it belongs: in the top card of parishes with any to show, else on the page. */
+  /** A card's parishes on its map: a collection's, or a parish card's own one. */
+  const mapIdsOf = (el) => (el._coll ? el._coll.ids : el.classList.contains('parish') && el.dataset.pid ? [el.dataset.pid] : null);
+  const mapsHere = (el) => { const ids = mapIdsOf(el); return !!ids && pinned(ids); };
+  /** The map where it belongs: in the top card with parishes to show, else on the page. */
   function mapFollow() {
     if (!map) return;
-    const el = stack.filter(x => x._coll && pinned(x._coll.ids)).pop();
+    const el = stack.filter(mapsHere).pop();
+    // A card under another keeps the map's room while the map is away
+    // (mapToPage `keep`), so nothing in it moves; one with nowhere to show gives it up.
+    for (const x of stack) if (x !== el && !mapsHere(x)) dropMapBox(x);
     if (!el) mapToPage();
     else if (!S.mapCard || S.mapCard.el !== el) mapToCard(el);
   }
+  /** A card's room for the map, and what it made room for, gone. */
+  function dropMapBox(el) {
+    const box = el.querySelector('.sheet-scroll > .card-map');
+    if (box) box.remove();
+    el.classList.remove('has-map');
+  }
   function mapToCard(el) {
-    if (document.body.classList.contains('map-full')) setFullscreen(false);
+    // Full screen is the page's: it comes back with the map (mapToPage).
+    if (document.body.classList.contains('map-full')) { setFullscreen(false); pageFull = true; }
     map.stop();
     // Where the map was looking, on the page or in the card it was in: where this one first looks (frameCard).
     const was = { view: viewOf(), box: S.mapCard ? S.mapCard.el._bounds || seenBounds() : map.getBounds() };
-    if (S.mapCard) mapToPage({ view: false });
+    if (S.mapCard) mapToPage({ view: false, keep: true });
     // Where the page's map was looking, kept while cards have it.
     if (!pageView) pageView = was.view;
-    const beside = WIDE.matches;
+    const beside = WIDE.matches, one = !el._coll;
+    // A parish's own map has no Filters of the page's on it (next.css body.map-one).
+    document.body.classList.toggle('map-one', one);
     if (beside) {
       // The page's map in view, above the scrim, its full screen not the card's.
       if (pageScroll == null) pageScroll = window.scrollY;
@@ -1327,23 +1352,31 @@
       besideRoom();
       $('#viewport').appendChild(showAllBtn());
     } else {
-      const box = document.createElement('div');
-      box.className = 'card-map';
-      // The card drawn again leaves it be (paint: an island, CARD_MAP).
-      box.dataset.keep = 'map';
-      el.querySelector('.sheet-scroll').prepend(box);
+      // Its room, where it had it last (mapToPage `keep`), or made now.
+      let box = el.querySelector('.sheet-scroll > .card-map');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'card-map';
+        // The card drawn again leaves it be (paint: an island, CARD_MAP).
+        box.dataset.keep = 'map';
+        el.querySelector('.sheet-scroll').prepend(box);
+      }
       box.appendChild($('#map'));
-      // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
-      box.appendChild($('#btn-filters'));
-      box.appendChild(showAllBtn());
+      // A collection's Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
+      if (!one) {
+        box.appendChild($('#btn-filters'));
+        box.appendChild(showAllBtn());
+      }
       el.classList.add('has-map');
     }
-    S.mapCard = { el, ids: new Set(el._coll.ids), beside };
+    S.mapCard = { el, ids: new Set(mapIdsOf(el)), beside };
     map.resize();
     syncMap();
     // Back on a card it was in, where it was there, listing what it did;
-    // else where it first looks (frameCard), listing what it shows.
+    // else where it first looks (frameCard), listing what it shows. A
+    // parish's, close in on it.
     if (el._view) { map.jumpTo(el._view); el._at = viewKey(); }
+    else if (one) frameParish(el.dataset.pid, beside);
     else lookedAt(el, frameCard(el, beside, was));
     if (el._shownKey != null && shownKey(shownOf(el)) !== el._shownKey) repaintCollection(el, { keepDays: true });
     syncCounts();
@@ -1359,22 +1392,25 @@
   /** The map's own buttons out from under the card (next.css: --beside). */
   function besideRoom() { $('#viewport').style.setProperty('--beside', `${Math.round(besideCover())}px`); }
   window.addEventListener('resize', () => { if (S.mapCard && S.mapCard.beside) besideRoom(); });
-  /** The map back on the page, where it was looking (`view`), unless another card takes it next. */
-  function mapToPage({ view = true } = {}) {
+  /**
+   * The map back on the page, where it was looking (`view`), unless another
+   * card takes it next. `keep`: the card keeps the map's room, empty, as
+   * does a card closing, so nothing in it moves while it is under the next
+   * one or sliding away.
+   */
+  function mapToPage({ view = true, keep = false } = {}) {
     const own = S.mapCard;
     if (!own) return;
     own.el._view = viewOf();
     S.mapCard = null;
     if (fpop && fpop.btn === $('#btn-filters')) closeFilters();
-    document.body.classList.remove('map-beside');
+    document.body.classList.remove('map-beside', 'map-one');
     showAllBtn().hidden = true;
     if (!own.beside) {
       $('#viewport').prepend($('#map'));
       $('#viewport').insertBefore($('#btn-filters'), $('#btn-locate'));
       $('#viewport').appendChild(showAllBtn());
-      const box = own.el.querySelector('.card-map');
-      if (box) box.remove();
-      own.el.classList.remove('has-map');
+      if (!keep && stack.includes(own.el)) dropMapBox(own.el);
     }
     syncCounts();
     syncFilterBtns();
@@ -1383,9 +1419,18 @@
     if (!view) return;
     if (pageView) { map.jumpTo(pageView); pageView = null; }
     if (pageScroll != null) { window.scrollTo({ top: pageScroll }); pageScroll = null; }
+    if (pageFull) { pageFull = false; setFullscreen(true); }
     // What it shows again, which it stopped counting while it was away.
     onView();
   }
+  /** A parish's own map: on it, close enough in to see its streets; beside a card, in what the card leaves. */
+  function frameParish(pid, beside) {
+    const p = pinOf(pid);
+    if (!p) return;
+    const at = [p.lng, p.lat];
+    map.fitBounds([at, at], { padding: beside ? besidePadding() : 40, maxZoom: PARISH_ZOOM, duration: 0 });
+  }
+  const PARISH_ZOOM = 14;
   // A window made wider or narrower than a panel's: the map goes where that one keeps it.
   WIDE.addEventListener('change', () => {
     // The Month view is a phone's: a card's week bar as its view has it on this side of 1080px.
@@ -1394,6 +1439,8 @@
     if (!S.mapCard) return;
     const el = S.mapCard.el;
     mapToPage({ view: false });
+    // Wide, no card keeps room for a map: it is beside them.
+    for (const x of stack) dropMapBox(x);
     el._view = null;
     mapToCard(el);
   });
@@ -1480,8 +1527,8 @@
   /** The card's map moved: the card again, if what it shows has changed. */
   function cardMoved() {
     const el = S.mapCard.el;
-    // Not moved since it was put there: its framing's own end, or its size settling.
-    if (!el.isConnected || viewKey() === el._at) return;
+    // A parish's own map lists nothing. Not moved since it was put there: its framing's own end, or its size settling.
+    if (!el._coll || !el.isConnected || viewKey() === el._at) return;
     lookedAt(el);
     const c = shownOf(el);
     if (shownKey(c) !== el._shownKey) repaintCollection(el, { keepDays: true });
@@ -4137,8 +4184,9 @@
     if (from) refreshComingUp(el);
     el.style.setProperty('--j', jColor(p.jurisdiction));
     setMapFocus(pid);
-    // Bring it into the viewport without zooming the page's scope away.
-    if (map && isFinite(p.lat) && !map.getBounds().contains([p.lng, p.lat])) map.easeTo({ center: [p.lng, p.lat], duration: 500 });
+    // Its own map at its top, the parish alone on it (Kevin, 18 Nov 2026);
+    // beside it on a wide screen. Closing puts the page's back as it was.
+    mapFollow();
   }
 
   // ── A collection's card: a bunch of parishes, with their timetables ───

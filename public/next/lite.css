@@ -78,3 +78,6 @@ body.lite { max-width: 600px; margin: 0 auto; }
 .lite .esub span { white-space: normal; overflow: visible; }
 .lite .add-box,
 .lite a[href^="/admin"] { display: none; }
+/* No map: the room the painted card keeps for the page's (has-map) is nothing here. */
+.lite .card-map { display: none; }
+.lite .parish.has-map .ph { padding-top: 6px; }

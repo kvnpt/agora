@@ -187,10 +187,13 @@ Scrolled past it and the filters, both ride in the dock at the top of the page
 names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
 showing everything it means. It is not in the URL.
 
-On a phone the map and Today are one card (`.vc-shell`, Kevin, 12 Nov 2026):
-the chip is a button on the map's foot, three logos at most in a box of one
+On a phone the map runs to the phone's edges, straight under the tabs, with
+no card round it (Kevin, 18 Nov 2026; it was a rounded card holding the map
+and Today from 12 Nov, a box in a box, and a card the phone's width with the
+tabs as its head was tried on 13 Nov and not taken): the chip is a button on
+the map's foot, three logos at most in a box of one
 size and the count ("63 parishes ›"); one parish is its name across the map,
-over Near me. Today is on the map's plane under it, a pin on the edge between
+over Near me. Today is on the page straight under it, a pin on the edge between
 them on a blue edge, because Today is what is on where the map is looking.
 The page's Today is the whole day, cut off under a fade where it runs long
 (`clipToday`), and Show all opens the rest in place with Tomorrow at its
@@ -200,7 +203,7 @@ you have some, make the page yours instead (`S.todayMode`, `todayMine`,
 saved or what is on at your favourites, wherever the map is and
 whatever its filters ask; the map shows only their places (`syncMap`), and
 the parishes button counts those in view or takes the map out to them. The
-pin goes and the edge is the card's own outline, and Tomorrow goes on in
+pin goes and the edge is a plain one, and Tomorrow goes on in
 your Saved or Favourites card. Each Today row has the Calendar's line in the colour of
 the jurisdiction it is held in (a parish card's in the parish's). Wide (1080px
 and up), Today heads the left column and the chip is the page's heading under
@@ -286,7 +289,16 @@ collection's card (`jurisOffer`). In view, a link's card and a list ask
 everything. Every card of parishes (a collection, a jurisdiction's, a list,
 a saved view, a link's, a search's, In view) has the page's one map at its
 top, showing its parishes and no others (`mapFollow`, `mapToCard`): there is
-no Show on map (Kevin, 6 Nov 2026). **The card lists what its map shows**
+no Show on map (Kevin, 6 Nov 2026). **A parish's card has it too** (Kevin,
+18 Nov 2026): the parish alone on it, close in on its streets
+(`frameParish`, zoom 14), shorter than a collection's so the name and the
+buttons stay in sight, with no Filters of the page's on it (the card has its
+own) and no Show all; its pin tapped is the card already open. The Worker's
+painted card keeps the map's room at its top (`parishCardHTML`), so nothing
+moves when the page's card takes its place; the lite version hides it. A card
+under another keeps the map's room, empty, while the map is in the card on
+top, and so does a card sliding away, so nothing in either moves; a card
+opened from the full-screen map gives full screen back when the map comes home. **The card lists what its map shows**
 (Kevin, 13 Nov 2026, after a friend moved the map to his area and Weeknight
 services listed every state's): its Today, its parishes ("3 of 37"), What's
 on and its Calendar keep to the parishes in the map's view and follow it as it

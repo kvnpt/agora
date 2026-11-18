@@ -142,7 +142,7 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
   assert.doesNotMatch(html, /lite-hero|lite-card|app\.css|\?app/, 'no lite page, no way "into the app"');
   // The card it opens, in the sheet's own class names, closing to the page.
   const c = card(html);
-  assert.match(c, /^<section class="sheet parish open ssr" role="dialog" aria-label="St George Cathedral, Redfern"/);
+  assert.match(c, /^<section class="sheet parish has-map open ssr" role="dialog" aria-label="St George Cathedral, Redfern"/);
   assert.match(c, /<div class="gtitle"><b>St George Cathedral, Redfern<\/b><small>Antiochian Orthodox<\/small><\/div>/);
   assert.match(c, /<a class="gbtn" href="\/" aria-label="Close">/);
   assert.match(c, /<h1>St George Antiochian Orthodox Cathedral<\/h1>/);
@@ -157,6 +157,14 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
   assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><div class="slot"><a class="erow" href="\/\d+:2026-10-04">/,
     'the next fortnight, day by day, each date its own link, each time its own slot');
+});
+
+test("a parish's card keeps room at its top for the page's map, the parish alone on it", async () => {
+  const { get } = fresh();
+  const c = card((await get('/sgr')).html);
+  assert.match(c, /^<section class="sheet parish has-map open ssr"/);
+  assert.match(c, /<div class="sheet-scroll"><div class="card-map" aria-hidden="true"><\/div>\s*<div class="ph">/,
+    'under its bar, before its name, scrolling with the card (next.js mapToCard moves the map in)');
 });
 
 test('the card says where its details and its times came from, and how long ago (public/shared/source-line.js)', async () => {
@@ -229,7 +237,7 @@ test('a kind or a language beside a parish previews the first that answers it, a
   const talks = (await get('/sgr/talks')).html;
   assert.match(title(talks), /^Bible Study — Tuesday 6 October, 7pm · St George Cathedral, Redfern/);
   assert.equal(robots(talks), 'noindex,follow');
-  assert.match(card(talks), /^<section class="sheet parish open ssr"/, "the parish's card, which the event opens in front of");
+  assert.match(card(talks), /^<section class="sheet parish has-map open ssr"/, "the parish's card, which the event opens in front of");
   assert.match(title((await get('/sgr/en')).html), /^Vespers — Friday 2 October, 6pm/, 'its own English, not the parish’s');
 });
 
@@ -248,7 +256,7 @@ test('a word nothing else claims, beside a parish, previews the soonest event it
   assert.match(title(html), /^Disco Night \(Registration Essential\) — Saturday 17 October, 7pm · St George Cathedral, Redfern/, 'the soonest');
   assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/disco.jpg', 'its poster previews, cut to a size WhatsApp shows');
   assert.equal(robots(html), 'noindex,follow', 'words are anybody’s: never indexed');
-  assert.match(card(html), /^<section class="sheet parish open ssr"/, "the parish's card, which the event opens in front of");
+  assert.match(card(html), /^<section class="sheet parish has-map open ssr"/, "the parish's card, which the event opens in front of");
   for (const p of ['/disco/sgr', '/sgr/disco-night', '/SGR/Disco']) {
     assert.match(title((await get(p)).html), /^Disco Night \(Registration Essential\) — Saturday 17 October/, p);
   }
@@ -287,7 +295,7 @@ test('words that name no parish are what the site\'s search finds: one parish, o
   assert.equal(res.status, 200);
   assert.match(title(html), /^Sunshine Coast, Buderim — /);
   assert.equal(robots(html), 'noindex,follow', 'words are anybody’s: never indexed');
-  assert.match(card(html), /^<section class="sheet parish open ssr"/);
+  assert.match(card(html), /^<section class="sheet parish has-map open ssr"/);
   // All that is found is at one parish: its first, as /sgr/disco would.
   ({ res, html } = await get('/disco'));
   assert.equal(res.status, 200);
@@ -430,7 +438,7 @@ test("a parish's /timetables link names what it narrows to, noindex, under its o
   const eve = (await get('/timetables/sgr/evening')).html;
   assert.equal(canonical(eve), 'https://orthodoxy.au/sgr/evening/timetables');
   assert.match(title(eve), /^Evening services at St George Cathedral, Redfern — service times/);
-  assert.match(card(eve), /^<section class="sheet parish open ssr"/, "the parish's card");
+  assert.match(card(eve), /^<section class="sheet parish has-map open ssr"/, "the parish's card");
 });
 
 test('an event link — projected or stored — is its card, never indexed', async () => {
@@ -688,7 +696,7 @@ test("the card wears the parish's colour: its jurisdiction's, as /admin set it",
   const { raw, get } = fresh();
   raw.prepare(`INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')`).run();
   const c = card((await get('/sgr')).html);
-  assert.match(c, /^<section class="sheet parish open ssr"[^>]*style="--j:#123456"/);
+  assert.match(c, /^<section class="sheet parish has-map open ssr"[^>]*style="--j:#123456"/);
   assert.match(c, /<div class="tt" style="--pc:#123456">/);
 });
 

@@ -309,8 +309,12 @@ export function parishCardHTML(m) {
   const website = p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '';
   // Its own links, a festival or a youth group's page, small under the buttons; Donate stays among them.
   const own = (m.links || []).filter(l => l.url);
-  return sheet('parish', p.name, `--j:${m.color}`, `${glassBar(p.name, JURIS_LONG[p.jurisdiction])}
-    <div class="sheet-scroll">
+  // The room at its top the page's map moves into on a phone, the parish
+  // alone on it (next.js mapToCard), kept so nothing jumps when it comes.
+  // Wide, and in the lite version, nothing (next.css, lite.css).
+  const map = p.lat != null && p.lng != null;
+  return sheet(map ? 'parish has-map' : 'parish', p.name, `--j:${m.color}`, `${glassBar(p.name, JURIS_LONG[p.jurisdiction])}
+    <div class="sheet-scroll">${map ? '<div class="card-map" aria-hidden="true"></div>' : ''}
       <div class="ph">${avatar(p, 'xl', m.color)}<div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}</p></div></div>
       ${linkChipHTML(m.origin, `/${m.slug}${start !== today ? `/${start}` : ''}`, m.color)}
       <div class="actions">
