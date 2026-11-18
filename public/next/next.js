@@ -1695,9 +1695,10 @@
     chip.classList.toggle('one', !!one);
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
     const away = ps.length ? '' : S.todayMode === 'fav' ? 'Show your favourites' : S.todayMode === 'bm' ? 'Show what you saved' : nearestWords();
-    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
+    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : `${ps.length} ${placeNoun(ps.length)} in view`);
     // On a phone, a button on the map (Kevin, 12 Nov 2026): up to three
-    // logos in a box of one size, larger the fewer they are, and the count;
+    // logos in a box of one size, larger the fewer they are, and the count,
+    // the number alone (Kevin, 18 Nov 2026), its label saying of what;
     // one parish is its name, the map's width, over Near me.
     const fab = !WIDE.matches;
     chip.classList.toggle('fab', fab);
@@ -1707,7 +1708,7 @@
       ? one
         ? `<span class="iv-logos n1">${avatar(one, 'stack')}</span><span class="iv-name">${esc(one.full_name || one.name)}</span><span class="inview-go">${I.chev}</span>`
         : ps.length
-          ? `<span class="iv-logos n${n}">${ranked.slice(0, n).map(p => avatar(p, 'stack')).join('')}</span><span class="iv-count">${ps.length} ${placeNoun(ps.length)}</span><span class="inview-go">${I.chev}</span>`
+          ? `<span class="iv-logos n${n}">${ranked.slice(0, n).map(p => avatar(p, 'stack')).join('')}</span><span class="iv-count">${ps.length}</span><span class="inview-go">${I.chev}</span>`
           : `<span class="iv-count">${esc(away)}</span><span class="inview-go">${I.chev}</span>`
       : one
         ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
