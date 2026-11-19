@@ -97,8 +97,8 @@ unless its own override says otherwise (`project.mjs`: the date's
 `patch_poster_path`, else the rule's). An occurrence edit compares against the
 rule's, so saving a date with the inherited text writes nothing, and the
 occurrence's poster control says when what it shows is the rule's and sends
-changes to the series. The rule's poster is set from its form (the pencil on
-its row) or "Put it on: every … — the service's own" on any of its dates, via
+changes to the series. The rule's poster is set from its form (a date's
+**Edit the service**) or "Put it on: every … — the service's own" on any of its dates, via
 `POST|DELETE /api/admin/schedules/:id/poster`, and `releaseUnused` counts it.
 `POST /api/admin/events/:id/poster` takes both id shapes and routes on the
 shape, like every other event route.
@@ -163,13 +163,15 @@ link is an owner's (`parish.acronym`); anybody else sees it with **Ask an owner 
 change it**, which files the same ask /admin's does. Delete parish is at the foot of
 the form, for `parish.delete`.
 
-The TIMETABLE has no mode: for whoever may change it, each line carries a small
-pencil at its right edge, always there, that opens its rule's form (`editLine`; a
-line that is several rules offers all its days together first, or one of them), and the dotted **Add +** under it opens **Add
+The TIMETABLE has no mode and, since 19 Nov 2026, no pencils: its lines read the
+same for an editor as for anybody (Kevin asked for them gone). A line
+opens its next date's card; that card's **Edit**, then **Edit the service**, opens
+the rule's form (`editLine`; a line that is several rules offers all its days
+together first, or one of them), and a line with no date coming up opens the form
+itself for whoever may change it. The dotted **Add +** under the timetable opens **Add
 schedule** (`addService`, for `schedule.create`) — every field a rule has, the
 poster included (times from quarter-hours or typed, `public/shared/time-field.js`,
-and dates from a month grid, never the system pickers). The line itself still
-focuses the rule, for an admin as for anybody. The app v3 replaced had a mode,
+and dates from a month grid, never the system pickers). The app v3 replaced had a mode,
 entered from a pencil in the head, and the owner found the step in the way: nobody
 opens a parish's timetable meaning to read it as an admin.
 
@@ -664,7 +666,7 @@ publishing glued the two into one title with an em dash; `oneOffFeast` now
 writes it where it belongs, and leaves it out when the title already says it
 ("Feast of St Nicholas"). A "this and every following" edit keeps the drawer's
 subtitle on its own date (`alignAnchor`): one Sunday's saint is no rule's
-subtitle, and the rule's own is edited behind the timetable's pencil.
+subtitle, and the rule's own is edited on the service's form.
 
 **A sign is read into the timetable, not into events.** The board out the front
 gives a parish's weekly services and its details. The reader calls that image a
@@ -686,7 +688,7 @@ where the pin moves with it.
 The timetable has its own way in: **Add schedule** (the dotted **Add +**
 under the service times) opens a dialog with **Add an image** (a photo of the sign) above
 the fields for typing a service. The fields are `public/shared/rule-form.js`,
-and the pencil is on each line of the grouped timetable.
+which a date's **Edit the service** opens too.
 
 A rule is one weekday, but the form's **Days** are ticked, with **Every day**
 and **Mon–Fri** beside them: Compline every night was seven forms until 26 Oct

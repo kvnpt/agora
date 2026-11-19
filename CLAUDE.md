@@ -121,7 +121,8 @@ for them, are in the doc it links to — read that before changing the area.
   a list of its own. Where an ask is the point it lists every parish, marked,
   never narrowed to the person's own.
 - Signed in is not editing: details and events open behind their own pencil;
-  the timetable carries Add + and a pencil per line, for whoever may edit it.
+  the timetable carries Add +, and its lines no pencil: a service is edited
+  from a date's Edit ("Edit the service"), for whoever may edit it.
 
 **Sources** — [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md)
 - A parish's address is where the service is.

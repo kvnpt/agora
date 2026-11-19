@@ -190,14 +190,22 @@ test('Add service opens, and the service it adds is on the timetable', async (t)
   await form.locator('[data-rf-days] label', { hasText: 'Wed' }).click();
   await page.locator('.rule-backdrop.open [data-frame-primary]').click();
   await keepByHand(page);
-  await card.locator('.tt-edit[aria-label="Edit Paraklesis"]').waitFor();
+  await card.locator('[data-tt] .tt-line', { hasText: 'Paraklesis' }).waitFor();
   assert.equal(await page.locator('.rule-backdrop.open').count(), 0, 'the form stayed open');
+  // The lines carry no pencil, for an editor as for anybody (Kevin, 19 Nov 2026).
+  assert.equal(await card.locator('[data-tt] .tt-edit').count(), 0, 'a timetable line has a pencil');
 });
 
-test('Edit service opens with the service as it is, and saves', async (t) => {
+// Since 19 Nov 2026 a line has no pencil: the way in is the line, its date's
+// card, that card's Edit, then Edit the service.
+test('Edit service opens from a line\'s date, with the service as it is, and saves', async (t) => {
   const page = await open(t, `/${RYDE}`);
   const card = parishCard(page);
-  await card.locator('.tt-edit[aria-label="Edit Saturday Vespers"]').click();
+  await card.locator('[data-tt] .tt-line', { hasText: 'Saturday Vespers' }).click();
+  const date = page.locator('.sheet.event.open');
+  await date.waitFor();
+  await date.locator('.abtn[data-edit-event]').click();
+  await page.locator('.event-edit-backdrop.open .ev-series [data-ev-series]').click();
   const form = page.locator('.rule-backdrop.open .rule-form');
   await form.waitFor();
   assert.equal(await form.locator('[data-rf="title"]').inputValue(), 'Saturday Vespers');
@@ -205,6 +213,6 @@ test('Edit service opens with the service as it is, and saves', async (t) => {
   await form.locator('[data-rf="title"]').fill('Great Vespers');
   await page.locator('.rule-backdrop.open [data-frame-primary]').click();
   await keepByHand(page);
-  await card.locator('.tt-edit[aria-label="Edit Great Vespers"]').waitFor();
-  assert.equal(await card.locator('.tt-edit[aria-label="Edit Saturday Vespers"]').count(), 0);
+  await card.locator('[data-tt] .tt-line', { hasText: 'Great Vespers' }).waitFor();
+  assert.equal(await card.locator('[data-tt] .tt-line', { hasText: 'Saturday Vespers' }).count(), 0);
 });

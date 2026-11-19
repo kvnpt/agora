@@ -157,7 +157,7 @@ await page.waitForSelector('.sheet.parish.open:not(.ssr)', { timeout: 20000 });
 ```
 
 The admin ping lands after that, and an editor's controls with it. Wait for the
-door itself — `.sheet.parish.open .tt-edit`, `[data-edit-details]` — which is
+door itself — `[data-edit-details]` on a parish, `[data-edit-event]` on a date — which is
 also the check that it is there for the role that should see it.
 
 ## The trap that used to waste an hour
@@ -236,7 +236,7 @@ with a `<template>` holding the same markup (islands aside): the two must be
 window.openParishSheet(id)        // open a parish card without clicking the map
 window.agoraOpenEventSheet(id)    // open an event card by id, synthetic ids too
 window.NextEdit.editDetails(pid)  // the details pencil
-window.NextEdit.editLine([ruleId])// a timetable line's pencil
+window.NextEdit.editLine([ruleId])// a date's Edit the service
 window.NextEdit.editEvent(id)     // an event card's pencil
 window.NextEdit.addEvent(pid)     // the add-event editor, as Add + opens it
 window.NextEdit.addService(pid)   // Add schedule
