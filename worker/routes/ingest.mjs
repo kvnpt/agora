@@ -66,6 +66,7 @@ import {
   codeIn, groupOf, picturesFor, inSentOrder, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
   IMAGE_TYPES, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES, MAX_IMAGE_BYTES, TICKET_MINUTES, TICKETS_PER_HOUR,
   phoneIdentity, ticketIn, ticketText, ticketUrl, newCode, newSecret, ticketsPastKeeping, keeperOf,
+  gorgonCodeIn, GORGON_MAX_BYTES,
 } from '../lib/whatsapp.mjs';
 
 /** How long to wait for the rest of an announcement: a poster's text, sent a moment after it. */
@@ -259,6 +260,12 @@ async function handle(env, io, m) {
   const since = (seconds) => m.sentAt - seconds;
   if (kind === 'ignore') return mark('ignored');
 
+  // Gorgon waits here for a scan's PDF, for a minute, under its code or a
+  // phone linked to the account that asked: it is Gorgon's, not a poster.
+  if (env.GORGON && (kind === 'pdf' || (kind === 'text' && gorgonCodeIn(m.text)))) {
+    if (await toGorgon(env, io, m, kind, { mark, reply })) return;
+  }
+
   // The Suggest dialog's code, from whichever phone sends it: what was typed
   // there is filed now, under this phone.
   const ticket = kind === 'text' && !m.forwarded ? ticketIn(m.text) : null;
@@ -351,6 +358,48 @@ async function handle(env, io, m) {
     claimed: mine.filter(r => !isImageRow(r)).map(r => r.id),
     pictures: mine.filter(isImageRow).map(r => ({ id: r.id, mediaId: r.media_id, mediaType: r.media_type })),
   });
+}
+
+/**
+ * A message for Gorgon (gorgon.orthodoxy.au), over the GORGON service
+ * binding (its GorgonWhatsApp entrypoint): a "Gorgon code", or a PDF that a
+ * Gorgon editor is waiting for. Gorgon says whether it is; a PDF it takes is
+ * downloaded here (only this Worker holds the token) and handed over, and
+ * Gorgon's answer goes back as the reply. True when Gorgon took it; anything
+ * else, and any failure to ask, leaves the message to the usual path.
+ */
+async function toGorgon(env, io, m, kind, { mark, reply }) {
+  const { cfg } = io;
+  const link = await env.DB.prepare('SELECT email FROM whatsapp_links WHERE phone = ?').bind(m.from).first();
+  const said = { from: m.from, text: m.text || '', kind, linkedEmail: link ? link.email : null };
+  let ans;
+  try { ans = await env.GORGON.message(said); } catch (e) {
+    console.error(`[whatsapp] ${m.id}: gorgon ${e && e.message}`);
+    return false;
+  }
+  if (!ans || !ans.take) return false;
+  if (ans.take === 'code') {
+    await mark('gorgon');
+    await reply(ans.reply);
+    return true;
+  }
+  const media = await fetchMedia({ token: cfg.token, mediaId: m.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl, maxBytes: GORGON_MAX_BYTES });
+  if (!media.ok) {
+    console.error(`[whatsapp] ${m.id}: ${media.error}`);
+    await mark('media-failed');
+    await reply(media.tooLarge ? REPLIES.gorgonTooLarge() : REPLIES.gorgonFailed());
+    return true;
+  }
+  let got;
+  try { got = await env.GORGON.deliver({ ...said, bytes: media.bytes, filename: m.filename || '' }); } catch (e) {
+    console.error(`[whatsapp] ${m.id}: gorgon deliver ${e && e.message}`);
+    await mark('media-failed');
+    await reply(REPLIES.gorgonFailed());
+    return true;
+  }
+  await mark('gorgon');
+  if (got && got.reply) await reply(got.reply);
+  return true;
 }
 
 /** Take these messages for one draft, if nobody has: the ids this call got. */

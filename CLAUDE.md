@@ -148,6 +148,9 @@ for them, are in the doc it links to — read that before changing the area.
   forwarded poster becomes a draft, never an event. A phone nobody linked is
   its own sender (`wa:<number>`, never an address or a sign-in): what it sends
   is a suggestion, never a draft.
+- A PDF or a "Gorgon code" is first offered to Gorgon over the `GORGON`
+  service binding (`toGorgon` in ingest.mjs): Gorgon's scan editor waits for
+  PDFs here. What Gorgon declines goes the usual way.
 - A refusal with somewhere to go becomes an ask; "Suggest edits" becomes a
   suggestion to whoever may edit the parish, and a claim only when its box is
   ticked. None is a moderation queue: a suggestion is a message, never an edit
