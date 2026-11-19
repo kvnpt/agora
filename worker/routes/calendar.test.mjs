@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { serveCalendar, calendarPath, dateFileName, feedWindow, savedToken, BACK_DAYS, AHEAD_DAYS, SAVED_NAME } from './calendar.mjs';
+import { serveCalendar, calendarPath, dateFileName, feedWindow, savedPath, listPath, BACK_DAYS, AHEAD_DAYS, SAVED_NAME } from './calendar.mjs';
 import { tokenFor, newToken } from '../lib/calendar-links.mjs';
 import { writeSaved } from '../lib/saved-items.mjs';
 
@@ -42,7 +42,7 @@ function fresh() {
   raw.exec(fs.readFileSync('d1/seed-parishes.sql', 'utf8'));
   raw.prepare("UPDATE parishes SET acronym = 'SGR' WHERE id = ?").run(SGR);
   raw.prepare("UPDATE parishes SET acronym = 'SMG' WHERE id = ?").run(SMG);
-  const env = { DB: new D1(raw) };
+  const env = { DB: new D1(raw), _raw: raw };
   const get = async (p) => {
     const res = await serveCalendar(new Request(`https://orthodoxy.au${p}`), env, {}, { now: NOW });
     return res ? { res, text: await res.clone().text() } : null;
@@ -185,12 +185,14 @@ async function savedAs(env, bookmarks) {
   return tokenFor(env.DB, KEVIN);
 }
 
-test('only /saved/<token> is a person\'s calendar', () => {
+test('only /saved/<token>, and a list of theirs under it, is a person\'s calendar', () => {
   const t = newToken();
-  assert.equal(savedToken(`/saved/${t}`), t);
-  assert.equal(savedToken('/saved/short'), null);
-  assert.equal(savedToken(`/saved/${t}/more`), null);
-  assert.equal(savedToken('/sgr'), null);
+  assert.deepEqual(savedPath(`/saved/${t}`), { token: t, list: null });
+  assert.deepEqual(savedPath(`/saved/${t}/fav`), { token: t, list: 'fav' });
+  assert.deepEqual(savedPath(`/saved/${t}/lmk2x9a`), { token: t, list: 'lmk2x9a' });
+  assert.equal(savedPath('/saved/short'), null);
+  assert.equal(savedPath(`/saved/${t}/a/b`), null);
+  assert.equal(savedPath('/sgr'), null);
 });
 
 test('a saved service is every date of it; a saved date is that date alone', async () => {
@@ -277,4 +279,72 @@ test('a Save is in the next look, though saving bumps no data version', async ()
   } finally {
     globalThis.caches = had;
   }
+});
+
+// ── A person's lists: Favourites, and lists of their own ───────────────
+
+const dbOf = (env) => env._raw;
+/** KEVIN's favourites and lists, and his token. */
+async function listsAs(env, { favourites = [], lists = [] }) {
+  await writeSaved(env.DB, KEVIN, {
+    favourites: favourites.map((id, i) => ({ id, at: i + 1 })),
+    lists: lists.map((l, i) => ({ at: i + 1, ...l })),
+  });
+  return tokenFor(env.DB, KEVIN);
+}
+
+test('a list’s link is its parishes in one order, whoever made it, and its card’s filters', () => {
+  assert.equal(listPath({ ids: [SMG, SGR], filters: null }), `/${SGR}+${SMG}`);
+  assert.equal(listPath({ ids: [SGR, SMG, SGR], filters: '/english' }), `/${SGR}+${SMG}/english`);
+  assert.equal(listPath({ ids: [SGR], filters: '/' }), `/${SGR}`);
+  assert.equal(listPath({ ids: [], filters: null }), null);
+});
+
+test('Favourites is every date at each favourite parish, under its own name', async () => {
+  const { env, get } = fresh();
+  const token = await listsAs(env, { favourites: [SGR, SMG] });
+  const { res, text } = await get(`/saved/${token}/fav.ics`);
+  assert.equal(res.status, 200);
+  assert.ok(unfold(text).includes('X-WR-CALNAME:Favourites · orthodoxy.au'));
+  const evs = eventsOf(text);
+  assert.ok(evs.some(e => e.SUMMARY === 'Sunday Divine Liturgy' && /^St George/.test(e.LOCATION)));
+  assert.ok(evs.some(e => e.SUMMARY === 'Saturday Vespers'));
+  assert.ok(text.includes('REFRESH-INTERVAL'));
+});
+
+test('a list of their own asks what its card asks, and follows the list as it changes', async () => {
+  const kept = new Map();
+  const had = globalThis.caches;
+  globalThis.caches = { default: {
+    async match(k) { const r = kept.get(String(k)); return r ? r.clone() : undefined; },
+    async put(k, r) { kept.set(String(k), r.clone()); },
+  } };
+  try {
+    const { env, get } = fresh();
+    const token = await listsAs(env, { lists: [{ id: 'lryde', name: 'Ryde', ids: [SMG], filters: '/sat/vespers' }] });
+    const one = eventsOf((await get(`/saved/${token}/lryde.ics`)).text);
+    assert.ok(one.length > 10);
+    assert.ok(one.every(e => e.SUMMARY === 'Saturday Vespers'), 'the card’s filters');
+    // St George's joins the list, and has its own Saturday Vespers.
+    dbOf(env).prepare("INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type) VALUES (?, 6, '18:00', 'Saturday Vespers', 'prayer')").run(SGR);
+    await writeSaved(env.DB, KEVIN, { lists: [{ id: 'lryde', name: 'Ryde', ids: [SMG, SGR], filters: '/sat/vespers', at: 1 }] });
+    const two = eventsOf((await get(`/saved/${token}/lryde.ics`)).text);
+    assert.ok(two.some(e => /^St George/.test(e.LOCATION)), 'the parish added since');
+    assert.ok(two.length > one.length);
+  } finally {
+    globalThis.caches = had;
+  }
+});
+
+test('a list removed, or emptied, is an empty calendar; no list by that name at all is the same', async () => {
+  const { env, get } = fresh();
+  const token = await listsAs(env, { lists: [{ id: 'lnone', name: 'Nothing yet', ids: [] }] });
+  const empty = await get(`/saved/${token}/lnone.ics`);
+  assert.equal(empty.res.status, 200);
+  assert.equal(eventsOf(empty.text).length, 0);
+  assert.ok(unfold(empty.text).includes('X-WR-CALNAME:Nothing yet · orthodoxy.au'));
+  const gone = await get(`/saved/${token}/lgone.ics`);
+  assert.equal(gone.res.status, 200);
+  assert.equal(eventsOf(gone.text).length, 0);
+  assert.equal((await get(`/saved/${newToken()}/fav.ics`)).res.status, 404, 'a token nobody has');
 });

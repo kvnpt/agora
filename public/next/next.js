@@ -533,6 +533,12 @@
     if (out && at === edits) lsSet(UNSENT, null);
     return out;
   }
+  /** What is waiting to go to the account, sent now rather than after the pause. */
+  async function flushSaved() {
+    if (!syncAs || !lsGet(UNSENT)) return;
+    clearTimeout(sendTimer);
+    await sendSaved();
+  }
   /**
    * Bring this browser and the account level: on load, and on coming back to
    * the tab. Answers who is signed in, or null for a visitor.
@@ -4412,6 +4418,7 @@
           <div class="chero-acts">
             ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Create list</span></button>`}
             ${c.listId ? `<button class="hbtn" type="button" data-act="addparishes">${I.plus}<span>Add parishes</span></button>` : ''}
+            ${c.listId ? `<button class="hbtn" type="button" data-act="listcal" aria-haspopup="menu">${I.calAdd}<span>Calendar</span></button>` : ''}
             <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
             ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
             <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
@@ -4860,14 +4867,16 @@
 
   // ── Add to calendar ───────────────────────────────────────────────────
   //
-  // Two, and only two (Kevin, 19 Nov 2026). An event card adds THAT date, a
-  // file the phone's calendar opens once. Every week of a service is not a
-  // second subscription per service: it is Save, and the Saved card's one
-  // calendar, a private link per account that follows what you save
-  // (worker/routes/calendar.mjs, /saved/<token>.ics). One subscription a
-  // person, so a calendar app's every-few-hours look is one request each.
-  // Every link's own .ics (/sgr.ics) still answers, for a parish to hand out,
-  // with no button here.
+  // Saved is the home for subscriptions (Kevin, 19 Nov 2026): one calendar a
+  // person, collected by Save, never one per service. So:
+  //   An event card adds THAT date, a file the phone's calendar opens once.
+  //   Every week of a service is Save: the date's menu offers "Every Sunday",
+  //   which saves it into the Saved calendar (/saved/<token>.ics).
+  //   A list of parishes, Favourites or one of your own, is a calendar of its
+  //   own that follows the list (/saved/<token>/<list>.ics).
+  //   A parish's own link (/sgr.ics) is for a poster or a QR code, for people
+  //   who never open the app; asked for here, Favourites or a list comes first.
+  // Every one of them is the lens's dates (worker/routes/calendar.mjs).
 
   const UA = navigator.userAgent || '';
   // An iPad says it is a Mac; a Mac has no touch screen.
@@ -4895,8 +4904,12 @@
     `<a class="pm-row" role="menuitem" ${attrs}>${I.cal}<span class="pm-t"><b>${esc(title)}</b>${note ? `<small>${esc(note)}</small>` : ''}</span></a>`;
   /** The phone's own calendar first: Apple's on an Apple, Google's on an Android. */
   const calOrder = (apple, google, rest) => (ANDROID ? [google, apple, ...rest] : APPLE ? [apple, google, ...rest] : [google, apple, ...rest]).join('');
+  const menuNote = (title, says) => `<div class="pm-note wa-link"><b>${esc(title)}</b><span>${esc(says)}</span></div>`;
 
-  /** One date into a calendar: its .ics to open, or Google's own add page. */
+  /**
+   * One date into a calendar: its .ics to open, or Google's own add page.
+   * A date of a regular service also offers every week of it, which is Save.
+   */
   function openAddDate(btn, e) {
     const file = `/${e.id}.ics`;
     const title = e.feast && e.feast !== e.title ? `${e.title} — ${e.feast}` : e.title;
@@ -4906,11 +4919,35 @@
       location: calWhere(e),
       details: [e.description, `${location.origin}/${e.id}`].filter(Boolean).join('\n\n'),
     });
+    const rid = ruleIdOf(e);
+    const r = rid && S.rules.find(x => String(x.id) === rid);
+    const on = r && isMarked('rule', rid);
+    const series = r ? `<div class="pm-sep"></div>
+      <button class="pm-row" role="menuitem" type="button" data-act="cal-series" data-id="${esc(rid)}">${on ? I.bookmarkOn : I.bookmark}<span class="pm-t"><b>Every ${esc(WD_LONG[r.day_of_week])}</b><small>${on ? 'Saved, so it is in your Saved calendar' : 'Save it into your Saved calendar'}</small></span></button>` : '';
     openMenu(btn, `<div class="pm-note">This date only</div>${calOrder(
       calRow(`href="${esc(file)}"`, 'Apple Calendar', 'iPhone, iPad and Mac'),
       calRow(`href="https://calendar.google.com/calendar/render?${esc(g.toString())}" target="_blank" rel="noopener"`, 'Google Calendar', ''),
       [calRow(`href="${esc(file)}" download`, 'Outlook or another', 'A file your calendar opens')],
+    )}${series}`);
+  }
+
+  /** A subscription's menu: what it is (`head`), then the phone's calendars and the link itself. */
+  function subscribeMenu(btn, { head, https, name, copyNote = 'For another calendar app' }) {
+    const webcal = https.replace(/^https?:/, 'webcal:');
+    openMenu(btn, `${head}${calOrder(
+      calRow(`href="${esc(webcal)}"`, 'Apple Calendar', 'iPhone, iPad and Mac'),
+      calRow(`href="https://calendar.google.com/calendar/r?cid=${esc(encodeURIComponent(webcal))}" target="_blank" rel="noopener"`, 'Google Calendar', 'Google looks again about once a day'),
+      [calRow(`href="https://outlook.live.com/calendar/0/addfromweb?url=${esc(encodeURIComponent(https))}&amp;name=${esc(encodeURIComponent(name))}" target="_blank" rel="noopener"`, 'Outlook', ''),
+        `<button class="pm-row" role="menuitem" type="button" data-act="cal-copy" data-url="${esc(https)}">${I.link}<span class="pm-t"><b>Copy link</b><small>${esc(copyNote)}</small></span></button>`],
     )}`);
+  }
+  /**
+   * Signed out: a calendar that follows what you keep is the account's. Kept
+   * in this browser alone, nothing a calendar app fetches could know it.
+   */
+  function signInForCalendar(btn, what) {
+    openMenu(btn, `${menuNote('Sign in first', `${what} lives on your account, so it keeps up as you change things. What you kept here comes with you.`)}
+      <a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`);
   }
 
   // The account's calendar link, asked for once a page.
@@ -4923,27 +4960,56 @@
     }
     return savedCal;
   }
-  /**
-   * The Saved card's calendar: one subscription that follows what you save.
-   * It is the account's, so it asks for a sign-in first: kept in this browser
-   * alone, nothing a calendar app fetches could know what is saved.
-   */
-  async function openSavedCalendar(btn) {
-    if (!S.who.signedIn) {
-      openMenu(btn, `<div class="pm-note wa-link"><b>Sign in first</b><span>Your calendar follows what you save, so it lives on your account. What you saved here comes with you.</span></div>
-        <a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`);
-      return;
-    }
+  /** The account's link, with what is kept here sent first: a calendar app may fetch it at once. */
+  async function accountCalendar() {
+    await flushSaved();
     const path = await savedCalendarPath();
-    if (!path) { toast('Could not get your calendar. Try again.'); return; }
-    const https = location.origin + path;
-    const webcal = https.replace(/^https?:/, 'webcal:');
-    openMenu(btn, `<div class="pm-note wa-link"><b>One calendar of what you save</b><span>It keeps up as you save and remove things. The link is yours alone.</span></div>${calOrder(
-      calRow(`href="${esc(webcal)}"`, 'Apple Calendar', 'iPhone, iPad and Mac'),
-      calRow(`href="https://calendar.google.com/calendar/r?cid=${esc(encodeURIComponent(webcal))}" target="_blank" rel="noopener"`, 'Google Calendar', 'Google looks again about once a day'),
-      [calRow(`href="https://outlook.live.com/calendar/0/addfromweb?url=${esc(encodeURIComponent(https))}&amp;name=${esc(encodeURIComponent('Saved · orthodoxy.au'))}" target="_blank" rel="noopener"`, 'Outlook', ''),
-        `<button class="pm-row" role="menuitem" type="button" data-act="savedcal-copy" data-url="${esc(https)}">${I.link}<span class="pm-t"><b>Copy link</b><small>For another calendar app</small></span></button>`],
-    )}`);
+    if (!path) toast('Could not get your calendar. Try again.');
+    return path;
+  }
+
+  /** The Saved card's calendar: one subscription that follows what you save. */
+  async function openSavedCalendar(btn) {
+    if (!S.who.signedIn) return signInForCalendar(btn, 'Your Saved calendar');
+    const path = await accountCalendar();
+    if (!path) return;
+    subscribeMenu(btn, {
+      head: menuNote('One calendar of what you save', 'It keeps up as you save and remove things. The link is yours alone.'),
+      https: location.origin + path, name: 'Saved · orthodoxy.au',
+    });
+  }
+  /** A list's calendar, Favourites ('fav') or one of your own: its parishes, following the list. */
+  async function openListCalendar(btn, listId) {
+    const l = listId === 'fav' ? { name: 'Favourites' } : userLists().find(x => x.id === listId);
+    if (!l) return;
+    if (!S.who.signedIn) return signInForCalendar(btn, listId === 'fav' ? 'Your Favourites calendar' : `The calendar of “${l.name}”`);
+    const path = await accountCalendar();
+    if (!path) return;
+    subscribeMenu(btn, {
+      head: menuNote(listId === 'fav' ? 'One calendar of your Favourites' : `One calendar of “${l.name}”`,
+        'Every service and event at its parishes. It follows the list as you change it. The link is yours alone.'),
+      https: location.origin + path.replace(/\.ics$/, `/${listId}.ics`), name: `${l.name} · orthodoxy.au`,
+    });
+  }
+  /**
+   * A parish's own calendar is a link for anyone, for a poster or a QR code.
+   * Asked for here, one calendar for all your parishes comes first: Favourites,
+   * or a list (Kevin, 19 Nov 2026).
+   */
+  function openParishCalendar(btn, pid) {
+    const p = S.byId.get(pid);
+    if (!p) return;
+    const head = `${menuNote('One calendar for all your parishes', `Add ${p.name} to Favourites or a list, then add that to your calendar.`)}
+      ${isFav(pid)
+        ? `<button class="pm-row" role="menuitem" type="button" data-act="cal-list" data-id="fav">${I.starOn}<span class="pm-t"><b>Your Favourites calendar</b><small>${esc(p.name)} is in it</small></span></button>`
+        : `<button class="pm-row" role="menuitem" type="button" data-act="cal-fav" data-pid="${esc(pid)}">${I.star}<span class="pm-t"><b>Add to Favourites</b><small>And add Favourites to your calendar</small></span></button>`}
+      <button class="pm-row" role="menuitem" type="button" data-act="addlist">${I.list}<span class="pm-t"><b>Add to a list</b><small>Then add the list to your calendar</small></span></button>
+      <div class="pm-sep"></div>
+      <div class="pm-note">Or ${esc(p.name)} alone</div>`;
+    subscribeMenu(btn, {
+      head, https: `${location.origin}${pathOf(segsFor({ parish: p }))}.ics`,
+      name: `${p.name} · orthodoxy.au`, copyNote: 'For a poster or a QR code',
+    });
   }
 
   /**
@@ -5337,6 +5403,7 @@
     const p = S.byId.get(pid);
     openMenu(btn, `<button class="pm-row" role="menuitem" type="button" data-act="share-parish">${I.share}<span class="pm-t"><b>Share</b></span></button>
         <button class="pm-row" role="menuitem" type="button" data-act="addlist">${I.list}<span class="pm-t"><b>Add to list</b></span></button>
+        <button class="pm-row" role="menuitem" type="button" data-act="parishcal">${I.calAdd}<span class="pm-t"><b>Add to calendar</b></span></button>
         ${mapsHref(p) ? `<a class="pm-row" role="menuitem" href="${esc(mapsHref(p))}" target="_blank" rel="noopener">${I.place}<span class="pm-t"><b>Google Maps</b></span></a>` : ''}
         ${p.website ? `<a class="pm-row" role="menuitem" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="pm-t"><b>Website</b></span></a>` : ''}
         <button class="pm-row" role="menuitem" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
@@ -5823,7 +5890,19 @@
       if (a === 'bookmarks') return openBookmarks();
       if (a === 'adddate' && top && top._event) return openAddDate(b, top._event);
       if (a === 'savedcal') return openSavedCalendar(b);
-      if (a === 'savedcal-copy') {
+      if (a === 'listcal' && top && top._coll && top._coll.listId) return openListCalendar(b, top._coll.listId);
+      if (a === 'parishcal' && top && top.dataset.pid) return openParishCalendar(fromMenu || b, top.dataset.pid);
+      if (a === 'cal-list') return openListCalendar(fromMenu || b, b.dataset.id);
+      if (a === 'cal-fav') {
+        if (!isFav(b.dataset.pid)) toggleFav(b.dataset.pid);
+        return openListCalendar(fromMenu || b, 'fav');
+      }
+      // Every week of a service is Save, and so the Saved calendar.
+      if (a === 'cal-series') {
+        if (!isMarked('rule', b.dataset.id)) { toggleMark('rule', b.dataset.id); afterMarks(); toast('Saved'); }
+        return openSavedCalendar(fromMenu || b);
+      }
+      if (a === 'cal-copy') {
         navigator.clipboard.writeText(b.dataset.url).then(() => toast('Link copied'), () => toast('Could not copy'));
         return;
       }

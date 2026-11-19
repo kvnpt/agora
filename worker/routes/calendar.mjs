@@ -6,6 +6,9 @@
 //   /20:2026-11-22.ics       one date, a file to open ("This date")
 //   /saved/<token>.ics       a person's own: what they Save, one subscription
 //                            that follows them (lib/calendar-links.mjs)
+//   /saved/<token>/fav.ics   their Favourites, and /saved/<token>/<list>.ics
+//                            a list of theirs: its parishes as the list has
+//                            them when it is fetched, so it follows the list
 //
 // The link is read with the page's own grammar (public/shared/url-state.js,
 // through pageOf) and its dates come out of the page's own lens
@@ -102,8 +105,8 @@ export function feedWindow(now) {
   };
 }
 
-/** A feed's text, or null when the link names no parish here. */
-async function feedText(env, origin, route, now) {
+/** A feed's text, or null when the link names no parish here. `name` overrides what the phone calls it. */
+async function feedText(env, origin, route, now, name = null) {
   const slugs = route.parishSlugs || [];
   if (!slugs.length || slugs.length > MAX_PARISHES) return null;
   const named = await findParishes(env.DB, slugs);
@@ -129,7 +132,7 @@ async function feedText(env, origin, route, now) {
     cross: cross.results || [], parishIds: ids, named: ids, route, now: w.from, days: w.days,
   });
   const parishes = await parishesFor(env.DB, feed, new Map(named.map(p => [p.id, p])));
-  return calendarText({ name: calendarName(route, named), events: feed, parishes, origin, now });
+  return calendarText({ name: name || calendarName(route, named), events: feed, parishes, origin, now });
 }
 
 /** One date's file, or null when there is no such date. */
@@ -144,14 +147,39 @@ async function dateText(env, origin, id, now) {
 /** '20:2026-11-22' → 'orthodoxy-20-2026-11-22.ics'. */
 export const dateFileName = (id) => `orthodoxy-${String(id).replace(/[^\w-]+/g, '-')}.ics`;
 
-/** '/saved/<token>' → the token; null for any other path. */
-export function savedToken(path) {
-  const m = /^\/saved\/([A-Za-z0-9_-]{22})$/.exec(path || '');
-  return m ? m[1] : null;
+/** '/saved/<token>' → { token, list: null }; '/saved/<token>/<list>' → { token, list }; null for any other path. */
+export function savedPath(path) {
+  const m = /^\/saved\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{1,40}))?$/.exec(path || '');
+  return m ? { token: m[1], list: m[2] || null } : null;
 }
 
 /** What a person's calendar is called on their phone. */
 export const SAVED_NAME = 'Saved · orthodoxy.au';
+const calName = (name) => `${name} · orthodoxy.au`;
+
+/**
+ * One of a person's lists of parishes, as its calendar reads it: Favourites
+ * ('fav') or a list of their own, its parishes and what its card asks of
+ * them ('/english'). Null when the account has no such list.
+ */
+export function listOf(saved, listId) {
+  if (!saved) return null;
+  if (listId === 'fav') return { name: 'Favourites', ids: (saved.favourites || []).map(f => f.id), filters: null };
+  const l = (saved.lists || []).find(x => x.id === listId);
+  return l ? { name: l.name, ids: l.ids || [], filters: l.filters || null } : null;
+}
+
+/**
+ * The link a list's calendar is: its parishes, in one order whoever's list it
+ * is, and its card's filters, so two people with the same parishes are one
+ * feed at the edge. A parish-level combination, read as /sgr+smg.ics is.
+ */
+export function listPath(list) {
+  const ids = [...new Set(list.ids.map(String))].sort().slice(0, MAX_PARISHES);
+  if (!ids.length) return null;
+  const asks = list.filters && list.filters !== '/' && list.filters.startsWith('/') ? list.filters : '';
+  return `/${ids.join('+')}${asks}`;
+}
 /** The most single dates beyond the window read one by one. */
 const MAX_LATER = 20;
 
@@ -228,15 +256,36 @@ export async function serveCalendar(request, env, ctx, { now = Date.now() } = {}
 
   // A person's own. Their saving writes no data version, so the copy kept
   // at the edge is keyed by when they last saved as well.
-  const token = savedToken(path);
-  if (token) {
-    const email = await identityOf(env.DB, token);
+  const mine = savedPath(path);
+  if (mine) {
+    const email = await identityOf(env.DB, mine.token);
     if (!email) return notFound();
     const had = await readSaved(env.DB, email);
+    const day = localDateOf(ZONE, now);
+    if (!mine.list) {
+      const res = await cachedHtml({
+        request, env, ctx, type: TYPE,
+        name: `ics-saved/${mine.token}@${day}@${had ? had.updated_at : 'none'}`,
+        build: () => savedText(env, url.origin, (had && had.saved.bookmarks) || [], now),
+      });
+      return res || notFound();
+    }
+    // A list: what it holds now, kept at the edge under its parishes (and
+    // its name), not under the person, so a change to the list is a new
+    // feed and the same parishes are one feed for everybody.
+    const list = listOf(had && had.saved, mine.list);
+    const lp = list && listPath(list);
+    const empty = () => calendarText({ name: list ? calName(list.name) : 'orthodoxy.au', events: [], origin: url.origin, now });
     const res = await cachedHtml({
       request, env, ctx, type: TYPE,
-      name: `ics-saved/${token}@${localDateOf(ZONE, now)}@${had ? had.updated_at : 'none'}`,
-      build: () => savedText(env, url.origin, (had && had.saved.bookmarks) || [], now),
+      // A list removed, or emptied, is an empty calendar, never a missing
+      // one: the phone keeps the subscription without an error.
+      name: lp ? `ics-list${encodeURI(lp.toLowerCase())}@${encodeURIComponent(list.name)}@${day}`
+        : `ics-list-none/${mine.token}/${mine.list}@${had ? had.updated_at : 'none'}`,
+      build: async () => {
+        const route = lp && (pageOf(lp, now) || {}).route;
+        return (route && await feedText(env, url.origin, route, now, calName(list.name))) || empty();
+      },
     });
     return res || notFound();
   }

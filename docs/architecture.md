@@ -72,19 +72,27 @@ calendar: 404. Feeds are kept at the edge under the data version and the day.
 The cPanel mail host Kevin has was weighed and not used: an emailed invite or a
 CalDAV calendar there would be a second copy of the dates that goes stale.
 
-**The page offers two of them, and only two** (Kevin, 19 Nov 2026: one
-subscription a person, collected by Save, rather than one per service). An
-event card's calendar button adds that date alone, as a file
-(`/<id>.ics`, or Google's own add page). Every week of a service is Save, and
-the Saved card's Add to calendar is **one private link per account**,
-`/saved/<token>.ics`, that follows what the account saves
-(`worker/lib/calendar-links.mjs`, `calendar_links`, migration 040). The token is
-128 random bits and the only key: the address is never in the link, which every
-calendar server that fetches it would keep. It reads `saved_items` when it is
-fetched, so it needs a sign-in: kept in a browser alone, a calendar server could
-not know what is saved. A Save bumps no data version, so its edge copy is keyed
-by `saved_items.updated_at` as well. Parish links (`/sgr.ics`) still answer,
-for a parish to hand out, with no button on the page.
+**Saved is the home for subscriptions** (Kevin, 19 Nov 2026: one calendar a
+person, collected by Save, never one per service; a parish's own link for
+people who never open the app). An event card's calendar button adds that date
+alone, as a file (`/<id>.ics`, or Google's own add page); its menu also offers
+"Every Sunday", which is Save. The Saved card's Add to calendar is **one private
+link per account**, `/saved/<token>.ics`, that follows what the account saves
+(`worker/lib/calendar-links.mjs`, `calendar_links`, migration 040). Favourites
+and each list of one's own are calendars too, under the same token
+(`/saved/<token>/fav.ics`, `/saved/<token>/<list>.ics`): the list's parishes
+and its card's filters as the list has them when fetched, so it follows the
+list. Each is read as the parish-level link `/sgr+smg/sun` is, and kept at the
+edge under that link (parishes sorted), not under the person, so the same
+parishes are one feed for everybody. The token is 128 random bits and the only
+key: the address is never in the link, which every calendar server that
+fetches it would keep. These read `saved_items` when fetched, so they need a
+sign-in: kept in a browser alone, a calendar server could not know them. A Save
+bumps no data version, so the Saved feed's edge copy is keyed by
+`saved_items.updated_at` as well. A list removed or emptied is an empty
+calendar, never a 404. A parish's own link (`/sgr.ics`) is for a poster or a
+QR code: the parish's ⋯ menu offers it under "Add to calendar", after Add to
+Favourites and Add to a list.
 
 **A box drawn again keeps what it has.** The page writes its lists as strings,
 and for a year put them in whole (`innerHTML`): every row a new element, every
