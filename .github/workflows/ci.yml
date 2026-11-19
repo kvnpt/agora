@@ -115,8 +115,12 @@ jobs:
         run: npm ci
 
       # Chromium for the Playwright pinned in package.json, kept between runs
-      # under that version. --with-deps installs the system libraries it needs
-      # whether or not the browser itself came from the cache.
+      # under that version. No --with-deps: the runner image already has every
+      # library Chromium needs, and on the first run (19 Nov 2026) --with-deps
+      # spent five of the job's six minutes fetching CJK and X11 fonts from a
+      # slow apt mirror, on every run, cache or no cache. The doors read text,
+      # not glyphs. If an image ever drops a library, launch fails saying which
+      # one, and `npx playwright install-deps chromium` is the step to add.
       - name: Which Playwright
         id: pw
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -125,7 +129,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Chromium
-        run: npx playwright install --with-deps --only-shell chromium
+        run: npx playwright install --only-shell chromium
 
       - name: Open the doors
         env:
