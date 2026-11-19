@@ -53,6 +53,25 @@ Worker's R2 proxy. Parish pages and the collections are indexable;
 Worker answered these links with separate lite pages and the app sat at `/`;
 v3 replaced both ([history.md](history.md)).
 
+**Every link has a calendar too: the link with `.ics` on the end** (Kevin,
+19 Nov 2026). `/sgr.ics` is everything at St George's for a phone to subscribe
+to, `/sgr/sun/liturgy.ics` one timetable line, `/sgr+smg+spp.ics` a list of
+parishes, and `/20:2026-11-22.ics` one date, a file to open
+(`worker/routes/calendar.mjs`). The link is read with the page's grammar and
+its dates come out of the page's lens (`collectionFeed`), a fortnight back to
+a season ahead, so a calendar and the card it mirrors cannot disagree.
+`worker/lib/ics.mjs` writes them **one date at a time, never as a repeat rule**:
+an RRULE would hand the projection to the phone, which would get a fourth
+Sunday, a week held otherwise, a break and the dedup wrong. Each date's UID is
+its own id (`20:2026-11-22@orthodoxy.au`), so a moved time moves the entry
+rather than adding a second. Times are UTC, and the phone shows them in its own
+zone, as every calendar does. A cancelled date stays, titled "Cancelled: …"
+and taking no time; it is not `STATUS:CANCELLED`, which Google hides outright.
+A link that names no parish (`/sun/liturgy`) is every parish in Oceania and no
+calendar: 404. Feeds are kept at the edge under the data version and the day.
+The cPanel mail host Kevin has was weighed and not used: an emailed invite or a
+CalDAV calendar there would be a second copy of the dates that goes stale.
+
 **A box drawn again keeps what it has.** The page writes its lists as strings,
 and for a year put them in whole (`innerHTML`): every row a new element, every
 logo and poster in it a new picture. Safari draws a new picture a frame or more
