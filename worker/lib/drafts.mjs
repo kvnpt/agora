@@ -564,6 +564,39 @@ function namesService(after, title) {
   return said.some(w => its.has(w));
 }
 
+/**
+ * The part of the day a name says, and the starts it means: "after the
+ * evening Liturgy" is the 6pm one at a parish with a 10am one too.
+ */
+const TIMES_OF_DAY = {
+  morning: (m) => m < 12 * 60,
+  afternoon: (m) => m >= 12 * 60 && m < 17 * 60,
+  evening: (m) => m >= 15 * 60,
+  night: (m) => m >= 18 * 60,
+  tonight: (m) => m >= 15 * 60,
+};
+
+/**
+ * Of the services a name could be, those the part of the day it says.
+ *
+ * St Mary's, Mays Hill's Seafood Night poster (19 Nov 2026): "Sunday 29
+ * November, after evening Liturgy". The parish has a 10am and a 6pm Liturgy
+ * on Sundays, and "evening" was one of the words that only say what kind of
+ * service a name is (QUALIFIERS), so both were the Liturgy it follows, and
+ * the time was left to fill in. Now a service named for it ("Evening Divine
+ * Liturgy") is the one, else one that starts in that part of the day. When
+ * neither narrows it, or the name says no part of the day, it is as it was.
+ */
+function byTimeOfDay(after, services) {
+  if (services.length < 2) return services;
+  const said = nameWords(after).filter(w => Object.hasOwn(TIMES_OF_DAY, w));
+  if (!said.length) return services;
+  const named = services.filter(s => nameWords(s.title).some(w => said.includes(w)));
+  if (named.length) return named;
+  const timed = services.filter(s => isLocalTime(s.start_time) && said.some(w => TIMES_OF_DAY[w](toMinutes(s.start_time))));
+  return timed.length ? timed : services;
+}
+
 /** A time in what an event follows, with its "at": " at 6pm", " 10:30am", " 18:00". */
 const TIME_PHRASE = /\s*\b(?:at|from)?\s*\b(?:\d{1,2}(?:[:.]\d{2})?\s*[ap]\.?m\.?|(?:[01]?\d|2[0-3])[:.][0-5]\d)(?![\w])/gi;
 
@@ -595,7 +628,8 @@ const isServiceKind = (x) => SERVICE_KINDS.has(x && x.event_type);
  * is printed ("English Liturgy at 6pm").
  *
  * Which service: the one `after` names that day ON THE POSTER, else on the
- * timetable — at the time `after` prints, or at the start the reader gave the
+ * timetable — in the part of the day it says ("evening", byTimeOfDay), at
+ * the time `after` prints, or at the start the reader gave the
  * event, when a service it names starts then (that was the service's time,
  * not the event's). When it ends: the end printed or on file, else its start
  * and its usual length (durations.mjs: a Liturgy 1½ hours), which is a
@@ -633,7 +667,7 @@ export function afterServices(read, rules) {
     // reader that gives both has given the event's.
     if (ev.start_time && printed && ev.start_time !== printed) continue;
     const when = printed || ev.start_time;
-    const which = (list) => list.filter(s => namesService(ev.after, s.title) && (!when || s.start_time === when));
+    const which = (list) => byTimeOfDay(ev.after, list.filter(s => namesService(ev.after, s.title) && (!when || s.start_time === when)));
     const onPoster = read.events.filter(o => sameDay(ev, o));
     let services = which(onPoster);
     // A service of the poster's at the very time printed, by whatever name the
