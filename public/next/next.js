@@ -2766,14 +2766,16 @@
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
 
   /**
-   * A parish's week. `edit`: whoever may change the timetable gets a pencil
-   * on each line. `only` keeps the lines that answer those filters, as a
-   * collection's card has them (/services is its services); `focus` dims the
+   * A parish's week. Its lines carry no pencil (Kevin, 19 Nov 2026): a line
+   * opens its next date's card, for an editor as for anybody, and the
+   * service is changed from that date's Edit ("Edit the service", the line's
+   * days together or one of them). `only` keeps the lines that answer those
+   * filters, as a collection's card has them (/services is its services); `focus` dims the
    * ones that do not, as a parish's own card has them (/sgr/talk). `among`:
    * a collection's filters, under which a Parish only line shows only where
    * it is open (scopedOpen); its own card shows every line.
    */
-  function timetable(pid, { compact = false, edit = false, only = null, focus = null, among = null } = {}) {
+  function timetable(pid, { compact = false, only = null, focus = null, among = null } = {}) {
     // One week, as the app's timetable reads: the morning's services, then
     // the evening's under the moon, each from Sunday; the roundels say which kind.
     const rules = rulesOf(pid).filter(r => liveRule(r) && (!only || rowAnswers(r, only, true)) && (!among || scopedOpen(r, among, true)));
@@ -2790,11 +2792,10 @@
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
           <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langBadge(langs, asked) ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}${(l.notes || []).map(n => `<span class="tt-range tt-except">${esc(n)}</span>`).join('')}</span></span>
-          ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
     const out = ls.map((l, i) => (i === eve ? EVENING : '') + line(l));
-    return `<div class="tt${compact ? ' compact' : ''}${edit ? ' editing' : ''}" data-tt="${esc(pid)}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
+    return `<div class="tt${compact ? ' compact' : ''}" data-tt="${esc(pid)}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
   }
   function nextOf(pid, pred = () => true) {
     const now = Date.now();
@@ -3730,7 +3731,7 @@
 
   function timesHTML(p, focus = null) {
     const hasTimes = rulesOf(p.id).some(liveRule);
-    return `${hasTimes ? timetable(p.id, { edit: may('schedule.edit', p.id), focus }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+    return `${hasTimes ? timetable(p.id, { focus }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
       ${timesSource(p.id)}
       ${addBox(SUGGEST.service, 'Add a service time')}`;
   }
@@ -4081,6 +4082,9 @@
       e = matchesAt(match).find(visible);
     }
     if (e) openEvent(e.id, { match });
+    // No date to open, so no Edit to reach the service by: whoever may change
+    // it gets its form, as the line's pencil gave it before 19 Nov 2026.
+    else if (may('schedule.edit', pid)) edit('editLine', rules.map(r => r.id));
     else toast(`No ${rules[0].title} on file in the next ${Math.round(MATCH_DAYS / 30)} months`);
   }
   /**
@@ -5592,7 +5596,6 @@
       return;
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
-    if ((b = t.closest('[data-edit-rules]'))) { edit('editLine', b.dataset.editRules.split(',')); return; }
     // A timetable line opens its own card, and leaves the one it is on as it was.
     if ((b = t.closest('[data-line]'))) { openLine(b.closest('[data-tt]').dataset.tt, b.dataset.line.split(',')); return; }
     if ((b = t.closest('[data-edit-event]'))) { edit('editEvent', b.dataset.editEvent); return; }
@@ -5904,6 +5907,11 @@
           parish: (id) => S.byId.get(id),
           parishes: () => S.parishes,
           rule: (id) => S.rules.find(r => String(r.id) === String(id)),
+          // The rules of the timetable line a rule is on: a date's "Edit the service" edits the line.
+          line: (id) => {
+            const r = S.rules.find(x => String(x.id) === String(id));
+            return r ? [...lineRuleIds(r.parish_id, String(r.id))] : [String(id)];
+          },
           event: findEvent,
           retarget: (from, to) => {
             const e = findEvent(to);

@@ -1145,8 +1145,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 @media (prefers-color-scheme: dark) { .tt-range.tt-break { color: #e3b86a; } }
 .tt .eve { margin: 9px 0 3px; color: var(--text-3); }
 .tt.compact .tt-line { grid-template-columns: 64px 54px minmax(0, 1fr); padding: 3px 0; }
-/* For whoever may change it, each line's pencil (next/editing.js). */
-.tt.editing .tt-line { grid-template-columns: 68px 60px minmax(0, 1fr) 32px; }
+/* For whoever may change them, the Details heading's pencil (next/editing.js editDetails). */
 .tt-edit { align-self: center; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -6px 0; border-radius: 50%; color: var(--text-2); }
 .tt-edit svg { width: 17px; height: 17px; }
 .tt-edit:hover { color: var(--text); background: var(--card-2); }

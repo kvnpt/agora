@@ -209,7 +209,7 @@
   //
   // A rule's form (public/shared/rule-form.js), the same fields to add a
   // service as to edit one, in a dialog. Add is gated on `schedule.create`,
-  // the pencil on `schedule.edit` and Delete on `schedule.delete`, each at
+  // Edit (a date's "Edit the service") on `schedule.edit` and Delete on `schedule.delete`, each at
   // the rule's parish. Every write at a parish read from somewhere asks
   // first whether to keep it by hand.
 
@@ -438,7 +438,7 @@
   };
   const dayBefore = (iso) => new Date(Date.parse(iso + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
 
-  /** A rule's pencil: its form, Save, Delete. */
+  /** A rule's form: Save, Delete. */
   function editService(id) { editRules([id]); }
 
   /**
@@ -567,9 +567,10 @@
   }
 
   /**
-   * A timetable line's pencil. A line can be several rules ("Mon–Fri 6pm
-   * Vespers" is five), edited together as the one service, or one day of it
-   * on its own.
+   * A timetable line's service, from a date's "Edit the service" (or the
+   * line itself, when it has no date to open). A line can be several rules
+   * ("Mon–Fri 6pm Vespers" is five), edited together as the one service, or
+   * one day of it on its own.
    */
   async function editLine(ids) {
     const rules = ids.map(id => host.rule(id)).filter(Boolean)
@@ -1173,7 +1174,9 @@
     const q = (name) => form.querySelector(`[${EV}="${name}"]`);
     const err = form.querySelector('.rf-error');
     const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
-    const toService = () => { f.close(); editService(series.rule.id); };
+    // The service, as its timetable line is: Mon–Fri Vespers offers its days
+    // together or this one (the line's pencil did, until 19 Nov 2026).
+    const toService = () => { f.close(); editLine(host.line ? host.line(series.rule.id) : [series.rule.id]); };
     form.querySelectorAll('.ev-series [data-ev-series]').forEach(b => b.addEventListener('click', toService));
 
     RF().wireDates(form, host.today());
