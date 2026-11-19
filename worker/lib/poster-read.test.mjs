@@ -5,9 +5,13 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
-  POSTER_MODEL, POSTER_SCHEMA, SYSTEM_PROMPT, MAX_EVENTS, READ_KINDS,
+  POSTER_MODEL, POSTER_SCHEMA, POSTER_SCHEMA_SPLIT, SYSTEM_PROMPT, MAX_EVENTS, READ_KINDS,
   buildPosterRequest, posterContext, readPoster, normalizeRead, readFailure, clip,
+  splitRead, noteParts,
 } from './poster-read.mjs';
+import whatsappWords from '../../public/shared/whatsapp-words.js';
+
+const { plainWords } = whatsappWords;
 import { haikuStream, fakeFetch } from './test-fakes.mjs';
 
 const PARISH = { name: 'St Nicholas', address: '1 Church St, Marrickville NSW', timezone: 'Australia/Sydney' };
@@ -478,4 +482,198 @@ test('a passed date the reader put in next year goes back to the poster’s year
 
   assert.match(SYSTEM_PROMPT, /a date in it that has already passed keeps that year/);
   assert.match(SYSTEM_PROMPT, /Only when the image prints no year anywhere, use the first such date on or after today/);
+});
+
+// ── a WhatsApp forward of several posters (St Mary's, Mays Hill, 19 Nov 2026) ──
+
+const NO_DETAILS = { address: '', phone: '', email: '', website: '' };
+const tagged = (poster, title, date, extra = {}) => ({ poster, title, feast: '', date, weekday_printed: null,
+  year_printed: false, cancelled: false, after: '', start_time: '19:00', end_time: null, end_date: '',
+  event_type: 'social', languages: [], venue: null, description: null, notes: [], ...extra });
+const announce = (pictures, words = [], parish = '', place = '') => ({ pictures, words, parish, place });
+
+test('the split schema: the posters before the events, each event and service on one, and no new unions', () => {
+  const S = POSTER_SCHEMA_SPLIT;
+  assert.deepStrictEqual(S.required, ['kind', 'written_in', 'other_parish', 'posters', 'events', 'services', 'details', 'notes']);
+  assert.deepStrictEqual(Object.keys(S.properties), S.required, 'decided before anything is transcribed');
+  assert.deepStrictEqual(S.properties.posters.items.required, ['pictures', 'words', 'parish', 'place']);
+  for (const list of ['events', 'services']) {
+    const items = S.properties[list].items;
+    assert.strictEqual(items.required[0], 'poster');
+    assert.deepStrictEqual(items.required.slice(1), POSTER_SCHEMA.properties[list].items.required);
+    assert.strictEqual(Object.keys(items.properties)[0], 'poster');
+  }
+  const unions = (schema) => {
+    let n = 0;
+    const walk = (s) => {
+      if (s.anyOf) { n++; s = s.anyOf[0]; }
+      for (const v of Object.values(s.properties || {})) walk(v);
+      if (s.items) walk(s.items);
+    };
+    walk(schema);
+    return n;
+  };
+  assert.strictEqual(unions(S), unions(POSTER_SCHEMA));
+  const walk = (s) => {
+    if (s.type === 'object') assert.strictEqual(s.additionalProperties, false);
+    for (const v of Object.values(s.properties || {})) walk(v.anyOf ? v.anyOf[0] : v);
+    if (s.items) walk(s.items);
+  };
+  walk(S);
+  assert.deepStrictEqual(POSTER_SCHEMA.required, ['kind', 'written_in', 'other_parish', 'events', 'services', 'details', 'notes'],
+    'a poster on its own is asked as before');
+});
+
+test('told apart, each picture is headed with its number and the split schema is asked for; one picture, or not told, is as before', () => {
+  const two = [{ data: 'QUFB', mediaType: 'image/jpeg' }, { data: 'QkJC', mediaType: 'image/png' }];
+  const apart = buildPosterRequest({ images: two, context: 'ctx', split: true });
+  assert.deepStrictEqual(apart.messages[0].content.map(c => c.type === 'text' ? c.text : c.source.data),
+    ['Image 1:', 'QUFB', 'Image 2:', 'QkJC', 'ctx']);
+  assert.strictEqual(apart.output_config.format.schema, POSTER_SCHEMA_SPLIT);
+  const together = buildPosterRequest({ images: two, context: 'ctx' });
+  assert.deepStrictEqual(together.messages[0].content.map(c => c.type), ['image', 'image', 'text']);
+  assert.strictEqual(together.output_config.format.schema, POSTER_SCHEMA);
+  const alone = buildPosterRequest({ images: two.slice(0, 1), context: 'ctx', split: true });
+  assert.strictEqual(alone.output_config.format.schema, POSTER_SCHEMA);
+  assert.deepStrictEqual(alone.messages[0].content.map(c => c.type), ['image', 'text']);
+});
+
+test('told apart, the context asks which images and words each poster is, and numbers the words', () => {
+  const words = 'Good morning!\n\n*Seafood Night*\nSunday 29 November\n\n*Fruit Picking*\nSaturday 16 January';
+  const text = posterContext(PARISH, '2026-11-19', RULES, words, { whatsapp: true, pictures: 3, split: true });
+  assert.match(text, /There are 3 images, sent together on WhatsApp, each headed with its number\./);
+  assert.match(text, /or several posters at once, each its own announcement/);
+  assert.match(text, /an image with nothing of its own to announce, such as a QR code/);
+  assert.match(text, /Every event and every service gives in poster the number of the announcement/);
+  assert.match(text, /in numbered parts/);
+  assert.match(text, /\[1\] Good morning!\n\[2\] \*Seafood Night\*\nSunday 29 November\n\[3\] \*Fruit Picking\*\nSaturday 16 January/);
+  assert.doesNotMatch(text, /read them as one image/);
+  // Not told apart (the editor's read again of a draft's pictures): one announcement, as before.
+  const one = posterContext(PARISH, '2026-11-19', RULES, words, { whatsapp: true, pictures: 3 });
+  assert.match(one, /sent together as one announcement: read them as one image/);
+  assert.doesNotMatch(one, /\[1\]/);
+});
+
+test('the words in parts: paragraphs, or the lines of one paragraph', () => {
+  assert.deepStrictEqual(noteParts('Hello\n\n*A*\nline\n \n*B*'), { parts: ['Hello', '*A*\nline', '*B*'], sep: '\n\n' });
+  assert.deepStrictEqual(noteParts('*A* Sunday\n*B* Monday'), { parts: ['*A* Sunday', '*B* Monday'], sep: '\n' });
+  assert.deepStrictEqual(noteParts('   '), { parts: [], sep: '\n\n' });
+  assert.deepStrictEqual(noteParts('One line').parts, ['One line']);
+});
+
+test('the words as a description: WhatsApp’s marks off, emojis and links kept', () => {
+  assert.strictEqual(plainWords('🍤 *Seafood Night Fellowship!*\n📅 Sunday 29 November\n 💵 $15 per plate '),
+    '🍤 Seafood Night Fellowship!\n📅 Sunday 29 November\n💵 $15 per plate');
+  assert.strictEqual(plainWords('_Bring a plate_ and ~bring~ a chair'), 'Bring a plate and bring a chair', 'the marks go, never the words');
+  assert.strictEqual(plainWords('Email my_name_here@x.org or see https://x.org/a_b_c *now*'),
+    'Email my_name_here@x.org or see https://x.org/a_b_c now');
+  assert.strictEqual(plainWords('2 * 3 * 4'), '2 * 3 * 4', 'a star that marks nothing stays');
+  assert.strictEqual(plainWords('a\n\n\n\nb'), 'a\n\nb');
+  assert.strictEqual(plainWords(''), null);
+  assert.ok(plainWords('word '.repeat(400)).length <= 1000);
+});
+
+test('a forward of four posters is four reads, each with its own pictures, words and events', () => {
+  const doc = {
+    kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: ['The fourth image is cropped.'],
+    posters: [announce([1], [2]), announce([2], [3]), announce([3], [4]), announce([4])],
+    events: [
+      tagged(1, 'MENS GROUP', '2026-11-19', { start_time: '18:30' }),
+      tagged(2, 'Seafood Night', '2026-11-29', { after: 'Evening Liturgy', start_time: null }),
+      tagged(3, 'Fruit Picking Trip', '2027-01-16', { start_time: '08:00' }),
+      tagged(4, 'Lunch Cruise', '2027-02-06', { start_time: '12:00', end_time: '16:00', venue: 'Huntleys Point Wharf' }),
+    ],
+    services: [],
+  };
+  const parts = splitRead(doc, { pictures: 4, words: 5 });
+  assert.deepStrictEqual(parts.map(p => p.pictures), [[1], [2], [3], [4]]);
+  assert.deepStrictEqual(parts.map(p => p.words), [[2], [3], [4], []]);
+  assert.deepStrictEqual(parts.map(p => p.read.events.map(e => e.title)),
+    [['Mens Group'], ['Seafood Night'], ['Fruit Picking Trip'], ['Lunch Cruise']], 'each normalised: unshouted');
+  assert.strictEqual(parts[1].read.events[0].after, 'Evening Liturgy');
+  assert.strictEqual(parts[3].read.events[0].location_override, 'Huntleys Point Wharf');
+  assert.ok(parts.every(p => p.read.kind === 'poster' && !('poster' in p.read.events[0])));
+  assert.deepStrictEqual(parts[0].read.notes, ['The fourth image is cropped.']);
+});
+
+test('a poster and its translation, or every event on one poster, is no split', () => {
+  const base = { kind: 'poster', written_in: 'Greek', other_parish: null, details: NO_DETAILS, notes: [], services: [] };
+  // One announcement over both pictures.
+  assert.strictEqual(splitRead({ ...base, posters: [announce([1, 2], [1])],
+    events: [tagged(1, 'Feast', '2026-12-06'), tagged(1, 'Vespers', '2026-12-05')] }, { pictures: 2, words: 1 }), null);
+  // Two listed, but everything on the first: the second (its translation) has nothing of its own.
+  assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
+    events: [tagged(1, 'Feast', '2026-12-06')] }, { pictures: 2 }), null);
+  // No posters said, one picture, or an event on no poster it listed: one draft, as before.
+  assert.strictEqual(splitRead({ ...base, events: [tagged(1, 'Feast', '2026-12-06')] }, { pictures: 2 }), null);
+  assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
+    events: [tagged(1, 'A', '2026-12-06'), tagged(2, 'B', '2026-12-07')] }, { pictures: 1 }), null);
+  for (const bad of [0, 3, null, '2', 1.5]) {
+    assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
+      events: [tagged(1, 'A', '2026-12-06'), tagged(bad, 'B', '2026-12-07')] }, { pictures: 2 }), null, `poster ${bad}`);
+  }
+});
+
+test('a picture with nothing of its own, or that no poster lists, goes with the picture before it', () => {
+  const base = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [] };
+  // 1 a poster, 2 its QR code listed apart, 3 another poster, 4 listed by nobody.
+  const parts = splitRead({ ...base,
+    posters: [announce([1], [1]), announce([2], [2]), announce([3, 3, 9], [3, 7])],
+    events: [tagged(1, 'Camp', '2027-01-10'), tagged(3, 'Picnic', '2027-01-24')],
+  }, { pictures: 4, words: 3 });
+  assert.deepStrictEqual(parts.map(p => p.pictures), [[1, 2], [3, 4]]);
+  assert.deepStrictEqual(parts.map(p => p.words), [[1, 2], [3]], 'the QR code’s words go with it; a part not shown is no part');
+  // The first picture listed by nobody goes with the one after it.
+  const first = splitRead({ ...base, posters: [announce([2]), announce([3])],
+    events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] }, { pictures: 3 });
+  assert.deepStrictEqual(first.map(p => p.pictures), [[1, 2], [3]]);
+  // A picture two posters list is the first's.
+  const twice = splitRead({ ...base, posters: [announce([1, 2]), announce([2, 3])],
+    events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] }, { pictures: 3 });
+  assert.deepStrictEqual(twice.map(p => p.pictures), [[1, 2], [3]]);
+});
+
+test('something only in the words is a part of its own, last; whose each poster is, its own', () => {
+  const parts = splitRead({
+    kind: 'poster', written_in: 'English', details: NO_DETAILS, notes: [], services: [],
+    other_parish: { name: 'St Elias', place: 'Wollongong' },
+    // Listed in an order that is not the pictures'.
+    posters: [announce([], [3]), announce([2], [2], 'St Nicholas Antiochian Orthodox Church', 'Punchbowl'), announce([1], [1])],
+    events: [tagged(1, 'Working bee', '2027-01-09'), tagged(2, 'Youth night', '2027-01-15'), tagged(3, 'Liturgy', '2027-01-17')],
+  }, { pictures: 2, words: 3 });
+  assert.deepStrictEqual(parts.map(p => [p.pictures, p.words]), [[[1], [1]], [[2], [2]], [[], [3]]],
+    'by the first picture each holds, the words-only one last; the draft that came keeps picture 1');
+  assert.deepStrictEqual(parts.map(p => p.read.events[0].title), ['Liturgy', 'Youth night', 'Working bee']);
+  assert.deepStrictEqual(parts.map(p => p.read.other_parish), [
+    { name: 'St Elias', place: 'Wollongong' },
+    { name: 'St Nicholas Antiochian Orthodox Church', place: 'Punchbowl' },
+    { name: 'St Elias', place: 'Wollongong' },
+  ]);
+});
+
+test('a sign among the posters keeps its services and its details; nothing else gets the details', () => {
+  const service = { poster: 2, title: 'Divine Liturgy', every: 'Sundays', day: 'Sunday', start_time: '09:00', end_time: '',
+    weeks: [], languages: [], event_type: 'liturgy', venue: '', description: '', starts: '', until: '', notes: [] };
+  const parts = splitRead({
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [],
+    details: { address: '1 Church St', phone: '', email: '', website: '' },
+    posters: [announce([1]), announce([2])],
+    events: [tagged(1, 'Fete', '2027-03-06')], services: [service],
+  }, { pictures: 2 });
+  assert.deepStrictEqual(parts.map(p => p.read.services.length), [0, 1]);
+  assert.strictEqual(parts[0].read.details, null);
+  assert.deepStrictEqual(parts[1].read.details, { address: '1 Church St', phone: null, email: null, website: null });
+  assert.ok(!('poster' in parts[1].read.services[0]));
+});
+
+test('readPoster gives the parts when it is asked to tell posters apart, and none otherwise', async () => {
+  const doc = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [],
+    posters: [announce([1]), announce([2])], events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] };
+  const two = [{ bytes: image, mediaType: 'image/jpeg' }, { bytes: image, mediaType: 'image/jpeg' }];
+  const go = (split) => readPoster({ apiKey: 'k', images: two, context: 'ctx', split, words: 0,
+    fetchImpl: fakeFetch(haikuStream(JSON.stringify(doc))) });
+  const apart = await go(true);
+  assert.deepStrictEqual(apart.parts.map(p => p.read.events[0].title), ['A', 'B']);
+  assert.deepStrictEqual(apart.read.events.map(e => e.title), ['A', 'B'], 'the whole read too');
+  assert.strictEqual((await go(false)).parts, null);
 });

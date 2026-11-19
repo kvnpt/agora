@@ -378,16 +378,175 @@ test('a forward of two pictures and its caption is one draft, read together', as
 
   assert.equal(calls.length, 1, 'one read');
   const content = calls[0].messages[0].content;
-  assert.deepEqual(content.map(c => c.type), ['image', 'image', 'text'], 'both pictures, in the order sent');
-  assert.equal(content[1].source.data, Buffer.from(JPEG2).toString('base64'));
-  assert.match(content[2].text, /There are 2 images, sent together as one announcement/);
-  assert.match(content[2].text, /The words these images came with on WhatsApp/);
-  assert.match(content[2].text, /Read the images\.$/);
+  assert.deepEqual(content.map(c => c.type), ['text', 'image', 'text', 'image', 'text'], 'both pictures, in the order sent, numbered');
+  assert.deepEqual([content[0].text, content[2].text], ['Image 1:', 'Image 2:']);
+  assert.equal(content[3].source.data, Buffer.from(JPEG2).toString('base64'));
+  // Asked whether they are one poster or several (a read that does not say
+  // is one draft, as this one is).
+  assert.match(content[4].text, /There are 2 images, sent together on WhatsApp, each headed with its number/);
+  assert.match(content[4].text, /The words these images came with on WhatsApp, in numbered parts/);
+  assert.match(content[4].text, /\[1\] ORC - Cronulla Beach\. We’re heading south\./);
+  assert.match(content[4].text, /Read the images\.$/);
+  assert.ok(calls[0].output_config.format.schema.properties.posters, 'the schema that tells posters apart');
+  // One event, and the words sent with it: they are its description.
+  assert.equal(f.raw.prepare('SELECT description FROM draft_events WHERE draft_id = ?').get(d.id).description,
+    'ORC - Cronulla Beach. We’re heading south.');
 
   assert.equal(f.graph.sent.length, 1, 'one reply');
   assert.deepEqual(f.raw.prepare('SELECT outcome, draft_id FROM whatsapp_messages ORDER BY rowid').all().map(r => r.outcome).sort(),
     ['draft', 'joined']);
   assert.ok(f.raw.prepare('SELECT draft_id FROM whatsapp_messages').all().every(r => r.draft_id === d.id));
+});
+
+// St Mary's, Mays Hill's post (19 Nov 2026): four posters and one caption,
+// three parts of it about three of them, and a greeting and a sign-off.
+const POST = [
+  'Good morning everyone! ☀️',
+  '👨🏻 *St Basil’s Men’s Group - Tonight*\n📅 Thursday 19 November\n 🕡 Dinner & fellowship from 6:30pm',
+  '🍤 *Seafood Night Fellowship!*\n📅 Sunday 29 November after Evening Liturgy\n 💵 $15 per plate',
+  '🍇 *Fruit Picking Trip*\n📅 Saturday 16 January\n🕗 Departing at 8:00am sharp',
+  'Have a blessed day! 🙏🏼',
+].join('\n\n');
+const ev = (title, date, start, poster, extra = {}) => ({ poster, title, feast: null, date, weekday_printed: null,
+  year_printed: false, after: null, start_time: start, end_time: null, event_type: 'social', languages: [], venue: null,
+  description: `The reader’s words about ${title}.`, notes: [], ...extra });
+const FOUR = {
+  kind: 'poster', written_in: 'English', other_parish: null,
+  posters: [
+    { pictures: [1], words: [2], parish: '', place: '' },
+    { pictures: [2], words: [3], parish: '', place: '' },
+    { pictures: [3], words: [4], parish: '', place: '' },
+    { pictures: [4], words: [], parish: '', place: '' },
+  ],
+  events: [
+    ev('Men’s Group', '2026-11-19', '18:30', 1),
+    ev('Seafood Night', '2026-11-29', '20:00', 2),
+    ev('Fruit Picking Trip', '2027-01-16', '08:00', 3),
+    ev('Lunch Cruise', '2027-02-06', '12:00', 4, { venue: 'Huntleys Point Wharf' }),
+  ],
+  services: [], details: { address: '', phone: '', email: '', website: '' }, notes: [],
+};
+const pictures = (n) => Array.from({ length: n }, (_, i) => ({ type: 'image',
+  image: { id: `M${i + 1}`, mime_type: 'image/jpeg', ...(i === 0 ? { caption: POST } : {}) }, at: 1762400000, context: { forwarded: true } }));
+const jpeg = (i) => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, i, i]);
+
+test('a forward of several posters is a draft for each, with its own picture and words, and the reply lists them', async () => {
+  const f = fresh();
+  f.link();
+  for (let i = 1; i <= 4; i++) f.graph.media.set(`M${i}`, { mime: 'image/jpeg', bytes: jpeg(i) });
+  const calls = await withReader(FOUR, async () => { await f.deliver(pictures(4)); });
+  assert.equal(calls.length, 1, 'one read of the four');
+
+  const drafts = f.drafts();
+  assert.equal(drafts.length, 4, 'a draft for each poster');
+  drafts.forEach((d, i) => {
+    assert.equal(d.parish_id, A);
+    assert.equal(d.source, 'whatsapp');
+    assert.equal(d.sender_name, 'Kevin');
+    assert.equal(d.read_status, 'read');
+    assert.equal(d.seen_at, null, 'each waits on the parish’s + until it is opened');
+    assert.equal(d.images, null, 'one picture, nothing to join');
+    assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1)).bytes], [...jpeg(i + 1)], `draft ${i + 1} has picture ${i + 1}`);
+  });
+  // Each its own part of the words, as written; the greeting and the
+  // sign-off are nobody's, and the cruise was only on its poster.
+  assert.deepEqual(drafts.map(d => d.message_text), [
+    '👨🏻 *St Basil’s Men’s Group - Tonight*\n📅 Thursday 19 November\n 🕡 Dinner & fellowship from 6:30pm',
+    '🍤 *Seafood Night Fellowship!*\n📅 Sunday 29 November after Evening Liturgy\n 💵 $15 per plate',
+    '🍇 *Fruit Picking Trip*\n📅 Saturday 16 January\n🕗 Departing at 8:00am sharp',
+    null,
+  ]);
+  const cards = drafts.map(d => f.raw.prepare('SELECT title, date, description FROM draft_events WHERE draft_id = ?').all(d.id));
+  assert.deepEqual(cards.map(c => c.map(x => x.title)), [['Men’s Group'], ['Seafood Night'], ['Fruit Picking Trip'], ['Lunch Cruise']]);
+  // The words are each card's description, WhatsApp's stars taken off, and
+  // not marked "from poster"; the cruise, with none, keeps the reader's.
+  const marks = drafts.map(d => JSON.parse(f.raw.prepare('SELECT read_fields FROM draft_events WHERE draft_id = ?').get(d.id).read_fields));
+  assert.deepEqual(marks.map(m => m.includes('description')), [false, false, false, true]);
+  assert.deepEqual(cards.map(c => c[0].description), [
+    '👨🏻 St Basil’s Men’s Group - Tonight\n📅 Thursday 19 November\n🕡 Dinner & fellowship from 6:30pm',
+    '🍤 Seafood Night Fellowship!\n📅 Sunday 29 November after Evening Liturgy\n💵 $15 per plate',
+    '🍇 Fruit Picking Trip\n📅 Saturday 16 January\n🕗 Departing at 8:00am sharp',
+    'The reader’s words about Lunch Cruise.',
+  ]);
+
+  // Each picture's message leads its own draft: four of the day's thirty.
+  const rows = f.raw.prepare("SELECT media_id, outcome, draft_id FROM whatsapp_messages ORDER BY media_id").all();
+  assert.deepEqual(rows, drafts.map((d, i) => ({ media_id: `M${i + 1}`, outcome: 'draft', draft_id: d.id })));
+
+  assert.equal(f.graph.sent.length, 1, 'one reply');
+  assert.equal(f.graph.texts()[0], [
+    'Got it: 4 posters, so 4 drafts at St Nicholas, Punchbowl, waiting until they\'re published:',
+    `• Men’s Group, Thu 19 Nov 6:30pm: https://orthodoxy.au/snp?draft=${drafts[0].id}`,
+    `• Seafood Night, Sun 29 Nov 8pm: https://orthodoxy.au/snp?draft=${drafts[1].id}`,
+    `• Fruit Picking Trip, Sat 16 Jan 8am: https://orthodoxy.au/snp?draft=${drafts[2].id}`,
+    `• Lunch Cruise, Sat 6 Feb 12pm: https://orthodoxy.au/snp?draft=${drafts[3].id}`,
+  ].join('\n'));
+
+  // Words typed after it are about the last poster sent.
+  await withReader(FOUR, async () => { await f.deliver([text('Tickets from Eva', { at: 1762400030 })]); });
+  assert.match(f.drafts()[3].message_text, /^Tickets from Eva$/);
+});
+
+test('an owner’s forward of two parishes’ posters is a draft at each', async () => {
+  const f = fresh({ role: 'owner', parishIds: null });
+  f.link();
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: jpeg(2) });
+  const two = {
+    ...FOUR,
+    posters: [
+      { pictures: [1], words: [2], parish: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' },
+      { pictures: [2], words: [3], parish: 'St Nicholas Antiochian Orthodox Church', place: 'Punchbowl' },
+    ],
+    events: FOUR.events.slice(0, 2),
+  };
+  await withReader(two, async () => { await f.deliver(pictures(2)); });
+  const drafts = f.drafts().filter(d => d.source === 'whatsapp');
+  assert.deepEqual(drafts.map(d => d.parish_id), [B, A], 'each where its poster says');
+  assert.equal(f.graph.texts()[0], [
+    'Got it: 2 posters, so 2 drafts, waiting until they\'re published:',
+    `• Men’s Group, Thu 19 Nov 6:30pm, at St Elias, Wollongong: https://orthodoxy.au/sew?draft=${drafts[0].id}`,
+    `• Seafood Night, Sun 29 Nov 8pm, at St Nicholas, Punchbowl: https://orthodoxy.au/snp?draft=${drafts[1].id}`,
+  ].join('\n'));
+});
+
+test('a forward that is one poster over two pictures stays one draft, and gives no part of the words to a card of several', async () => {
+  const f = fresh();
+  f.link();
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: jpeg(2) });
+  // A programme's two pages: one poster, both pictures, two events.
+  const one = { ...FOUR, posters: [{ pictures: [1, 2], words: [2, 3], parish: '', place: '' }],
+    events: [ev('Vespers', '2026-11-21', '18:00', 1), ev('Seafood Night', '2026-11-29', '20:00', 1)] };
+  await withReader(one, async () => { await f.deliver(pictures(2)); });
+  const [d, ...more] = f.drafts();
+  assert.equal(more.length, 0);
+  assert.equal(JSON.parse(d.images).length, 1, 'the second picture waits to be joined, as before');
+  assert.equal(d.message_text, POST, 'every word, as it came');
+  const descs = f.raw.prepare('SELECT description FROM draft_events WHERE draft_id = ? ORDER BY position').all(d.id).map(r => r.description);
+  assert.deepEqual(descs, ['The reader’s words about Vespers.', 'The reader’s words about Seafood Night.']);
+  assert.match(f.graph.texts()[0], /^Got it: Vespers, Sat 21 Nov 6pm, and 1 more\. It's a draft at St Nicholas, Punchbowl/);
+});
+
+test('a forward of several posters read too slowly is answered, then listed when it lands', async () => {
+  const f = fresh();
+  f.link();
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: jpeg(2) });
+  const two = { ...FOUR, posters: FOUR.posters.slice(0, 2), events: FOUR.events.slice(0, 2) };
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => {
+    await new Promise(r => setTimeout(r, 400));
+    return new Response(haikuStream(JSON.stringify(two)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  try { await f.deliver(pictures(2)); } finally { globalThis.fetch = real; }
+  const drafts = f.drafts();
+  assert.equal(drafts.length, 2);
+  assert.deepEqual(f.graph.texts(), [
+    `Got it. It's still being read, and will be a draft at St Nicholas, Punchbowl: https://orthodoxy.au/snp?draft=${drafts[0].id}`,
+    [
+      'Read it: 2 posters, so 2 drafts at St Nicholas, Punchbowl:',
+      `• Men’s Group, Thu 19 Nov 6:30pm: https://orthodoxy.au/snp?draft=${drafts[0].id}`,
+      `• Seafood Night, Sun 29 Nov 8pm: https://orthodoxy.au/snp?draft=${drafts[1].id}`,
+    ].join('\n'),
+  ]);
 });
 
 test('a picture WhatsApp will not give is left out, and the reply says so', async () => {

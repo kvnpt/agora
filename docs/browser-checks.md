@@ -334,9 +334,11 @@ curl -s localhost:8789/__replies
 ```
 
 A forward of several pictures is several `send --image`s at the same
-`--at` second, the caption on the first; one draft should come of them, its
-pictures joined side by side when the editor opens it (watch for the
-`PUT …/poster?from=` and the thumbnail changing).
+`--at` second, the caption on the first. One poster over several pictures
+should make one draft, its pictures joined side by side when the editor opens
+it (watch for the `PUT …/poster?from=` and the thumbnail changing); several
+posters should make a draft each, with its own picture and its own part of
+the caption, and one reply listing them.
 
 Apply `d1/migrations/036-whatsapp.sql` and `037-whatsapp-pictures.sql` to the local database first, and give
 the parish an acronym so the reply's link has one. The home page should show

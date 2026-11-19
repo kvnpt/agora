@@ -5876,7 +5876,7 @@
     '/shared/read-from.js', '/shared/acronym-suggest.js', '/shared/logo-image.js',
     '/shared/kind-picker.js', '/shared/lang-picker.js', '/shared/event-checks.js',
     '/shared/sse.js', '/shared/signs.js', '/shared/parish-picker.js', '/shared/venue-picker.js',
-    '/shared/event-editor.js', '/shared/time-field.js', '/shared/rule-form.js',
+    '/shared/whatsapp-words.js', '/shared/event-editor.js', '/shared/time-field.js', '/shared/rule-form.js',
     '/next/editing.js',
   ];
   const editingScripts = new Map();   // src → its load; a failed one is tried again

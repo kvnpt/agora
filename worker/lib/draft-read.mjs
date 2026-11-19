@@ -8,13 +8,15 @@
 //
 // lib/poster-read.mjs is the model side; lib/drafts.mjs has every step below.
 
-import { readPoster, posterContext } from './poster-read.mjs';
+import { readPoster, posterContext, noteParts } from './poster-read.mjs';
 import { placeRead, afterServices, placeHosts, matchOccurrences, matchOnFile, suggestEnds, suggestLanguages,
-  mergeRead, setReadStatus } from './drafts.mjs';
+  mergeRead, setReadStatus, splitDraft } from './drafts.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import timezones from '../../public/shared/timezones.js';
+import whatsappWords from '../../public/shared/whatsapp-words.js';
 
 const { DEFAULT_TIMEZONE } = timezones;
+const { plainWords } = whatsappWords;
 
 /**
  * What the poster reader needs about a parish that is not on the poster: the
@@ -50,34 +52,43 @@ export async function readContext(db, parishId) {
  *                                     (in place of bytes; a WhatsApp forward's)
  * @param {string} [o.note]            words sent with it: a suggestion's note, a WhatsApp caption
  * @param {boolean} [o.whatsapp]       the note came with the image on WhatsApp
+ * @param {boolean} [o.split]          several pictures may be several posters, each a draft of its
+ *                                     own (a WhatsApp forward's, as it came: poster-read.mjs splitRead)
  * @param {Function} [o.send]          the editor's stream: 'kind', 'field', 'item' as they are written
  * @param {(read) => string|null} [o.choose]
  *   For a draft whose parish was only a guess (a WhatsApp sender's): the
  *   parish it should be at, given whose poster the read says it is — or null
  *   to stay. The draft moves BEFORE its read is squared with a parish, so the
  *   services and events it is matched to are the right parish's.
- * @returns {Promise<{ok: true, draft: object|null, read: object, moved: boolean}
+ * @returns {Promise<{ok: true, draft: object|null, read: object, moved: boolean, drafts?: object[]}
  *                   |{ok: false, error: string, retry: boolean}>}
- *   `draft` null when it was discarded while it was being read.
+ *   `draft` null when it was discarded while it was being read. `drafts`, when
+ *   it was several posters: each one's {id, draft, read, moved, pictures},
+ *   the first this draft.
  */
-export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, images = null, note = '', whatsapp = false, send = () => {}, choose = null }) {
+export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, images = null, note = '', whatsapp = false, split = false, send = () => {}, choose = null }) {
   const db = env.DB;
   await setReadStatus(db, draft.id, 'reading');
-  let parishId = draft.parish_id;
-  let { parish, zone, today, rules } = await readContext(db, parishId);
+  const context = await readContext(db, draft.parish_id);
+  const { parish, zone, today, rules } = context;
 
   const pictures = images && images.length ? images : (bytes ? [{ bytes, mediaType }] : []);
+  const apart = split && pictures.length > 1;
+  const words = noteParts(note);
   const read = await readPoster({
     apiKey,
     baseUrl: env.ANTHROPIC_BASE_URL,
     images: pictures,
+    split: apart,
+    words: words.parts.length,
     context: posterContext({ ...parish, timezone: zone }, today, rules, note,
-      { image: pictures.length > 0, whatsapp, pictures: pictures.length }),
+      { image: pictures.length > 0, whatsapp, pictures: pictures.length, split: apart }),
   }, send);
   // One line per read, for Workers Observability: what it cost and how long.
   console.log(JSON.stringify({ poster_read: {
-    draft: draft.id, parish: parishId, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
+    draft: draft.id, parish: draft.parish_id, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
     ...(pictures.length > 1 ? { pictures: pictures.length } : {}),
+    ...(read.parts ? { posters: read.parts.length } : {}),
     ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
   } }));
   if (!read.ok) {
@@ -85,43 +96,93 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
     return { ok: false, error: read.error, retry: read.retry };
   }
 
+  // The words on WhatsApp are the parish's own, and are what a card says
+  // (public/shared/whatsapp-words.js): the reader's description is for a
+  // poster that came alone.
+  const said = whatsapp ? plainWords(note) : null;
+  if (!read.parts) {
+    const r = await squareRead(env, draft, read.read, { choose, context, words: said });
+    return { ok: true, draft: r.draft, read: read.read, moved: r.moved };
+  }
+
+  // Several posters: a draft for each, with its own pictures and words.
+  // Words the read gave to none of them are kept whole on each, as they came,
+  // and fill no description: they are not known to be that poster's.
+  const anyWords = read.parts.some(p => p.words.length);
+  const textOf = (p) => (anyWords ? p.words.map(i => words.parts[i - 1]).join(words.sep) || null : note || null);
+  const ids = await splitDraft(db, draft.id, read.parts.map(p => ({ pictures: p.pictures, text: textOf(p) })));
+  if (!ids.length) return { ok: true, draft: null, read: read.read, moved: false };
+  const drafts = [];
+  for (const [i, part] of read.parts.entries()) {
+    const own = anyWords && whatsapp ? plainWords(textOf(part)) : null;
+    const r = await squareRead(env, { id: ids[i], parish_id: draft.parish_id }, part.read, { choose, context, words: own });
+    drafts.push({ ...r, id: ids[i], read: part.read, pictures: part.pictures });
+  }
+  return { ok: true, draft: drafts[0].draft, read: drafts[0].read, moved: drafts[0].moved, drafts };
+}
+
+/**
+ * A finished read, squared with the parish its draft is at — or moved to,
+ * when `choose` says whose it is — and merged into the draft.
+ *
+ * @param {{id, parish_id}} draft
+ * @param {object} read  normalizeRead()'s, changed in place
+ * @param {object} o
+ * @param {object} o.context  readContext() at the draft's parish
+ * @param {string|null} [o.words]  the sender's words for its one event's description (plainWords)
+ */
+async function squareRead(env, draft, read, { choose = null, context, words = null }) {
+  const db = env.DB;
+  let parishId = draft.parish_id;
+  let { parish, rules, zone } = context;
   // The parish's own address is not a venue, and "another parish's poster"
   // becomes a parish on file when one clearly matches.
-  await placeRead(db, read.read, { id: parishId, ...(parish || {}) });
+  await placeRead(db, read, { id: parishId, ...(parish || {}) });
   let moved = false;
-  const to = choose ? choose(read.read) : null;
+  const to = choose ? choose(read) : null;
   if (to && to !== parishId) {
     await db.prepare(`UPDATE drafts SET parish_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`)
       .bind(to, draft.id).run();
     parishId = to;
-    ({ parish, zone, today, rules } = await readContext(db, parishId));
+    ({ parish, zone, rules } = await readContext(db, parishId));
     // Again, at the parish it is now: its own address goes, and "another
     // parish's poster" is no longer another's.
-    await placeRead(db, read.read, { id: parishId, ...(parish || {}) });
+    await placeRead(db, read, { id: parishId, ...(parish || {}) });
     moved = true;
   }
   // Something held after a service starts when it ends, not at the time
   // printed for the service — and is never that service's date.
-  afterServices(read.read, rules);
+  afterServices(read, rules);
   // An event at another parish's church is that parish's, with this one
   // taking part: the one of theirs on file, or one to add there.
-  await placeHosts(db, read.read, { id: parishId, ...(parish || {}) }, rules);
+  await placeHosts(db, read, { id: parishId, ...(parish || {}) }, rules);
   // A dated regular service — a programme's Sunday and its saint — is a
   // change to that Sunday, not an event beside it.
-  matchOccurrences(read.read, rules);
+  matchOccurrences(read, rules);
   // A one-off this parish already has on file is that one, filled in
   // rather than made twice.
-  await matchOnFile(db, read.read, { id: parishId, ...(parish || {}), timezone: zone });
+  await matchOnFile(db, read, { id: parishId, ...(parish || {}), timezone: zone });
   // No end printed: how long such a thing usually runs (a Liturgy 1½
   // hours, a fair 4), as a suggestion to check.
-  suggestEnds(read.read);
+  suggestEnds(read);
   // A one-off service the poster gives no language for: the parish's
   // usual, as a suggestion to check (publishing needs one).
   const past = (await db.prepare(
     `SELECT event_type, languages FROM events WHERE parish_id = ? AND languages IS NOT NULL
      ORDER BY start_utc DESC LIMIT 40`).bind(parishId).all()).results || [];
-  suggestLanguages(read.read, rules, past);
-  return { ok: true, draft: await mergeRead(db, draft.id, read.read), read: read.read, moved };
+  suggestLanguages(read, rules, past);
+  // One event, and words sent with it: they are its description (Kevin,
+  // 19 Nov 2026), in place of the reader's. Several events share the words
+  // between them, so each keeps its own, and Fill from WhatsApp is there.
+  // A date called off says only why, if anything.
+  const [only] = read.events;
+  if (words && read.events.length === 1 && !only.cancelled) {
+    only.description = words;
+    only.read_notes = (only.read_notes || []).filter(n => n.field !== 'description');
+    // Not "from poster": the WhatsApp words, shown under it, are where it came from.
+    only.suggested = [...(only.suggested || []), 'description'];
+  }
+  return { draft: await mergeRead(db, draft.id, read), moved };
 }
 
 /**

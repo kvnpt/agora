@@ -389,7 +389,14 @@ published: the draft waits for a person, like any other. What is worth knowing:
   the editor shows as sent, under the open card's Description, whose label
   line offers **Fill from WhatsApp** (Replace over what the read gave it, Undo
   just after; a proposed service's Description has the pill too — Kevin,
-  10 Nov 2026, in place of Copy the words). With no card open the words head
+  10 Nov 2026, in place of Copy the words). **A draft of one event takes the
+  words as its description** (Kevin, 19 Nov 2026: "the descriptions should
+  have come from WhatsApp by default"), in place of the reader's: the
+  parish's own words, with WhatsApp's `*bold*`, `_italic_` and `~struck~`
+  marks off (a card shows them as typed) and emojis kept (`plainWords`). Only
+  into an empty description, like every read, and never for a date called
+  off. Several events share the words, so each keeps the reader's, and the
+  pill is there. With no card open the words head
   the cards' column; never a child of `.ee` itself, whose wide layout is a
   grid of the poster beside the cards (a third thing there took the cards'
   place, and they scrolled under the sticky poster). Words alone,
@@ -397,12 +404,32 @@ published: the draft waits for a person, like any other. What is worth knowing:
   within two minutes after a draft (not forwarded) are a note on it — added to
   its words, not read — and a parish link among them (`/sew`,
   `orthodoxy.au/sew`) moves it there.
-- **One forward, one draft.** WhatsApp sends each picture of a forward as its
+- **One poster, one draft** (Kevin, 19 Nov 2026; until then one forward, one
+  draft). WhatsApp sends each picture of a forward as its
   own message, the caption on the first, all at the same second. The first of
   them handled takes the others and every word in the group
-  (`picturesFor`, runs of six), and they are read **together**, in the order
-  sent, as one announcement (`posterContext`'s `pictures`: "read them as one
-  image"). The draft's poster is the first picture; the rest wait in
+  (`picturesFor`, runs of six), and they are read **together**, in one read,
+  each picture headed with its number and the words in numbered parts
+  (paragraphs, or the lines of one). The read says which pictures and which
+  parts of the words each announcement is, and whose, and which one each
+  event and service is on (`POSTER_SCHEMA_SPLIT`, `splitRead`). **Several
+  posters are a draft each** (`splitDraft`): St Mary's, Mays Hill's post of
+  four posters (a men's group, a seafood night, fruit picking, a lunch cruise)
+  and one caption made one draft whose every card carried all four joined into
+  one picture, and whose Fill from WhatsApp offered every card the whole
+  caption. Now each draft has its own picture, its own part of the words
+  (a greeting and a sign-off are nobody's), and moves to whose poster it is;
+  each picture's message points at its draft, so a word typed after goes to
+  the last poster's, and each is one of the day's thirty. The reply lists
+  them, a line and a link each (and, when the read outlasts the first reply,
+  a second message once they exist). A picture with nothing of its own (a QR
+  code, a menu) goes with the poster before it; something only in the words
+  is a draft with no picture. A read that does not say clearly — no posters,
+  one, or an event on none it listed — is **one draft, as before**, and so is
+  one poster over several pictures (a programme's pages, a poster and its
+  translation). The editor's own Read again of a draft's pictures reads them
+  as one announcement (`posterContext`'s `pictures`: "read them as one
+  image"), never split. The draft's poster is the first picture; the rest wait in
   `drafts.images` (migration 037) until the editor opens it and **joins them
   side by side into one poster** (`joinPictures`: one row up to three, two
   rows past that, each row at its shortest picture's height, 2048px on the

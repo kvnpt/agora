@@ -42,12 +42,16 @@
 // not. A read cut short leaves the draft 'reading', which the editor shows as
 // one to read again.
 //
-// ONE FORWARD, ONE DRAFT. WhatsApp sends each picture of a forward as a
+// ONE POSTER, ONE DRAFT. WhatsApp sends each picture of a forward as a
 // message of its own, the caption on the first. The first of them to be
 // handled takes the others and every word sent with them (whatsapp.mjs
-// picturesFor), and they are read together. The draft's poster is the first
-// picture; the rest wait in drafts.images until the editor joins them all,
-// side by side, into the one poster (docs/editing.md).
+// picturesFor), and they are read together, in one read that also says
+// which pictures and which parts of the words each poster is (poster-read.mjs
+// splitRead). Several posters are a draft each, with its own pictures and
+// words, and the reply lists them; one poster over several pictures (a
+// programme's pages, a poster and its translation) is one draft, whose poster
+// is the first picture, the rest waiting in drafts.images until the editor
+// joins them, side by side, into the one poster (docs/editing.md).
 //
 // lib/whatsapp.mjs has the API; lib/draft-read.mjs the read.
 
@@ -517,20 +521,63 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
     bytes += p.media.bytes.byteLength;
     images.push({ bytes: p.media.bytes, mediaType: p.media.mediaType });
   }
-  const reading = readIntoDraft(env, draft, { apiKey, images, note: text, whatsapp: true, choose }).catch(e => {
-    console.error(`[whatsapp] read ${draft.id}: ${e && (e.stack || e.message)}`);
-    return { ok: false, error: 'something went wrong', retry: true };
-  });
+  // Several pictures may be several posters, each read into a draft of its
+  // own (draft-read.mjs `split`).
+  const reading = readIntoDraft(env, draft, { apiKey, images, note: text, whatsapp: true, split: true, choose })
+    .then(async (r) => { if (r.ok && r.drafts) await pointAt(db, r.drafts, got, m.id); return r; })
+    .catch(e => {
+      console.error(`[whatsapp] read ${draft.id}: ${e && (e.stack || e.message)}`);
+      return { ok: false, error: 'something went wrong', retry: true };
+    });
+  // A draft for each poster, each with its link.
+  const answerSplit = async (drafts, late) => {
+    const items = [];
+    for (const d of drafts) {
+      if (!d.draft) continue;
+      const p = await parishRow(db, d.draft.parish_id);
+      items.push({ summary: readSummary(d.draft), at: draftAt(p), link: draftLink(origin, p, d.id) });
+    }
+    return reply(REPLIES.split(items, { late }) + missing);
+  };
   const left = Math.max(1000, REPLY_BY_MS - (Date.now() - io.started));
   const late = Symbol('late');
   const done = await Promise.race([reading, io.sleep(left).then(() => late)]);
   if (done === late) {
     await answer(await getDraft(db, draft.id), (name, url) => REPLIES.reading(name, url));
-    await reading;   // and keep reading, for as long as there is
+    // And keep reading, for as long as there is: the link went to the
+    // first poster's, so the rest are said when they are made.
+    const r = await reading;
+    if (r && r.ok && r.drafts) await answerSplit(r.drafts, true);
     return;
   }
   if (!done.ok) return answer(null, (name, url) => REPLIES.readFailed(done.error, name, url));
+  if (done.drafts) return answerSplit(done.drafts, false);
   return answer(done.draft, (name, url) => REPLIES.read(done.draft ? readSummary(done.draft) : '', name, url));
+}
+
+/**
+ * A forward read as several posters: each picture's message points at its
+ * own poster's draft, so words typed after it are added there and each draft
+ * counts as one of the day's DAILY_LIMIT. The picture that took the forward
+ * leads its draft; another draft is led by its first picture.
+ *
+ * @param {{id, pictures: number[]}[]} drafts  draft-read.mjs's, by picture number
+ * @param {{id}[]} got  the pictures read, in order: picture n is got[n - 1]
+ */
+async function pointAt(db, drafts, got, takerId) {
+  const stmts = [];
+  for (const d of drafts) {
+    const ids = d.pictures.map(n => got[n - 1] && got[n - 1].id).filter(Boolean);
+    if (!ids.length) continue;
+    const lead = ids.includes(takerId) ? takerId : ids[0];
+    stmts.push(db.prepare("UPDATE whatsapp_messages SET outcome = 'draft', draft_id = ? WHERE id = ?").bind(d.id, lead));
+    const rest = ids.filter(id => id !== lead);
+    if (rest.length) {
+      stmts.push(db.prepare(`UPDATE whatsapp_messages SET outcome = 'joined', draft_id = ? WHERE id IN (${rest.map(() => '?').join(',')})`)
+        .bind(d.id, ...rest));
+    }
+  }
+  if (stmts.length) await db.batch(stmts);
 }
 
 /**
