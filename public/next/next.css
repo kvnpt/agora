@@ -21,6 +21,15 @@
      kept apart from it (Kevin, 13 Nov 2026). */
   --accent: #007aff;
   --dist: #007aff;
+  /* Yours, the page's Today as your Saved or your Favourites: a deep indigo
+     and a star's gold, the colour of their buttons and of the edge and its
+     sign under the map (Kevin, 19 Nov 2026). Kept apart from the user's blue
+     and the six jurisdictions as those are from each other (OKLab ΔE×100 at
+     least 13 in light and dark, at least 7.5 for a red–green colour-blind
+     reader; jurisdiction-colors.js). The gold is light, as a star is: on
+     white it is the shape, not the line, that says so. */
+  --saved: #3b1fd1;
+  --fav: #f5b400;
   --live: #2fb350;
   --evening: #2c3d72;
   /* Hairlines, and the app's own tokens for the pieces taken from it. */
@@ -69,6 +78,8 @@
     /* The phone's dark-mode location blue. */
     --accent: #0a84ff;
     --dist: #0a84ff;
+    --saved: #b4befe;
+    --fav: #ffd60a;
     --live: #38c75c;
     --evening: #8ba3d4;
     --hair: rgba(255, 255, 255, 0.12);
@@ -685,25 +696,53 @@ body.map-full .parish-row {
 /* A Today with the day and the evening divides them, as a day of the feed does. */
 .today[hidden] { display: none; }
 .today .eve { position: relative; padding: 10px 18px 2px; }
-/* On a phone, on the page straight under the map, with a pin on the edge
+/* On a phone, on the page straight under the map, with a sign on the edge
    between them: what is on is what is on where the map is looking. The
-   edge is blue, as how far is, and the pin breaks it. Yours (your
-   bookmarks or favourites, next.js todayMine) are not the map's: no pin,
-   and the edge a plain one, all the way across (Kevin, 12 Nov 2026). */
+   edge is blue, as how far is, and a pin breaks it. Yours (your Saved or
+   your Favourites, next.js todayMine) are not the map's, and the edge says
+   whose: a bookmark on an indigo edge, a star on a gold one, as their
+   buttons are once on (Kevin, 19 Nov 2026). Turned on or off, the sign
+   grows in as the edge takes its colour (next.js renderToday). */
 .vc-shell > .today {
+  --edge: var(--dist);
   position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible;
-  border-top: 1px solid color-mix(in srgb, var(--dist) 75%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--edge) 75%, transparent);
+  transition: border-top-color .3s;
 }
-.vc-shell > .today.mine { border-top-color: var(--frame); }
-.vc-shell > .today.mine::before, .vc-shell > .today.mine::after { content: none; }
+.vc-shell > .today.mine-bm { --edge: var(--saved); }
+.vc-shell > .today.mine-fav { --edge: var(--fav); }
+/* Theirs in full: the gold on white, and the pale indigo on the dark, are barely there at three quarters. */
+.vc-shell > .today.mine { border-top-color: var(--edge); }
 .vc-shell > .today::before {
   content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--bg);
 }
 .vc-shell > .today::after {
   content: ''; position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 20px;
-  background: var(--dist);
+  background: var(--edge);
+  transition: background-color .3s;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* Saved's bookmark and Favourites' star, the buttons' own (next.js I.bookmarkOn, I.starOn), across the edge. */
+.vc-shell > .today.mine-bm::after {
+  top: -9px; left: calc(50% - 7px); width: 14px; height: 18px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 18'%3E%3Cpath d='M2 0h10a2 2 0 0 1 2 2v15.2a.8.8 0 0 1-1.3.6L7 13.6l-5.7 4.2a.8.8 0 0 1-1.3-.6V2a2 2 0 0 1 2-2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 18'%3E%3Cpath d='M2 0h10a2 2 0 0 1 2 2v15.2a.8.8 0 0 1-1.3.6L7 13.6l-5.7 4.2a.8.8 0 0 1-1.3-.6V2a2 2 0 0 1 2-2z'/%3E%3C/svg%3E");
+}
+.vc-shell > .today.mine-fav::after {
+  top: -11px; left: calc(50% - 10px); width: 20px; height: 20px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 2 20 20'%3E%3Cpath stroke='%23000' stroke-width='1.2' stroke-linejoin='round' d='m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 2 20 20'%3E%3Cpath stroke='%23000' stroke-width='1.2' stroke-linejoin='round' d='m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z'/%3E%3C/svg%3E");
+}
+.vc-shell > .today.morph::after { animation: edge-morph .42s cubic-bezier(.2, .9, .3, 1.25); }
+@keyframes edge-morph {
+  0% { opacity: 0; transform: scale(.2) rotate(-40deg); }
+  55% { opacity: 1; transform: scale(1.22) rotate(6deg); }
+  100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vc-shell > .today, .vc-shell > .today::after { transition: none; }
+  .vc-shell > .today.morph::after { animation: none; }
 }
 /* The page's Today cut off under a fade where it runs long (next.js
    clipToday, TODAY_CUT), Show all opening the rest in place; Tomorrow at
@@ -742,12 +781,8 @@ body.map-full .parish-row {
   transition: background-color .15s, color .15s, box-shadow .15s;
 }
 .tmode svg { width: 20px; height: 20px; }
-.tmode.bm { --tm: #4f46e5; }
-.tmode.fav { --tm: #b45309; }
-@media (prefers-color-scheme: dark) {
-  .tmode.bm { --tm: #a5b4fc; }
-  .tmode.fav { --tm: #fbbf24; }
-}
+.tmode.bm { --tm: var(--saved); }
+.tmode.fav { --tm: var(--fav); }
 .tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tm) 55%, transparent); }
 @media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
