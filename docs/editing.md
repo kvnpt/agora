@@ -274,6 +274,29 @@ person's own becomes an ask, as it does there. A timetable line on a break
 today says when it is back, and a combined date's card names what is in its
 place.
 
+**Both forms are drawn as the event's card** (Kevin, 19 Nov 2026: "not a
+bunch of fields and buttons. Rather a WYSIWYG event card";
+`public/shared/card-face.js`). The kind's pill, the title, the subtitle, then a
+line each for the day, the time, the place and the languages, and the words:
+each part a button, underlined in dots. Tapped, a part opens its own field
+right under it in a tinted panel (the time its Starts and Ends, with what the
+reader said of it); the title, the subtitle and the words are typed where they
+stand; the kind is a styled menu, with Public / Parish only. The dots' colour
+says what is left to the person: **green** read off the poster or the
+WhatsApp words, **amber** worked out and not printed (a read note says how),
+**red** needed and not there or doubted by a check (Publish waits), **violet**
+different from what is on file (a programme's 8:15 against the timetable's
+8am, a date's own subtitle, an edit not yet saved), **grey** as it is. Green
+and amber go grey once the part has been opened: Add event sends the same
+value back, which drops the read's mark and note (`drafts.mjs updateCard`).
+The form's rows are the same rows as before, hidden until their part opens
+(flex `order` puts each under its part), so every check, save and question
+works as it did. Edit event keeps Cancel and Break… as buttons and puts
+Suppress, Include other parishes, No live badge, Delete and the service itself
+behind **More**. A part closes on the click outside it, never the press, so a
+button under an open panel has not moved by the time the click lands. Without
+card-face.js loaded the forms are the rows, as they were.
+
 The dotted **Add +** under a card's Calendar alters nothing the card is
 showing — it makes a one-off that is not there yet — and what it is gated on is
 the capability, per parish: `may('event.edit', pid)` in `next.js` asks the two

@@ -954,3 +954,346 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .lp-chip.lp-extra { text-decoration: line-through; }
 .lp-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
 .lp-chip.lp-more { min-width: 44px; letter-spacing: 1px; }
+
+/* ── The card itself (card-face.js; Kevin, 19 Nov 2026) ──────────────────
+   An event's form drawn as the event's card (next.css .ev-head, .ev-facts,
+   .ev-desc), each part a button underlined in dots, the dots in the colour
+   of what the reader made of it. Tapped, a part opens its field under it in
+   a tinted panel, or is typed where it stands (the title, the subtitle, the
+   words); the kind opens a menu. The form's rows are the same rows, only
+   hidden until their part is opened: order (flex) puts each under its part,
+   so nothing moves in the page and every row keeps its wiring.
+
+   The colours, light and dark (card-face.js says what each means). */
+.ee, .cf-card {
+  --cf-read: #1a9c4e; --cf-guess: #d97a06; --cf-miss: #e0313f; --cf-chg: #7c4dff; --cf-as: #9a9aa3;
+  --cf-open: color-mix(in srgb, var(--accent, #2b6cb0) 7%, transparent);
+  --cf-open-line: color-mix(in srgb, var(--accent, #2b6cb0) 45%, transparent);
+  --cf-ink-2: var(--text-2, var(--muted, #6b7280));
+  --cf-ink-3: var(--text-3, var(--muted, #9ca3af));
+}
+@media (prefers-color-scheme: dark) {
+  .ee, .cf-card { --cf-read: #3ad16a; --cf-guess: #ffb340; --cf-miss: #ff6b6b; --cf-chg: #b79bff; --cf-as: #7a7a84; }
+}
+.ee-card:not(.is-face) .ee-f { display: none; }
+.ee-card.is-face .ee-body { display: flex; flex-direction: column; padding-bottom: 6px; }
+.ee-cards > .ee-card.is-face:only-child .ee-body { padding: 0 0 6px; }
+/* Shut cards (several from one poster) open as the card too. */
+.ee-card.is-face:not(:only-child) .ee-body { padding: 6px 14px 14px; }
+
+/* Each part, then what opens under it. */
+.ee-card.is-face .ee-body > .cf-kind { order: 10; }
+.ee-card.is-face .ee-body > .cf-title, .ee-card.is-face .ee-body > [data-row="title"] { order: 20; }
+.ee-card.is-face .ee-body > .cf-sub, .ee-card.is-face .ee-body > [data-row="feast"] { order: 30; }
+.ee-card.is-face .ee-body > [data-f="date"], .ee-card.is-face .ee-body > [data-row="date"] { order: 40; }
+.ee-card.is-face .ee-body > .ee-multiday-row { order: 41; }
+.ee-card.is-face .ee-body > [data-f="time"], .ee-card.is-face .ee-body > .ee-grid { order: 50; }
+.ee-card.is-face .ee-body > [data-hint="zone"] { order: 51; }
+.ee-card.is-face .ee-body > [data-f="where"], .ee-card.is-face .ee-body > [data-row="location_override"] { order: 60; }
+.ee-card.is-face .ee-body > .ee-their { order: 61; }
+.ee-card.is-face .ee-body > [data-f="languages"], .ee-card.is-face .ee-body > [data-row="languages"] { order: 70; }
+.ee-card.is-face .ee-body > .cf-desc-from { order: 80; }
+.ee-card.is-face .ee-body > .cf-desc, .ee-card.is-face .ee-body > [data-row="description"] { order: 81; }
+.ee-card.is-face .ee-body > .ee-combine { order: 90; }
+.ee-card.is-face .ee-body > .ee-ask { order: 91; }
+.ee-card.is-face .ee-body > .ee-card-error { order: 92; }
+/* Shut until its part is tapped; the kind is its menu, never its row. */
+.ee-card.is-face .ee-body > :is(.ee-row, .ee-grid, .ee-multiday-row, [data-hint="zone"]):not(.ee-edit-on),
+.ee-card.is-face .ee-body > [data-row="event_type"],
+.ee-card.is-face .ee-f.ee-f-off { display: none; }
+/* The colour says where it came from. */
+.ee-card.is-face .ee-mark { display: none !important; }
+
+/* A part: its words, a dotted line under them in its colour. */
+.cf-u {
+  display: inline; margin: 0; padding: 0; border: 0; background: none;
+  font: inherit; color: inherit; text-align: left; letter-spacing: inherit; cursor: pointer;
+  text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2.5px;
+  text-underline-offset: 6px; text-decoration-skip-ink: none;
+  text-decoration-color: var(--cf, var(--cf-as));
+  -webkit-tap-highlight-color: transparent; border-radius: 4px;
+}
+.cf-u:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.cf-u:hover { text-decoration-thickness: 3px; }
+.cf-read { --cf: var(--cf-read); } .cf-guess { --cf: var(--cf-guess); } .cf-miss { --cf: var(--cf-miss); }
+.cf-chg { --cf: var(--cf-chg); } .cf-as { --cf: var(--cf-as); }
+.cf-u.cf-empty { color: var(--cf-ink-3); font-weight: 500; }
+.cf-u.cf-miss.cf-empty { color: var(--cf-miss); font-weight: 650; }
+
+/* The kind's pill, in its roundel's colours, with Public / Parish only beside it. */
+.cf-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
+.cf-kslot { display: contents; }
+.cf-kpill {
+  position: relative; display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 8px 3px 11px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--k-bg); color: var(--k-fg);
+  font: inherit; font-size: 13px; font-weight: 700; line-height: 1.35; letter-spacing: .01em;
+}
+.cf-kpill::after {
+  content: ''; position: absolute; left: 9px; right: 9px; bottom: -7px;
+  border-bottom: 2.5px dotted var(--cf, var(--cf-as));
+}
+.cf-kpill-none { background: none; color: var(--cf-ink-2); box-shadow: inset 0 0 0 1.5px var(--border, var(--line, #d1d5db)); }
+.cf-kpill-none.cf-miss { color: var(--cf-miss); box-shadow: inset 0 0 0 1.5px var(--cf-miss); }
+.cf-kpill-none::after { display: none; }
+.cf-kpill svg { opacity: .8; }
+.cf-kpill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.cf-kind .scope-pill { min-height: 26px; padding: 2px 11px; font-size: 12.5px; }
+.cf-kind .scope-pill.on { color: var(--cf-ink-2); background: transparent; border-color: var(--border, var(--line, #d1d5db)); }
+.cf-kind .scope-pill:not(.on) { color: var(--accent-text, var(--accent)); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+
+/* The title and the subtitle, as the card has them. */
+.ee-f.cf-title, .cf-card .cf-title { margin: 12px 0 0; padding: 0; font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.22; overflow-wrap: break-word; }
+.ee-f.cf-sub, .cf-card .cf-sub { margin: 4px 0 0; padding: 0; color: var(--cf-ink-2); font-size: 19px; font-style: italic; font-weight: 500; line-height: 1.3; }
+/* Typed where they stand: the box at the part's size, a line under it. */
+.ee-card.is-face [data-row="title"].ee-edit-on,
+.ee-card.is-face [data-row="feast"].ee-edit-on { margin: 10px 0 0; }
+.ee-card.is-face [data-row="title"].ee-edit-on > label,
+.ee-card.is-face [data-row="feast"].ee-edit-on > label,
+.ee-card.is-face [data-row="description"].ee-edit-on > .ee-row-head > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.ee-card.is-face [data-row="description"].ee-edit-on > .ee-row-head { justify-content: flex-end; margin-bottom: 6px; }
+.ee-card.is-face [data-row="description"].ee-edit-on > .ee-row-head:not(:has(:not(label):not([hidden]))) { display: none; }
+.ee-card.is-face [data-row="title"].ee-edit-on input,
+.ee-card.is-face [data-row="feast"].ee-edit-on input {
+  min-height: 0; padding: 2px 0 4px; border: 0; border-radius: 0; background: transparent;
+  border-bottom: 2px solid var(--accent, #2b6cb0); box-shadow: none;
+}
+.ee-card.is-face [data-row="title"].ee-edit-on input { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+.ee-card.is-face [data-row="feast"].ee-edit-on input { font-size: 19px; font-style: italic; font-weight: 500; color: var(--cf-ink-2); }
+.ee-card.is-face [data-row="description"].ee-edit-on { margin: 16px 0 0; }
+.ee-card.is-face [data-row="description"].ee-edit-on textarea { font-size: 15px; line-height: 1.45; padding: 13px 15px; border-radius: 16px; }
+
+/* What, when and where: a line each with its sign (next.css .ev-fact). */
+.cf-fact {
+  display: flex; align-items: flex-start; gap: 12px; margin: 13px 0 0;
+  color: var(--text); font-size: 16px; line-height: 1.4;
+}
+.ee-body > [data-f="date"] { margin-top: 20px; }
+.cf-fact > svg { flex: none; width: 20px; height: 20px; margin-top: 2px; color: var(--cf-ink-2); }
+.cf-fact-t { min-width: 0; overflow-wrap: break-word; }
+[data-f="date"] .cf-u { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
+[data-f="time"] .cf-u { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+[data-f="time"] .cf-u.cf-empty:not(.cf-miss) { font-weight: 500; font-size: 16px; }
+.cf-dash { color: var(--cf-ink-2); }
+.cf-was { margin-left: 8px; font-size: 13px; color: var(--cf-ink-2); white-space: nowrap; }
+.cf-was s { text-decoration-thickness: 1.5px; }
+[data-f="where"] .cf-strong { font-weight: 650; }
+[data-f="where"] small { display: block; margin-top: 3px; color: var(--cf-ink-2); font-size: 14.5px; }
+[data-f="languages"] .cf-u { color: var(--cf-ink-2); font-size: 15px; }
+
+/* A part open: it and its fields in one tinted panel. */
+.ee-card.is-face .ee-f.cf-fact.is-open,
+.ee-card.is-face .ee-body > .ee-edit-on:not([data-row="title"]):not([data-row="feast"]):not([data-row="description"]) {
+  margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px;
+  background: var(--cf-open);
+  border-left: 1.5px solid var(--cf-open-line); border-right: 1.5px solid var(--cf-open-line);
+}
+.ee-card.is-face .ee-f.cf-fact.is-open { margin-top: 6px; padding-top: 10px; padding-bottom: 8px; border-top: 1.5px solid var(--cf-open-line); border-radius: 14px 14px 0 0; }
+.ee-card.is-face .ee-body > .ee-edit-on:not([data-row="title"]):not([data-row="feast"]):not([data-row="description"]) { margin-top: 0; margin-bottom: 0; padding-top: 4px; padding-bottom: 8px; padding-left: 42px; }
+.ee-card.is-face .ee-body > .ee-edit-last:not([data-row="title"]):not([data-row="feast"]):not([data-row="description"]) {
+  padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1.5px solid var(--cf-open-line); border-radius: 0 0 14px 14px;
+}
+.ee-card.is-face .ee-body > [data-hint="zone"].ee-edit-on { font-size: 12.5px; }
+.ee-card.is-face .ee-edit-on .ee-row { margin-bottom: 0; }
+.ee-card.is-face .ee-edit-on input:not([type="checkbox"]), .ee-card.is-face .ee-edit-on select { background-color: var(--card, var(--surface, #fff)); }
+@media (max-width: 420px) {
+  .ee-card.is-face .ee-body > .ee-edit-on:not([data-row="title"]):not([data-row="feast"]):not([data-row="description"]) { padding-left: 12px; }
+}
+.ee-card.is-face .ee-their { margin: 8px 0 0; }
+
+/* The words, in the card's box for them (next.css .ev-desc). */
+.cf-desc-from { display: flex; align-items: center; gap: 6px; margin: 20px 0 0; color: var(--cf-ink-2); font-size: 13px; font-weight: 600; }
+.cf-desc-from svg { flex: none; color: #25d366; }
+.cf-desc {
+  margin: 16px 0 0; padding: 13px 15px; border-radius: 16px;
+  background: var(--card, var(--surface, #fff)); box-shadow: var(--shadow, 0 0 0 1px var(--border, #d9dce1));
+  font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
+}
+.cf-desc-from + .cf-desc { margin-top: 8px; }
+.cf-desc .cf-u { display: block; width: 100%; white-space: pre-wrap; text-underline-offset: 5px; }
+.cf-desc.cf-desc-empty .cf-u { display: inline; width: auto; }
+.cf-desc.cf-desc-empty { padding: 0; background: none; box-shadow: none; }
+.ee-cards > .ee-card.is-face:not(:only-child) .cf-desc:not(.cf-desc-empty) { background: var(--card-2, var(--ee-field)); box-shadow: none; }
+
+/* The card's own lines (whose event, combine) under it, apart. */
+.ee-card.is-face .ee-combine { margin: 20px 0 6px; }
+
+/* Over the cards: what is in each colour, and the key. */
+.ee-tally { display: flex; flex-direction: column; }
+.cf-tally { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; color: var(--cf-ink-2); }
+.cf-tally > b { color: var(--text); font-weight: 650; margin-right: 2px; }
+.cf-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 650; white-space: nowrap;
+  background: color-mix(in srgb, var(--cf) 13%, transparent); color: var(--cf);
+}
+.cf-chip::before { content: ''; width: 12px; border-bottom: 2.5px dotted var(--cf); transform: translateY(-2px); }
+.cf-keybtn {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 2px; min-height: 30px; padding: 2px 2px 2px 6px;
+  font: inherit; font-size: 12.5px; font-weight: 650; color: var(--accent-text, var(--accent));
+  background: none; border: 0; border-radius: 999px; cursor: pointer;
+}
+.cf-keybtn svg { transition: transform .15s; }
+.cf-keybtn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.cf-keybtn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.cf-key {
+  display: grid; grid-template-columns: 30px 1fr; gap: 9px 10px; align-items: baseline;
+  margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--card-2, var(--ee-field));
+  font-size: 13.5px; line-height: 1.4; color: var(--cf-ink-2);
+}
+.cf-key i { display: block; border-bottom: 3px dotted var(--cf); transform: translateY(-4px); }
+.cf-key b { font-weight: 650; color: var(--text); }
+/* Shut, a card says it in dots, one per colour still on it. */
+.cf-dots { display: inline-flex; gap: 4px; align-items: center; }
+.cf-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cf); }
+
+/* A styled menu (card-face.js menu): the app's popmenu, in either host. */
+.cf-menu {
+  position: fixed; z-index: 3300; min-width: 220px; max-width: calc(100vw - 20px); max-height: 70vh; overflow-y: auto; padding: 5px;
+  background: var(--glass-solid, var(--surface, #fff)); color: var(--text);
+  border: 1px solid var(--hair, var(--border, rgba(0, 0, 0, .12))); border-radius: 16px;
+  box-shadow: var(--shadow-lift, 0 10px 40px rgba(0, 0, 0, .18));
+  animation: cf-in .16s cubic-bezier(.2, .8, .2, 1);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .cf-menu { background: var(--glass, var(--surface, #fff)); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+@keyframes cf-in { from { opacity: 0; transform: scale(.9); } }
+@media (prefers-reduced-motion: reduce) { .cf-menu { animation: none; } }
+.cf-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px;
+  font: inherit; color: var(--text); text-align: left; background: none; border: 0; border-radius: 11px; cursor: pointer;
+}
+.cf-row:hover, .cf-row:focus-visible { background: var(--line, rgba(60, 60, 67, .12)); outline: none; }
+.cf-row > svg:not(.cf-tick) { flex: none; width: 19px; height: 19px; margin: 0 1.5px; color: var(--cf-ink-2, #6b7280); }
+.cf-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cf-row-t b { font-size: 15.5px; font-weight: 550; }
+.cf-row-t small { font-size: 12.5px; color: var(--text-2, var(--muted, #6b7280)); }
+.cf-row .cf-tick { flex: none; width: 18px; height: 18px; color: var(--text); }
+.cf-row.cf-danger, .cf-row.cf-danger > svg { color: var(--danger, #d92d20); }
+.cf-sep { height: 1px; margin: 4px 8px; background: var(--line, rgba(60, 60, 67, .14)); }
+.cf-roundel {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--k-bg); color: var(--k-fg); font-size: 11.5px; font-weight: 800;
+}
+.cf-switch {
+  flex: none; position: relative; width: 38px; height: 23px; border-radius: 999px;
+  background: var(--line, #d1d5db); transition: background .15s;
+}
+.cf-switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s;
+}
+.cf-switch.on { background: var(--success, #34c759); }
+.cf-switch.on::after { transform: translateX(15px); }
+
+/* On a phone the poster is over the card at the screen's width, as the
+   event card has it, to check each line against (the mockups, 19 Nov 2026). */
+@media (max-width: 899px) {
+  .ee.has-face .ee-poster-card { flex-direction: column; gap: 8px; }
+  .ee.has-face .ee-thumb-btn { width: 100%; }
+  .ee.has-face .ee-thumb { width: 100%; max-height: 340px; object-fit: contain; object-position: center; }
+}
+
+/* A date of a regular service: the timetable's line it is published onto,
+   one box with its link at the end (the mockups, 19 Nov 2026). The card
+   under it is the date as it will be, its changes in violet, so the feed's
+   row is not drawn again, except for a date called off, which is that row. */
+.ee-card.is-face:not(.is-cancel) .ee-occ {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px;
+  margin: 2px 0 6px; padding: 11px 12px 11px 14px; border-radius: 14px; background: var(--ee-field);
+}
+.ee-card.is-face:not(.is-cancel) .ee-occ-rule { padding: 0; background: none; border-radius: 0; font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.ee-card.is-face:not(.is-cancel) .ee-occ-rule::after {
+  content: 'On the timetable: this date is published onto it'; display: block; margin-top: 2px;
+  font-size: 12.5px; font-weight: 400; color: var(--ee-muted);
+}
+.ee-card.is-face:not(.is-cancel) .ee-occ.is-unlinked .ee-occ-rule::after { content: 'Unlinked: a separate event. Tap the link to put it back'; }
+.ee-card.is-face:not(.is-cancel) .ee-occ-link { margin: 0; }
+.ee-card.is-face:not(.is-cancel) .ee-occ-row { display: none; }
+.ee-card.is-face:not(.is-cancel) .ee-occ-what { grid-column: 1 / -1; margin-top: 2px; }
+/* Called off, nothing of the card goes out but its reason (.is-cancel); joining
+   another parish's event, none of its words (.is-join). */
+.ee-card.is-face.is-cancel .ee-f:not(.cf-desc):not(.cf-desc-from),
+.ee-card.is-face.is-join .ee-f:is(.cf-kind, .cf-title, .cf-sub, .cf-desc, .cf-desc-from, [data-f="languages"]) { display: none; }
+
+/* ── Edit event, as the event's card (next/editing.js editFace) ──────────
+   The same parts as Add event's, over the edit form's own rows (.edit-row,
+   data-cf-row), each opened under its part; what the date is (Cancel,
+   Break…) its buttons, the rest behind More. */
+.cf-card.is-face { display: flex; flex-direction: column; }
+.cf-card.is-face > .ev-series { order: 5; }
+.cf-card.is-face > [data-f="kind"] { order: 10; }
+.cf-card.is-face > [data-f="title"], .cf-card.is-face > [data-cf-row="title"] { order: 20; }
+.cf-card.is-face > [data-f="feast"], .cf-card.is-face > [data-cf-row="feast"] { order: 30; }
+.cf-card.is-face > [data-f="date"], .cf-card.is-face > [data-cf-row="date"] { order: 40; }
+.cf-card.is-face > [data-cf-row="lastday"] { order: 41; }
+.cf-card.is-face > [data-f="time"], .cf-card.is-face > [data-cf-row="time"] { order: 50; }
+.cf-card.is-face > [data-f="where"], .cf-card.is-face > [data-cf-row="where"] { order: 60; }
+.cf-card.is-face > [data-f="languages"], .cf-card.is-face > [data-cf-row="languages"] { order: 70; }
+.cf-card.is-face > .cf-acts { order: 75; }
+.cf-card.is-face > [data-f="description"], .cf-card.is-face > [data-cf-row="description"] { order: 80; }
+.cf-card.is-face > [data-cf-row="parish"] { order: 85; margin-top: 22px; }
+.cf-card.is-face > [data-cf-row="poster"] { order: 86; margin-top: 22px; }
+.cf-card.is-face > .rf-error { order: 95; }
+.cf-card.is-face > .form-actions { order: 99; }
+.cf-card.is-face > :is(.ev-tools, [data-cf-row="kind"], [data-cf-row="live"]),
+.cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"], [data-cf-row="description"], [data-cf-row="date"],
+  [data-cf-row="lastday"], [data-cf-row="time"], [data-cf-row="where"], [data-cf-row="languages"]):not(.cf-on),
+.cf-card.is-face > .cf-off { display: none !important; }
+
+/* The service it is a date of: one box, the service's own pencil at its end. */
+.cf-card.is-face > .ev-series { margin: 0 0 14px; padding: 11px 12px 11px 14px; border-radius: 14px; font-size: 14.5px; font-weight: 600; color: var(--text); }
+.cf-card.is-face > .ev-series .ev-link {
+  padding: 6px 13px; border-radius: 999px; font-size: 13.5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.cf-card .cf-kind { margin-top: 2px; }
+.cf-card .cf-kind .ev-state { font-size: 11px; padding: 4px 8px; }
+.cf-card .cf-plain { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
+
+/* Typed where they stand. */
+.cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"], [data-cf-row="description"]).cf-on > label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+}
+.cf-card.is-face > [data-cf-row="title"].cf-on { margin: 10px 0 0; }
+.cf-card.is-face > [data-cf-row="feast"].cf-on { margin: 4px 0 0; }
+.detail-edit-form.cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"]).cf-on input:not([type=checkbox]) {
+  min-height: 0; padding: 2px 0 4px; border: 0; border-radius: 0; background: transparent;
+  border-bottom: 2px solid var(--accent); box-shadow: none;
+}
+.detail-edit-form.cf-card.is-face > [data-cf-row="title"].cf-on input:not([type=checkbox]) { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+.detail-edit-form.cf-card.is-face > [data-cf-row="feast"].cf-on input:not([type=checkbox]) { font-size: 19px; font-style: italic; font-weight: 500; color: var(--cf-ink-2); }
+.cf-card.is-face > [data-cf-row="description"].cf-on { margin: 16px 0 0; }
+.detail-edit-form.cf-card.is-face > [data-cf-row="description"].cf-on textarea { font-size: 15px; line-height: 1.45; padding: 13px 15px; border-radius: 16px; }
+
+/* A part open: it and its fields in one tinted panel. */
+.cf-card.is-face > .cf-fact.is-open,
+.cf-card.is-face > .edit-row.cf-on:not([data-cf-row="title"]):not([data-cf-row="feast"]):not([data-cf-row="description"]) {
+  margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px;
+  background: var(--cf-open);
+  border-left: 1.5px solid var(--cf-open-line); border-right: 1.5px solid var(--cf-open-line);
+}
+.cf-card.is-face > .cf-fact.is-open { margin-top: 6px; padding-top: 10px; padding-bottom: 8px; border-top: 1.5px solid var(--cf-open-line); border-radius: 14px 14px 0 0; }
+.cf-card.is-face > .edit-row.cf-on:not([data-cf-row="title"]):not([data-cf-row="feast"]):not([data-cf-row="description"]) {
+  margin-top: 0; margin-bottom: 0; padding-top: 4px; padding-bottom: 8px;
+}
+.cf-card.is-face > .edit-row.cf-last:not([data-cf-row="title"]):not([data-cf-row="feast"]):not([data-cf-row="description"]) {
+  padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1.5px solid var(--cf-open-line); border-radius: 0 0 14px 14px;
+}
+.cf-card.is-face > .edit-row.cf-on input:not([type="checkbox"]), .cf-card.is-face > .edit-row.cf-on select,
+.cf-card.is-face > .edit-row.cf-on .df-btn { background-color: var(--card, #fff); }
+
+/* What the date is: Cancel and Break, and More for the rest. */
+.cf-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; margin: 22px 0 4px; }
+.cf-act {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  min-height: 70px; padding: 10px 6px; border-radius: 16px;
+  font: inherit; font-size: 15px; font-weight: 650; color: var(--accent-text, var(--accent));
+  background: var(--card, #fff); border: 1px solid var(--border, var(--line)); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cf-act:hover, .cf-act:active { background: color-mix(in srgb, var(--accent) 7%, var(--card, #fff)); }
+.cf-act:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.cf-act svg { flex: none; }
+.cf-card .cf-desc { margin-top: 18px; }
