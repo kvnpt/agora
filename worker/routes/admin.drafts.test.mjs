@@ -1010,6 +1010,27 @@ test('an event after a service follows the one on the poster first, at the time 
   assert.match(which.read_notes.find(n => n.field === 'start_time').text,
     /more than one that day \(9:00am, 6:00pm\): fill in when this starts/);
 
+  // "After the evening Liturgy" (St Mary's, Mays Hill's Seafood Night, 19 Nov
+  // 2026): of the two, the evening's, though neither is named for it; and
+  // "after the morning Liturgy", the morning's.
+  const ev = fresh({ role: 'editor' });
+  addCroydonPark(ev.raw);
+  const evening = (await readAt(ev, CROYDON_PARK, { ...doc, events: [{ ...doc.events[1], after: 'evening Liturgy' }] })).cards[0];
+  assert.deepEqual([evening.start_time, evening.occurrence], ['19:30', null]);
+  assert.match(evening.read_notes.find(n => n.field === 'start_time').text, /^After the 6:00pm Liturgy, which usually runs 1½ hours: from 7:30pm/);
+  const mo = fresh({ role: 'editor' });
+  addCroydonPark(mo.raw);
+  const morning = (await readAt(mo, CROYDON_PARK, { ...doc, events: [{ ...doc.events[1], after: 'the morning Liturgy' }] })).cards[0];
+  assert.equal(morning.start_time, '12:00', 'when the 9:00–12:00 Matins & Divine Liturgy ends');
+
+  // A service named for it is the one, whatever its time: "Evening Divine
+  // Liturgy" beside "Sunday Divine Liturgy", as at Mays Hill.
+  const named = fresh({ role: 'editor' });
+  addCroydonPark(named.raw);
+  named.raw.prepare("UPDATE schedules SET title = 'Evening Divine Liturgy', start_time = '17:00', end_time = '18:30' WHERE parish_id = ? AND start_time = '18:00'").run(CROYDON_PARK);
+  const byName = (await readAt(named, CROYDON_PARK, { ...doc, events: [{ ...doc.events[1], after: 'Evening Liturgy' }] })).cards[0];
+  assert.equal(byName.start_time, '18:30');
+
   // A time of its own on an untimed... a fair with its own time keeps it.
   const i = fresh({ role: 'editor' });
   addCroydonPark(i.raw);
