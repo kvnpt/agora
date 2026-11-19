@@ -1,9 +1,11 @@
 # Checking the frontend in a browser
 
-CLAUDE.md names the limit: CI covers `public/shared/` and the Worker well and
-**executes none of** `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js` or `map.js`. So a change to rendering,
-filtering or wiring merges on the strength of whatever its author did to check
-it. This is how to do that here, and what has already cost time.
+CLAUDE.md names the limit: CI covers `public/shared/` and the Worker well,
+parses every page script, and opens the main doors in a browser
+(`e2e/doors.test.mjs`, below) — but runs nothing else of `next/next.js`,
+`next/editing.js`, `next/month.js`, `bundle.js` or `map.js`. So a change to
+rendering, filtering or wiring merges on the strength of whatever its author did
+to check it. This is how to do that here, and what has already cost time.
 
 Everything below was worked out the hard way. It is written down so the next
 session spends its time on the change rather than on the harness.
@@ -25,6 +27,26 @@ door.
 A useful habit: before writing a browser script that drives a new control,
 write one that just asserts the control is *there*, for the role that is
 supposed to see it. Both bugs above would have died in thirty seconds.
+
+## The doors CI opens
+
+`e2e/doors.test.mjs` is that habit kept: CI's `doors` job opens the main
+screens the way a person does and fails on anything the page throws or logs —
+home on a phone and wide (the map, the parishes in view counted, the
+collections), a parish's card from the parishes in view and from its link, its
+Calendar and Month, and, as an owner, Add service and Edit service through to
+the timetable. It builds its own database from the baseline and the seed and
+starts its own `wrangler dev` (port 8797, its own `--persist-to`), so it runs
+beside `npm run dev` without touching it:
+
+```bash
+npm run test:doors      # about 20s; a failure leaves e2e/out/<test>.png
+```
+
+It caught, when they were put back: #168's Add service and Edit service
+(the weekday ticks gone), a syntax error in `month.js` (Month only) and one in
+`next.js` (every door). Keep it to doors — a new main screen gets one there; a
+PR's own behaviour is still checked by hand, below.
 
 ## Running the page
 
