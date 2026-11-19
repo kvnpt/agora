@@ -10,7 +10,7 @@
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
 //                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong"
 //                   |"programme_gladesville"|"feast_at_burwood"|"mums_group"
-//                   |"mums_group_december"|"programme_called_off","delay":60}
+//                   |"mums_group_december"|"programme_called_off"|"forward_smmh","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -42,6 +42,10 @@
 //                    workshop: a date of that group, linked to it before it is added
 //                  mums_group_december: next month's, the group on file — its 4 December
 //                    meeting goes onto the rule
+//                  forward_smmh: St Mary's, Mays Hill's WhatsApp post (19 Nov 2026) — four
+//                    posters forwarded at once, told apart: a draft for each, each with
+//                    its own picture and its part of the caption (send four pictures at
+//                    one --at, the caption on the first)
 //                  programme_called_off: a December programme at Sts Peter & Paul,
 //                    Doonside — a Sunday's saint, and two dates called off, which
 //                    nothing publishes until each is confirmed on its card
@@ -270,6 +274,30 @@ const DOCS = {
       { title: 'Sunday Divine Liturgy', date: '2026-12-27', weekday_printed: 'Sunday', year_printed: true,
         cancelled: true, start_time: '10:00', end_time: null, event_type: 'liturgy',
         languages: [], venue: null, description: null, notes: [] },
+    ],
+  },
+  forward_smmh: {
+    kind: 'poster', other_parish: null,
+    posters: [
+      { pictures: [1], words: [2], parish: 'St Mary’s', place: 'Mays Hill' },
+      { pictures: [2], words: [3], parish: 'St Mary’s', place: 'Mays Hill' },
+      { pictures: [3], words: [4], parish: 'St Mary’s', place: 'Mays Hill' },
+      { pictures: [4], words: [], parish: 'St Mary’s', place: 'Mays Hill' },
+    ],
+    events: [
+      { poster: 1, title: 'St Basil’s Men’s Group', date: '2026-11-19', weekday_printed: 'Thursday', year_printed: false,
+        after: '', start_time: '18:30', end_time: null, event_type: 'social', languages: [], venue: null,
+        description: 'A brotherhood of Orthodox men, aged 25 to 65. Dinner and fellowship.', notes: [] },
+      { poster: 2, title: 'Seafood Night', date: '2026-11-29', weekday_printed: 'Sunday', year_printed: false,
+        after: 'Evening Liturgy', start_time: null, end_time: null, event_type: 'social', languages: [], venue: null,
+        description: 'After the evening Liturgy. $15 a plate: fish and chips or prawn stir fry.', notes: [] },
+      { poster: 3, title: 'Fruit Picking Trip', date: '2027-01-16', weekday_printed: 'Saturday', year_printed: false,
+        after: '', start_time: '08:00', end_time: null, event_type: 'social', languages: [], venue: null,
+        description: '$80 per person, including entry, bus and breakfast. Contact Eva on 0414 871 292.', notes: [] },
+      { poster: 4, title: 'Lunch Cruise on Sydney Harbour', date: '2027-02-06', weekday_printed: 'Saturday', year_printed: true,
+        after: '', start_time: '12:00', end_time: '16:00', event_type: 'social', languages: [],
+        venue: 'Huntleys Point Wharf, Huntleys Point Road, Huntleys Point',
+        description: 'Bus from St Mary’s at 10:30am, or meet at the wharf at 11:30am. $160 with transport, $150 without.', notes: [] },
     ],
   },
   mums_group: mumsGroup('Coaster-making Workshop', '2026-11-06',

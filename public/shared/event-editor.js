@@ -913,6 +913,15 @@
 
     /** What was written with it on WhatsApp, or '' for a draft that did not come that way. */
     const waWords = () => (state.draft && state.draft.source === 'whatsapp' ? String(state.draft.message_text || '').trim() : '');
+    /**
+     * Those words as a description: WhatsApp's *bold* and _italic_ marks off,
+     * as the read fills a card with them (shared/whatsapp-words.js).
+     */
+    const waDescription = () => {
+      const words = waWords();
+      const W = root.AgoraWhatsappWords;
+      return words && W ? W.plainWords(words) || '' : words;
+    };
 
     function renderWhatsapp() {
       const box = $('whatsapp');
@@ -973,7 +982,7 @@
     function refreshWaFill(card, shown) {
       const pill = card.els.waFill;
       if (!pill) return;
-      const words = waWords();
+      const words = waDescription();
       const now = String(card.fields.description || '').trim();
       const undo = state.waUndo && state.waUndo.key === card.key && now === words ? state.waUndo : null;
       if (!undo && state.waUndo && state.waUndo.key === card.key) state.waUndo = null;
@@ -985,7 +994,7 @@
 
     function fillFromWhatsapp(card) {
       const box = card.els.inputs.description;
-      const words = waWords();
+      const words = waDescription();
       if (!box || !words) return;
       const was = box.value;
       const undo = state.waUndo && state.waUndo.key === card.key && was.trim() === words ? state.waUndo : null;
@@ -2823,7 +2832,7 @@
      * gave it, Undo just after.
      */
     function svcWaPillHTML(sv, i) {
-      const words = waWords();
+      const words = waDescription();
       const now = String(sv.description || '').trim();
       const undo = state.waSvcUndo && state.waSvcUndo.i === i && now === words;
       if (!words || (!undo && now === words)) return '';
@@ -2832,7 +2841,7 @@
 
     function fillServiceFromWhatsapp(i) {
       const box = $('sign').querySelector(`textarea[data-sf="description"][data-i="${i}"]`);
-      const words = waWords();
+      const words = waDescription();
       if (!box || !words) return;
       const undo = state.waSvcUndo && state.waSvcUndo.i === i && box.value.trim() === words ? state.waSvcUndo : null;
       state.waSvcUndo = undo ? null : { i, was: box.value };

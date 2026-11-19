@@ -38,9 +38,10 @@ export const TICKETS_PER_HOUR = 10;
 /** A poster and a text this close together (seconds, each to the next) were sent as one. */
 export const GROUP_GAP_S = 5;
 /**
- * Pictures in one draft. A forward of more is several drafts of this many:
- * the editor joins a draft's pictures side by side into one poster, which
- * past six is too small to read.
+ * Pictures in one read. A forward of more is read in runs of this many: one
+ * read of several posters makes a draft of each (draft-read.mjs `split`),
+ * but one poster over several pictures is joined side by side by the editor,
+ * which past six is too small to read.
  */
 export const MAX_PICTURES = 6;
 /**
@@ -449,6 +450,17 @@ export const REPLIES = {
   reading: (at, link) => `Got it. It's still being read, and will be a draft ${at}: ${link}`,
   readFailed: (error, at, link) => `Got it, but reading it didn't work (${String(error || '').replace(/[.\s]+$/, '')}). It's a draft ${at}; open it to read it again or fill it in: ${link}`,
   unread: (at, link) => `Got it. It's a draft ${at}: ${link}`,
+  // A forward of several posters, a draft each (routes/ingest.mjs): one
+  // line apiece, with its parish when they are not all at one. `late` when
+  // the reply that went first said only that it was being read.
+  split: (items, { late = false } = {}) => {
+    const one = items.every(i => i.at === items[0].at) ? items[0].at : null;
+    const n = items.length;
+    const head = late
+      ? `Read it: ${n} posters, so ${n} drafts${one ? ` ${one}` : ''}:`
+      : `Got it: ${n} posters, so ${n} drafts${one ? ` ${one}` : ''}, waiting until they're published:`;
+    return [head, ...items.map(i => `• ${i.summary || 'one to fill in'}${one ? '' : `, ${i.at}`}: ${i.link}`)].join('\n');
+  },
   added: (at, link) => `Added that to the draft ${at}: ${link}`,
   moved: (at, link) => `Moved the draft to ${at.replace(/^at /, '')}: ${link}`,
 

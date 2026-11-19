@@ -1240,6 +1240,48 @@ export const setReadStatus = (db, draftId, status) => db.prepare(
 ).bind(status, draftId).run();
 
 /**
+ * A WhatsApp forward of several posters as a draft for each (poster-read.mjs
+ * splitRead, draft-read.mjs): the draft keeps the first part's pictures and
+ * words, and every other part is a draft of its own beside it — at the same
+ * parish, from the same sender, unopened — with its pictures and its words.
+ * Its pictures are the draft's own, by number: 1 is its poster, then its
+ * images in order. A picture the read never saw (one past READ_BYTES) stays
+ * with the draft. Nothing is read here; each part is merged into its draft
+ * after.
+ *
+ * St Mary's, Mays Hill's post (19 Nov 2026) was four posters and three of
+ * its parts of words: as one draft, every card took the four joined into one
+ * picture, and each card's description was offered all of the words.
+ *
+ * @param {Array<{pictures: number[], text: string|null}>} parts  in order; the first is the draft's
+ * @returns {Promise<number[]>} each part's draft, the first this one — [] if it was thrown away while it was read
+ */
+export async function splitDraft(db, draftId, parts) {
+  const d = await db.prepare('SELECT * FROM drafts WHERE id = ?').bind(draftId).first();
+  if (!d) return [];
+  const all = [d.poster_path, ...parseList(d.images)];
+  const seen = new Set(parts.flatMap(p => p.pictures));
+  const pathsOf = (p, i) => [
+    ...p.pictures.map(n => all[n - 1]),
+    ...(i === 0 ? all.filter((x, n) => !seen.has(n + 1)) : []),
+  ].filter(Boolean);
+  const [first, ...rest] = parts.map((p, i) => ({ ...p, paths: pathsOf(p, i) }));
+  const imagesOf = (paths) => (paths.length > 1 ? JSON.stringify(paths.slice(1)) : null);
+  await db.prepare(
+    `UPDATE drafts SET poster_path = ?, images = ?, message_text = ?, updated_at = ${NOW} WHERE id = ?`
+  ).bind(first.paths[0] || null, imagesOf(first.paths), first.text, d.id).run();
+  const ids = [d.id];
+  for (const p of rest) {
+    const row = await db.prepare(
+      `INSERT INTO drafts (parish_id, created_by, poster_path, images, read_status, source, message_text, sender_name)
+       VALUES (?, ?, ?, ?, 'reading', ?, ?, ?) RETURNING id`
+    ).bind(d.parish_id, d.created_by, p.paths[0] || null, imagesOf(p.paths), d.source, p.text, d.sender_name).first();
+    ids.push(row.id);
+  }
+  return ids;
+}
+
+/**
  * An R2 key for a draft's poster. One path segment, so /posters/:name serves
  * it (routes/assets.mjs), and never derived from an event id, so no single
  * event's poster delete can take it from the others it is shared with.
