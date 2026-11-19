@@ -411,8 +411,10 @@ published: the draft waits for a person, like any other. What is worth knowing:
   `orthodoxy.au/sew`) moves it there.
 - **One poster, one draft** (Kevin, 19 Nov 2026; until then one forward, one
   draft). WhatsApp sends each picture of a forward as its
-  own message, the caption on the first, all at the same second. The first of
-  them handled takes the others and every word in the group
+  own message, the caption on the first, all at the same second, logged in
+  whatever order their deliveries land — so within a second the captioned
+  picture counts as first (`inSentOrder`; run 504 once made the other one the
+  poster). The first of them handled takes the others and every word in the group
   (`picturesFor`, runs of six), and they are read **together**, in one read,
   each picture headed with its number and the words in numbered parts
   (paragraphs, or the lines of one). The read says which pictures and which

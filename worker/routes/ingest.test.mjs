@@ -424,6 +424,28 @@ test('a forward of two pictures and its caption is one draft, read together', as
   assert.ok(f.raw.prepare('SELECT draft_id FROM whatsapp_messages').all().every(r => r.draft_id === d.id));
 });
 
+// Run 504 (12 Nov 2026) failed the test above once and passed on a re-run:
+// the two pictures share a second, and when the uncaptioned one's delivery
+// landed first it became the poster. WhatsApp puts the caption on the first
+// picture, so within a second the captioned one leads, whichever arrives first.
+test('the captioned picture is the poster even when the other one arrives first', async () => {
+  const f = fresh();
+  f.link();
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: JPEG2 });
+  await withReader(READ, async () => {
+    const second = f.deliver([{ type: 'image', image: { id: 'M2', mime_type: 'image/jpeg' }, at: 1762400000, context: { forwarded: true } }]);
+    // Its row is logged before the captioned picture's is sent.
+    while (!f.raw.prepare('SELECT 1 FROM whatsapp_messages').get()) await new Promise(r => setImmediate(r));
+    await Promise.all([second,
+      f.deliver([image('ORC - Cronulla Beach. We’re heading south.', { at: 1762400000, context: { forwarded: true } })])]);
+  });
+  assert.equal(f.drafts().length, 1, 'one draft');
+  const [d] = f.drafts();
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the captioned one is the poster');
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(JSON.parse(d.images)[0].slice(1)).bytes], [...JPEG2]);
+  assert.equal(d.message_text, 'ORC - Cronulla Beach. We’re heading south.');
+});
+
 // St Mary's, Mays Hill's post (19 Nov 2026): four posters and one caption,
 // three parts of it about three of them, and a greeting and a sign-off.
 const POST = [
