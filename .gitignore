@@ -32,3 +32,6 @@ cache/
 /greek-sites.json
 /greek-pages.json
 /greek-websites.sql
+
+# What a failing door check (e2e/doors.test.mjs) saw: CI keeps it as an artifact.
+e2e/out/
