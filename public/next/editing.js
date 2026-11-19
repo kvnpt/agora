@@ -1067,24 +1067,24 @@
           <span>${esc(repeatsText(series.rule))}</span>
           ${host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Edit the service</button>' : ''}
         </div>` : ''}
-      <div class="edit-row"><label>Title</label><input ${f('title')} value="${esc(e.title || '')}" autocomplete="off"></div>
-      <div class="edit-row"><label>Subtitle</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="The saint or feast, or the topic (optional)" autocomplete="off"></div>
-      <div class="edit-row"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
+      <div class="edit-row" data-cf-row="title"><label>Title</label><input ${f('title')} value="${esc(e.title || '')}" autocomplete="off"></div>
+      <div class="edit-row" data-cf-row="feast"><label>Subtitle</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="The saint or feast, or the topic (optional)" autocomplete="off"></div>
+      <div class="edit-row" data-cf-row="description"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
       ${RF().kindRowHTML('Kind', `<select ${f('event_type')} data-kind-picker="buttons">${kinds}</select>`, EV, !!e.parish_scoped)}
-      ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><div data-ev-parish></div><input type="hidden" ${f('parish_id')} value="${esc(e.parish_id)}"></div>` : ''}
-      <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
-      ${series ? '' : `<div class="edit-row"><div class="edit-row-head"><label>Date</label>${RF().daysHTML(EV, multi)}</div>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
-      <div class="edit-row edit-pair">
+      ${parishes.length > 1 ? `<div class="edit-row" data-cf-row="parish"><label>Parish</label><div data-ev-parish></div><input type="hidden" ${f('parish_id')} value="${esc(e.parish_id)}"></div>` : ''}
+      <div class="edit-row" data-cf-row="languages" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
+      ${series ? '' : `<div class="edit-row" data-cf-row="date"><div class="edit-row-head"><label>Date</label>${RF().daysHTML(EV, multi)}</div>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
+      <div class="edit-row edit-pair" data-cf-row="time">
         <div><label>Starts</label>${time('start_time', start.time, ' data-tf-label="Starts"')}</div>
         <div><label data-ev-endlabel>${multi ? 'Ends, last day' : 'Ends'}</label>${time('end_time', end ? end.time : '', ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
-      ${series ? '' : `<div class="edit-row" data-ev-lastday${multi ? '' : ' hidden'}><label>Last day</label>${DF('last', multi && end ? end.date : '', 'Pick the last day', { attr: EV, required: true })}</div>`}
-      <div class="edit-row"><label>Where</label>
+      ${series ? '' : `<div class="edit-row" data-cf-row="lastday" data-ev-lastday${multi ? '' : ' hidden'}><label>Last day</label>${DF('last', multi && end ? end.date : '', 'Pick the last day', { attr: EV, required: true })}</div>`}
+      <div class="edit-row" data-cf-row="where"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>
         ${VENUE.map(k => `<input type="hidden" ${f(k)} value="${esc(e[k] == null ? '' : e[k])}">`).join('')}
       </div>
-      <div class="edit-row"><label>Poster</label><div data-ev-poster></div></div>
-      ${live ? `<div class="edit-row">
+      <div class="edit-row" data-cf-row="poster"><label>Poster</label><div data-ev-poster></div></div>
+      ${live ? `<div class="edit-row" data-cf-row="live">
         <label class="toggle-row"><span>No live badge</span><input type="checkbox" role="switch" class="toggle" ${f('hide_live')}${e.hide_live ? ' checked' : ''}></label>
       </div>` : ''}`;
   }
@@ -1157,9 +1157,9 @@
     f.body.innerHTML = `<div class="detail-edit-form ev-form">
         <div class="ev-tools">
           ${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}
-          <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel event' : 'Cancel event'}</button>
+          <button class="rf-btn" type="button" data-ev-tool="cancel" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel event' : 'Cancel event'}</button>
           ${series && host.may('override.edit', series.rule.parish_id) ? `<button class="rf-btn" type="button" data-ev-break>${e.status === 'break' ? 'Edit the break' : 'Break…'}</button>` : ''}
-          ${series ? `<button class="rf-btn" type="button" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
+          ${series ? `<button class="rf-btn" type="button" data-ev-tool="suppress" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
           ${series ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}
           ${headless ? '<button class="rf-btn danger" type="button" data-ev-delete>Delete</button>' : ''}
         </div>
@@ -1363,8 +1363,238 @@
       if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
       await done('Saved', { through: isMulti ? last : date });
     }
+    // The form as the event's card, where card-face.js is loaded; the
+    // fields stay the form, so Save reads them as it always has.
+    if (root.AgoraCardFace) return editFace(form, { e, series, f, q, parish, state, cancelled, hidden, headless });
     const first = q('title');
     if (first && !touchFirst()) first.focus({ preventScroll: true });
+  }
+
+  // ── Edit event, as the event's card ────────────────────────────────────
+  //
+  // Kevin, 19 Nov 2026: "not a bunch of fields and buttons. Rather a WYSIWYG
+  // event card", every part that can be changed dotted under (card-face.js).
+  // Each part opens its field under it, or is typed where it stands (the
+  // title, the subtitle, the words); the kind is a menu. What this date
+  // changes of its service, and what is changed and not yet saved, is
+  // violet; anything needed and not there, red; the rest grey. What the date
+  // is (Cancel, Break…) are its two buttons, and the rarer things behind
+  // More: Suppress, Include other parishes, No live badge, Delete, the
+  // service itself.
+
+  const FACE_GROUPS = { title: ['title'], feast: ['feast'], description: ['description'], date: ['date', 'lastday'],
+    time: ['time'], where: ['where'], languages: ['languages'] };
+  const FACE_OF = { title: 'title', feast: 'feast', description: 'description', date: 'date',
+    start_time: 'time', end_time: 'time', where: 'where', languages: 'languages' };
+
+  function editFace(form, { e, series, f, q, parish, state, cancelled, hidden, headless }) {
+    const F = root.AgoraCardFace;
+    const T = root.AgoraEventTypes;
+    const rule = series ? series.rule : null;
+    const dark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+    const may = (cap) => !!series && host.may(cap, series.rule.parish_id);
+    const tool = (sel) => form.querySelector(`.ev-tools ${sel}`);
+    form.classList.add('cf-card', 'is-face');
+    const kindRow = q('event_type') && q('event_type').closest('.edit-row');
+    if (kindRow) kindRow.dataset.cfRow = 'kind';
+
+    const breakBtn = tool('[data-ev-break]');
+    const acts = [
+      `<button type="button" class="cf-act${cancelled ? ' on' : ''}" data-cf-act="cancel">${cancelled ? F.ICON.undo : F.ICON.cancel}<span>${cancelled ? 'Uncancel' : series ? 'Cancel date' : 'Cancel event'}</span></button>`,
+      breakBtn ? `<button type="button" class="cf-act" data-cf-act="break">${F.ICON.pause}<span>${e.status === 'break' ? 'The break' : 'Break…'}</span></button>` : '',
+      `<button type="button" class="cf-act" data-cf-act="more" aria-haspopup="menu">${F.ICON.more}<span>More</span></button>`,
+    ].join('');
+    form.insertAdjacentHTML('afterbegin', `
+      <div class="cf-kind" data-f="kind">${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}<span class="cf-kslot"></span></div>
+      <h2 class="cf-title" data-f="title"></h2>
+      <p class="cf-sub" data-f="feast"></p>
+      <div class="cf-fact" data-f="date">${F.ICON.cal}<span class="cf-fact-t"></span></div>
+      <div class="cf-fact" data-f="time">${F.ICON.clock}<span class="cf-fact-t"></span></div>
+      <div class="cf-fact" data-f="where">${F.ICON.where}<span class="cf-fact-t"></span></div>
+      <div class="cf-fact" data-f="languages">${F.ICON.chat}<span class="cf-fact-t"></span></div>
+      <div class="cf-acts">${acts}</div>
+      <div class="cf-desc" data-f="description"></div>`);
+    const P = (name) => form.querySelector(`[data-f="${name}"]`);
+    const rows = (name) => (FACE_GROUPS[name] || []).map(r => form.querySelector(`[data-cf-row="${r}"]`)).filter(Boolean);
+    // Public / Parish only beside the kind's pill, where the card says it.
+    const scope = form.querySelector('[data-scope-pill]');
+    if (scope) P('kind').append(scope);
+
+    // What it was when the form opened: a field changed from it is unsaved.
+    const KEYS = ['title', 'feast', 'description', 'event_type', 'languages', 'date', 'last', 'multi', 'start_time', 'end_time', 'parish_scoped', 'hide_live', ...VENUE];
+    const val = (k) => { const el = q(k); return !el ? '' : el.type === 'checkbox' ? el.checked : String(el.value == null ? '' : el.value).trim(); };
+    const was = {};
+    for (const k of KEYS) was[k] = val(k);
+    const dirty = (...ks) => ks.some(k => val(k) !== was[k]);
+    const s = (x) => (x == null ? '' : String(x).trim());
+    const langsOf = (x) => { try { return (Array.isArray(x) ? x : JSON.parse(x || '[]')).map(String).sort().join(','); } catch { return String(x || '').split(',').map(t => t.trim()).filter(Boolean).sort().join(','); } };
+    // What this date makes different from its service (violet while it does).
+    const fromRule = (k) => {
+      if (!rule) return false;
+      if (k === 'title') return val('title') !== s(rule.title);
+      if (k === 'feast') return !!val('feast') && val('feast') !== s(rule.feast);
+      if (k === 'description') return !!val('description') && val('description') !== s(rule.description);
+      if (k === 'event_type') return val('event_type') !== s(rule.event_type);
+      if (k === 'start_time') return val('start_time') !== s(rule.start_time);
+      if (k === 'end_time') return val('end_time') !== s(rule.end_time);
+      if (k === 'where') return VENUE.some(v => s(val(v)) !== s(rule[v]));
+      if (k === 'languages') return rule.languages != null && langsOf(val('languages')) !== langsOf(rule.languages);
+      return false;
+    };
+    let open = null;
+
+    function paintFace() {
+      const kind = val('event_type');
+      const service = isService(kind);
+      const st = (o) => F.stateOf({ value: true, ...o });
+
+      const col = T && kind ? T.kindColors(kind, dark()) : null;
+      const kState = st({ changed: dirty('event_type') || fromRule('event_type') });
+      F.draw(P('kind').querySelector('.cf-kslot'), `<button type="button" class="cf-kpill${col ? '' : ' cf-kpill-none'}${kState ? ` cf-${kState}` : ''}" data-face="event_type" data-key="event_type" aria-haspopup="menu"`
+        + `${col ? ` style="--k-bg:${col.bg};--k-fg:${col.fg}"` : ''} aria-label="Kind: ${esc(kind ? T.eventTypeLabel(kind) : 'none')}. Tap to change.">`
+        + `${esc(kind ? T.eventTypeLabel(kind) : 'Choose a kind')}${F.ICON.down}</button>`);
+
+      const title = val('title');
+      F.draw(P('title'), F.part('title', title || 'Add a title', st({ value: !!title, doubt: !title, changed: dirty('title') || fromRule('title') }), { empty: !title, label: 'Title' }));
+      const feast = val('feast');
+      F.draw(P('feast'), F.part('feast', feast || 'Add a subtitle', st({ value: !!feast, changed: dirty('feast') || fromRule('feast') }), { empty: !feast, label: 'Subtitle' }));
+
+      // A date of a service is that date; a one-off's is tapped to change.
+      const thisYear = +host.today().slice(0, 4);
+      const multi = !!val('multi');
+      const date = series ? series.date : val('date');
+      const day = F.dayText(date, multi ? val('last') : '', thisYear);
+      F.draw(P('date').querySelector('.cf-fact-t'), series
+        ? `<span class="cf-plain">${esc(day)}</span>`
+        : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') }), { empty: !day, label: 'Date' }));
+
+      const a = val('start_time'), b = val('end_time');
+      const usual = rule && (fromRule('start_time') || fromRule('end_time')) && rule.start_time
+        ? `<span class="cf-was">usually <s>${esc(F.hm12(rule.start_time))}${rule.end_time ? ` – ${esc(F.hm12(rule.end_time))}` : ''}</s></span>` : '';
+      const days = multi && !series && val('last') > date;
+      F.draw(P('time').querySelector('.cf-fact-t'),
+        F.part('start_time', a ? (days ? F.timeWithDay(a, date) : F.hm12(a)) : 'Add a start time', st({ value: !!a, doubt: !a, changed: dirty('start_time') || fromRule('start_time') }), { empty: !a, label: 'Starts' })
+        + '<span class="cf-dash"> – </span>'
+        + F.part('end_time', b ? (days ? F.timeWithDay(b, val('last')) : F.hm12(b)) : 'end', st({ value: !!b, doubt: days && !b, changed: dirty('end_time') || fromRule('end_time') }), { empty: !b, label: 'Ends' })
+        + usual);
+
+      const pid = val('location_parish_id');
+      const at = pid && pid !== e.parish_id ? host.parish(pid) : null;
+      const placed = val('location_override');
+      const pinned = val('location_lat') !== '';
+      const home = host.parish(val('parish_id') || e.parish_id) || parish;
+      const whereText = at ? at.name || 'Another parish' : placed || (pinned ? 'A place of its own, by its pin' : (home && home.address) || 'At the parish');
+      F.draw(P('where').querySelector('.cf-fact-t'), F.part('where', whereText, st({ changed: dirty(...VENUE) || fromRule('where') }), { label: 'Where', cls: at ? 'cf-strong' : '' })
+        + (at && at.address ? `<small>${esc(at.address)}</small>` : ''));
+
+      P('languages').hidden = !service;
+      if (service) {
+        const langs = val('languages');
+        F.draw(P('languages').querySelector('.cf-fact-t'), F.part('languages', langs || 'Add the languages',
+          st({ value: !!langs, doubt: !series && !langs, changed: dirty('languages') || fromRule('languages') }), { empty: !langs, label: 'Languages' }));
+      }
+
+      const desc = val('description');
+      P('description').classList.toggle('cf-desc-empty', !desc);
+      F.draw(P('description'), F.part('description', desc || 'Add a description', st({ value: !!desc, changed: dirty('description') || fromRule('description') }), { empty: !desc, label: 'Description' }));
+
+      // What is open: its fields under its line, or the words where they stand.
+      for (const name of Object.keys(FACE_GROUPS)) {
+        const on = name === open;
+        const shown = rows(name).filter(r => !r.hidden);
+        rows(name).forEach(r => r.classList.toggle('cf-on', on));
+        shown.forEach((r, i) => r.classList.toggle('cf-last', on && i === shown.length - 1));
+        if (P(name)) P(name).classList.toggle('is-open', on);
+      }
+      for (const name of ['title', 'feast', 'description']) P(name).classList.toggle('cf-off', open === name);
+    }
+
+    function openPart(key, btn) {
+      if (key === 'event_type') return kindMenu(btn);
+      const g = FACE_OF[key];
+      if (!g || (g === 'date' && series)) return;
+      if (open === g) return closePart();
+      open = g;
+      paintFace();
+      if (g === 'title' || g === 'feast' || g === 'description') {
+        const inp = q(g);
+        inp.focus({ preventScroll: true });
+        try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch { /* no caret */ }
+      }
+      const last = rows(g).filter(r => !r.hidden).pop();
+      if (last) requestAnimationFrame(() => last.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    }
+    function closePart() {
+      if (!open) return;
+      open = null;
+      paintFace();
+    }
+
+    function kindMenu(btn) {
+      if (!T) return;
+      const sel = q('event_type'), box = q('parish_scoped');
+      const scoped = !!(box && box.checked);
+      F.menu(btn, T.EVENT_TYPES.map(k => {
+        const c = T.kindColors(k, dark());
+        const label = T.eventTypeLabel(k);
+        return { label, value: k, on: sel.value === k,
+          icon: `<span class="cf-roundel" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(label.charAt(0))}</span>`,
+          run: (v) => { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); f.markDirty(); paintFace(); } };
+      }).concat(box ? [
+        { sep: true },
+        { label: 'Public', sub: 'In the feed, for everyone', on: !scoped, run: () => { RF().scopeTo(box, false); f.markDirty(); } },
+        { label: 'Parish only', sub: 'On its card, and for whoever starred the parish', on: scoped, run: () => { RF().scopeTo(box, true); f.markDirty(); } },
+      ] : []));
+    }
+
+    function moreMenu(btn) {
+      const items = [];
+      const sup = tool('[data-ev-tool="suppress"]');
+      if (sup) items.push(hidden
+        ? { label: 'Unsuppress', sub: 'Back in the feed', icon: F.ICON.eye, run: () => sup.click() }
+        : { label: 'Suppress this date', sub: 'Gone from the feed, not cancelled', icon: F.ICON.eyeoff, run: () => sup.click() });
+      const comb = tool('[data-ev-combine]');
+      if (comb) items.push({ label: 'Include other parishes…', icon: F.ICON.plus, run: () => comb.click() });
+      const live = q('hide_live');
+      if (live) items.push({ label: 'No live badge', icon: F.ICON.live, toggle: live.checked,
+        run: () => { live.checked = !live.checked; f.markDirty(); } });
+      const del = tool('[data-ev-delete]');
+      if (del) items.push({ label: 'Delete', sub: 'Gone for good', icon: F.ICON.trash, danger: true, run: () => del.click() });
+      const svc = form.querySelector('.ev-series [data-ev-series]');
+      if (svc) {
+        if (items.length) items.push({ sep: true });
+        items.push({ label: `Edit every ${series.day}`, sub: 'The service, not this date', icon: F.ICON.repeat, run: () => svc.click() });
+      }
+      if (!items.length) items.push({ label: 'Nothing else to change here', run: () => {} });
+      F.menu(btn, items);
+    }
+
+    form.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-face], [data-cf-act]');
+      if (!b || !form.contains(b)) return;
+      ev.preventDefault();
+      if (b.dataset.face) return openPart(b.dataset.face, b);
+      const act = b.dataset.cfAct;
+      if (act === 'cancel') tool('[data-ev-tool="cancel"]').click();
+      else if (act === 'break' && breakBtn) breakBtn.click();
+      else if (act === 'more') moreMenu(b);
+    });
+    // Anything left open closes when somewhere else on the card is tapped:
+    // on the click, so what was pressed under it has not moved by then.
+    form.addEventListener('click', (ev) => {
+      if (!open) return;
+      const inside = rows(open).some(r => r.contains(ev.target)) || P(open).contains(ev.target);
+      if (!inside) closePart();
+    }, true);
+    for (const k of ['title', 'feast']) {
+      q(k).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); closePart(); } });
+    }
+    form.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && open && !ev.defaultPrevented) { ev.stopPropagation(); closePart(); } });
+    // Every field's change, and a place picked (the picker writes its hidden fields).
+    form.addEventListener('input', paintFace);
+    form.addEventListener('change', paintFace);
+    form.addEventListener('click', () => setTimeout(paintFace, 0));
+    paintFace();
   }
 
   // ── A break ───────────────────────────────────────────────────────────

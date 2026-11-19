@@ -331,6 +331,9 @@
   const MAX_EDGE = 2048;           // what is stored and shown; Claude reads it smaller
   const SAVE_DELAY = 700;
   const TEXT_FIELDS = ['title', 'feast', 'description', 'languages', 'location_override', 'ask_reason'];
+  /** The fields the card's parts say (card-face.js): their checks are its dots, not chips. */
+  const FACE_FIELDS = new Set(['title', 'feast', 'description', 'event_type', 'languages', 'date', 'end_date',
+    'start_time', 'end_time', 'location_override', 'location_parish_id', 'location_lat', 'location_lng']);
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -637,6 +640,9 @@
   function open(mount, opts) {
     const may = opts.may || (() => true);
     const C = root.AgoraEventChecks;
+    // The card drawn as the event card, its parts tapped open (card-face.js);
+    // without it, the form as it was.
+    const FACE = root.AgoraCardFace || null;
     const uid = `ee${++editors}`;
 
     const state = {
@@ -683,7 +689,7 @@
     // ── skeleton ──
     mount.innerHTML = '';
     const el = document.createElement('div');
-    el.className = 'ee';
+    el.className = FACE ? 'ee has-face' : 'ee';
     el.innerHTML = `
       <div class="ee-parish">
         <label id="${uid}-parish">Parish</label>
@@ -717,6 +723,7 @@
         </div>
       </div>
       <div class="ee-main">
+        <div class="ee-tally" data-ee="tally" aria-live="polite" hidden></div>
         <div class="ee-wa" data-ee="whatsapp" hidden></div>
         <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
@@ -1063,6 +1070,12 @@
         open: false,
         publish: { state: 'idle', message: '' },
         els: null,
+        // The card as the event card (refreshFace): which of its parts is
+        // open to change, and the fields somebody has looked at since the
+        // read, whose dots go grey.
+        editing: null,
+        looked: new Set(),
+        parts: {},
         ...extra,
       };
       state.cards.push(card);
@@ -1169,6 +1182,19 @@
             <div class="ee-occ-row"></div>
             <div class="ee-occ-what" hidden></div>
           </div>
+          ${FACE ? `<!-- The card itself (Kevin, 19 Nov 2026; card-face.js): the
+               event card's head, each part a button that opens its field
+               under it, dotted in the colour of what the reader made of it.
+               The fields below stay the form; refreshFace says which shows. -->
+          <div class="ee-f cf-kind" data-f="kind"><span class="cf-kslot"></span></div>
+          <h2 class="ee-f cf-title" data-f="title"></h2>
+          <p class="ee-f cf-sub" data-f="feast"></p>
+          <div class="ee-f cf-fact" data-f="date">${FACE.ICON.cal}<span class="cf-fact-t"></span></div>
+          <div class="ee-f cf-fact" data-f="time">${FACE.ICON.clock}<span class="cf-fact-t"></span></div>
+          <div class="ee-f cf-fact" data-f="where">${FACE.ICON.where}<span class="cf-fact-t"></span></div>
+          <div class="ee-f cf-fact" data-f="languages">${FACE.ICON.chat}<span class="cf-fact-t"></span></div>
+          <div class="ee-f cf-desc-from" data-f="descfrom" hidden>${WA_ICON}<span>From the WhatsApp message</span></div>
+          <div class="ee-f cf-desc" data-f="description"></div>` : ''}
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
@@ -1319,6 +1345,7 @@
       card.els.waFill.addEventListener('click', () => fillFromWhatsapp(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       card.els.bin.addEventListener('click', () => toggleDiscard(card));
+      if (FACE) wireFace(card);
       $('cards').appendChild(node);
       for (const f of Object.keys(card.els.inputs)) setInput(card, f, card.fields[f]);
       refreshCard(card);
@@ -1830,10 +1857,12 @@
         + (scoped ? '<span class="ee-chip ee-chip-scope">parish only</span>' : '')
         + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
+        // Drawn as the card, its parts' dots say what is missing (refreshFace).
+        .filter(c => !FACE || !FACE_FIELDS.has(c.field))
         .map(c => `<span class="ee-chip ee-chip-${c.level}">${esc(chipText(c))}</span>`).join('')
         // A language the reader suggested, the poster saying none (drafts.mjs
         // suggestLanguages): the note is on the field, the chip on the row.
-        + (card.notes.some(n => n.field === 'languages') ? '<span class="ee-chip ee-chip-warn">check the language</span>' : '')
+        + (!FACE && card.notes.some(n => n.field === 'languages') ? '<span class="ee-chip ee-chip-warn">check the language</span>' : '')
         + (card.publish.state === 'refused' ? '<span class="ee-chip ee-chip-warn">needs an owner</span>' : '')
         + (card.publish.state === 'error' ? '<span class="ee-chip ee-chip-block">not published</span>' : '');
       for (const [f, inp] of Object.entries(card.els.inputs)) {
@@ -1866,8 +1895,302 @@
       card.els.root.classList.toggle('is-peek', peek);
       card.els.body.hidden = !single && !card.open && !peek;
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
+      if (FACE) {
+        // Open, the card is drawn as the event card; shut, as its row.
+        card.els.root.classList.toggle('is-face', (single || card.open) && !peek);
+        if (!(single || card.open) && card.editing) card.editing = null;
+        refreshFace(card, checks);
+      }
       refreshAsk(card);
       placeWhatsapp();
+    }
+
+    // ── the card as the event card (card-face.js) ──
+    //
+    // The head of the event card, each part a button: the kind's pill, the
+    // title, the subtitle, the day, the time, the place, the languages and
+    // the words. Tapped, a part opens its field right under it (the time its
+    // Starts and Ends, with what the reader said of it), or for the kind a
+    // menu; the title, subtitle and words are typed where they stand. Every
+    // part is dotted in the colour of what the reader made of it.
+
+    /** The fields each part opens, and the form's boxes that change them (wireFace). */
+    const GROUP_FIELDS = {
+      title: ['title'], feast: ['feast'], description: ['description'], date: ['date', 'end_date'],
+      time: ['start_time', 'end_time'], where: ['location_override', 'location_parish_id', 'location_lat', 'location_lng'],
+      languages: ['languages'],
+    };
+    const GROUP_OF = { title: 'title', feast: 'feast', description: 'description', date: 'date',
+      start_time: 'time', end_time: 'time', where: 'where', languages: 'languages' };
+    /** Which part says a field's colour. */
+    const PART_OF = { title: 'title', feast: 'feast', description: 'description', date: 'date', end_date: 'date',
+      start_time: 'start', end_time: 'end', location_override: 'where', location_parish_id: 'where',
+      location_lat: 'where', location_lng: 'where', languages: 'languages', event_type: 'kind' };
+
+    function wireFace(card) {
+      const node = card.els.root;
+      const q = (f) => node.querySelector(`.ee-f[data-f="${f}"]`);
+      const row = (f) => node.querySelector(`.ee-row[data-row="${f}"]`);
+      card.els.face = { kind: q('kind'), kslot: node.querySelector('.cf-kslot'), title: q('title'), feast: q('feast'),
+        date: q('date'), time: q('time'), where: q('where'), languages: q('languages'),
+        descfrom: q('descfrom'), description: q('description') };
+      // Public / Parish only beside the kind's pill, where the card says it.
+      card.els.face.kind.append(card.els.scope);
+      card.els.groups = {
+        title: [row('title')], feast: [row('feast')], description: [card.els.descRow],
+        date: [row('date'), card.els.multiRow], time: [node.querySelector('.ee-grid'), card.els.zone],
+        where: [card.els.whereRow], languages: [row('languages')],
+      };
+      node.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-face]');
+        if (!b || !node.contains(b)) return;
+        e.preventDefault();
+        openFace(card, b.dataset.face, b);
+      });
+      // A title or subtitle typed in place is done on Return; anything left
+      // open closes when somewhere else on the card is tapped (onFacePointer).
+      for (const f of ['title', 'feast']) {
+        card.els.inputs[f].addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); closeFace(card); }
+        });
+      }
+      node.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && card.editing && !e.defaultPrevented) { closeFace(card); }
+      });
+    }
+
+    /**
+     * A tap on the editor outside the part that is open closes it: on the
+     * click, not the press, so a button under an open panel is still where
+     * it was pressed when the panel folds away above it (the click has
+     * found its target by then, and goes on to it).
+     */
+    function onFacePointer(e) {
+      for (const c of state.cards) {
+        if (!c.editing || !c.els || !c.els.groups) continue;
+        const inside = (c.els.groups[c.editing] || []).some(x => x && x.contains(e.target))
+          || (c.els.face[c.editing] && c.els.face[c.editing].contains(e.target));
+        if (!inside) closeFace(c);
+      }
+    }
+    if (FACE) {
+      el.addEventListener('click', onFacePointer, true);
+      // The key, folded under its button over the cards.
+      $('tally').addEventListener('click', (e) => {
+        if (!e.target.closest('[data-ee="key"]')) return;
+        state.keyOpen = !state.keyOpen;
+        refreshTally();
+      });
+    }
+
+    function openFace(card, key, btn) {
+      if (state.publishing || card.publish.state === 'done') return;
+      if (key === 'event_type') return kindMenu(card, btn);
+      const group = GROUP_OF[key];
+      if (!group) return;
+      if (card.editing === group) return closeFace(card);
+      if (card.editing) closeFace(card);
+      card.editing = group;
+      refreshCard(card);
+      // Typed where it stands: the box takes the caret at the end of what is there.
+      if (group === 'title' || group === 'feast' || group === 'description') {
+        const inp = card.els.inputs[group];
+        inp.focus({ preventScroll: true });
+        try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch { /* a type without a caret */ }
+      }
+      const last = card.els.groups[group].filter(x => x && !x.hidden).pop();
+      if (last && last.scrollIntoView) requestAnimationFrame(() => last.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    }
+
+    function closeFace(card) {
+      const group = card.editing;
+      if (!group) return;
+      card.editing = null;
+      lookedAt(card, GROUP_FIELDS[group]);
+      flush(card);
+      refreshCard(card);
+    }
+
+    /**
+     * Somebody has looked at these: what the reader made of them is theirs
+     * now. Read or worked out, their dots go grey, and the draft forgets the
+     * mark and the note, as it does for a field typed in (drafts.mjs
+     * updateCard) — the same value, sent back. Missing or doubtful stays
+     * until it is answered; a change to what is on file, while it is one.
+     */
+    function lookedAt(card, fields) {
+      let any = false;
+      for (const f of fields) {
+        const was = card.parts[PART_OF[f]];
+        if (was !== 'read' && was !== 'guess') continue;
+        card.looked.add(f);
+        if (card.touched.has(f) || (f in card.pending)) continue;
+        if (!card.fromPoster.has(f) && !card.notes.some(n => n.field === f)) continue;
+        card.pending[f] = toPatchValue(f, card.fields[f]);
+        any = true;
+      }
+      if (any && card.id) schedule(card, 0);
+    }
+
+    /** The kind's pill: a menu of the kinds, then Public or Parish only. */
+    function kindMenu(card, btn) {
+      const T = root.AgoraEventTypes;
+      if (!T) return;
+      const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+      const sel = card.els.inputs.event_type;
+      const scoped = scopedOf(card);
+      FACE.menu(btn, T.KINDS.map(k => {
+        const c = T.kindColors(k.id, dark);
+        return {
+          label: k.label, value: k.id, on: card.fields.event_type === k.id,
+          icon: `<span class="cf-roundel" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(k.label.charAt(0))}</span>`,
+          run: (v) => { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); },
+        };
+      }).concat([
+        { sep: true },
+        { label: 'Public', sub: 'In the feed, for everyone', on: !scoped, run: () => setScope(card, false) },
+        { label: 'Parish only', sub: 'On its card, and for whoever starred the parish', on: scoped, run: () => setScope(card, true) },
+      ]));
+    }
+
+    function refreshFace(card, checks) {
+      const F = FACE, f = card.fields, E = card.els.face;
+      if (!E) return;
+      const thisYear = +today().slice(0, 4);
+      const occ = f.occurrence;
+      const base = occ ? (isNewOcc(occ) ? linkedService(occ) : ruleOf(occ)) : null;
+      const changed = base ? dateChanges(f, base, '') : new Set();
+      const pristine = isPristine(card);
+      const doubtOf = (fs) => checks.some(c => fs.includes(c.field) && (c.level === 'block' || c.level === 'warn'));
+      const stateOf = (fs, value, { read = false, chg = false, doubt = null } = {}) => F.stateOf({
+        value,
+        read: read || fs.some(x => card.fromPoster.has(x)),
+        noted: card.notes.some(n => fs.includes(n.field)),
+        doubt: doubt != null ? doubt : doubtOf(fs),
+        changed: chg,
+        looked: fs.some(x => card.looked.has(x) || card.touched.has(x)),
+      });
+      const P = {};
+
+      // The kind's pill, in its roundel's colours; Choose a kind while there is none.
+      const T = root.AgoraEventTypes;
+      const kind = f.event_type || (base && base.event_type) || '';
+      P.kind = stateOf(['event_type'], !!kind, { chg: changed.has('event_type'), doubt: !kind && !pristine });
+      const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+      const col = T && kind ? T.kindColors(kind, dark) : null;
+      F.draw(E.kslot, `<button type="button" class="cf-kpill${col ? '' : ' cf-kpill-none'}${P.kind ? ` cf-${P.kind}` : ''}" data-face="event_type" data-key="event_type" aria-haspopup="menu"`
+        + `${col ? ` style="--k-bg:${col.bg};--k-fg:${col.fg}"` : ''} aria-label="Kind: ${esc(kind ? kindLabel(kind) : 'none')}. Tap to change.">`
+        + `${esc(kind ? kindLabel(kind) : 'Choose a kind')}${F.ICON.down}</button>`);
+
+      const title = String(f.title || '').trim() || String((base && base.title) || '').trim();
+      P.title = stateOf(['title'], !!title, { chg: changed.has('title') });
+      F.draw(E.title, F.part('title', title || 'Add a title', P.title, { empty: !title, label: 'Title' }));
+
+      const feast = String(f.feast || '').trim();
+      P.feast = stateOf(['feast'], !!feast, { chg: changed.has('feast') });
+      F.draw(E.feast, F.part('feast', feast || 'Add a subtitle', P.feast, { empty: !feast, label: 'Subtitle' }));
+
+      const day = F.dayText(f.date, f.end_date, thisYear);
+      P.date = stateOf(['date', 'end_date'], !!day);
+      F.draw(E.date.querySelector('.cf-fact-t'), F.part('date', day || 'Add a date', P.date, { empty: !day, label: 'Date' }));
+
+      // A date of a service keeps the service's time unless the card gives its own.
+      const own = isTime(f.start_time);
+      const start = own ? f.start_time : (base && isTime(base.start_time) ? base.start_time : '');
+      // Its end too, while it starts when the service does.
+      const asService = base && (!own || f.start_time === base.start_time);
+      const end = isTime(f.end_time) ? f.end_time : (asService && isTime(base.end_time) ? base.end_time : '');
+      const days = isDate(f.end_date) && f.end_date > f.date;
+      P.start = stateOf(['start_time'], !!start, { chg: changed.has('start_time') });
+      P.end = stateOf(['end_time'], !!end);
+      const was = changed.has('start_time') && base && isTime(base.start_time)
+        ? `<span class="cf-was">timetable <s>${esc(F.hm12(base.start_time))}</s></span>` : '';
+      F.draw(E.time.querySelector('.cf-fact-t'),
+        F.part('start_time', start ? (days ? F.timeWithDay(start, f.date) : F.hm12(start)) : 'Add a start time', P.start, { empty: !start, label: 'Starts' })
+        + '<span class="cf-dash"> – </span>'
+        + F.part('end_time', end ? (days ? F.timeWithDay(end, f.end_date) : F.hm12(end)) : (days ? 'when it ends' : 'end'), P.end, { empty: !end, label: 'Ends' })
+        + was);
+
+      // Where: another parish's church by name over its address, a place of
+      // its own, or the parish's own address, which nobody has said.
+      const pid = String(f.location_parish_id || '').trim();
+      const at = pid && (!state.parish || pid !== state.parish.id) ? parishById(pid) : null;
+      const placed = String(f.location_override || '').trim();
+      const pinned = f.location_lat !== '' && f.location_lat != null;
+      const whereText = at ? at.name || 'Another parish'
+        : placed || (pinned ? 'A place of its own, by its pin' : (state.parish && state.parish.address) || 'At the parish');
+      const whereSub = at && at.address ? at.address : '';
+      P.where = stateOf(GROUP_FIELDS.where, true, { chg: changed.has('where') });
+      F.draw(E.where.querySelector('.cf-fact-t'), F.part('where', whereText, P.where, { label: 'Where', cls: at ? 'cf-strong' : '' })
+        + (whereSub ? `<small>${esc(whereSub)}</small>` : ''));
+
+      // Only a service is held in a language (as the form's row).
+      const langsShown = SERVICE_KINDS.has(kind) && !f.host_event_id;
+      const langs = String(f.languages || '').trim();
+      P.languages = langsShown ? stateOf(['languages'], !!langs) : '';
+      E.languages.hidden = !langsShown;
+      if (langsShown) {
+        F.draw(E.languages.querySelector('.cf-fact-t'), F.part('languages', langs || (occ ? 'As the service' : 'Add the languages'),
+          P.languages, { empty: !langs, label: 'Languages' }));
+      }
+
+      // The words: the parish's own when they came by WhatsApp, and said so.
+      const desc = String(f.description || '').trim();
+      const wa = waDescription();
+      const fromWa = !!desc && !!wa && wa.includes(desc);
+      P.description = stateOf(['description'], !!desc, { read: fromWa, chg: changed.has('description') });
+      E.descfrom.hidden = !fromWa;
+      E.description.classList.toggle('cf-desc-empty', !desc);
+      F.draw(E.description, F.part('description', desc || 'Add a description', P.description, { empty: !desc, label: 'Description' }));
+
+      card.parts = P;
+      // What is open: its fields under its line, or for the words, in their place.
+      const g = card.editing;
+      for (const [name, els] of Object.entries(card.els.groups)) {
+        const on = name === g;
+        const shown = els.filter(x => x && !x.hidden);
+        els.forEach(x => x && x.classList.toggle('ee-edit-on', on));
+        shown.forEach((x, i) => {
+          x.classList.toggle('ee-edit-first', on && i === 0);
+          x.classList.toggle('ee-edit-last', on && i === shown.length - 1);
+        });
+        if (E[name]) E[name].classList.toggle('is-open', on);
+      }
+      for (const name of ['title', 'feast', 'description']) E[name].classList.toggle('ee-f-off', g === name);
+      E.descfrom.classList.toggle('ee-f-off', g === 'description');
+
+      // Shut, the row says it in dots: one per colour still on the card.
+      const shownParts = Object.entries(P).filter(([k]) => k !== 'languages' || langsShown).map(([, v]) => v);
+      card.counts = { miss: 0, chg: 0, guess: 0, read: 0 };
+      for (const v of shownParts) if (v) card.counts[v] += 1;
+      if (state.multi && !discarding(card)) {
+        const dots = ['miss', 'chg', 'guess'].filter(k => card.counts[k])
+          .map(k => `<i class="cf-dot cf-${k}" title="${esc(F.WORDS[k])}"></i>`).join('');
+        if (dots) card.els.chips.insertAdjacentHTML('beforeend', `<span class="cf-dots">${dots}</span>`);
+      }
+      refreshTally();
+    }
+
+    /**
+     * Over the cards, how many parts are in each colour, and the key to them
+     * (Kevin, 19 Nov 2026): "From the poster · 1 to fill in · 4 read".
+     */
+    function refreshTally() {
+      const box = $('tally');
+      if (!box || !FACE) return;
+      const sum = { miss: 0, chg: 0, guess: 0, read: 0 };
+      for (const c of state.cards) {
+        if (!c.counts || discarding(c) || c.publish.state === 'done') continue;
+        for (const k of Object.keys(sum)) sum[k] += c.counts[k];
+      }
+      const read = !!(state.draft && (state.draft.poster_path || waWords()));
+      const chips = FACE.tallyHTML(sum);
+      box.hidden = !chips;
+      if (!chips) return;
+      const lead = state.draft && state.draft.poster_path ? 'From the poster' : read ? 'From WhatsApp' : 'This event';
+      const html = `<div class="cf-tally"><b>${lead}</b>${chips}<button type="button" class="cf-keybtn" aria-expanded="${!!state.keyOpen}" data-ee="key">Key${FACE.ICON.down}</button></div>`
+        + (state.keyOpen ? FACE.legendHTML() : '');
+      FACE.draw(box, html);
     }
 
     /**
