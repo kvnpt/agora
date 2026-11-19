@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import {
-  verifySignature, messagesOf, kindOf, groupOf, picturesFor, codeIn, newCode, parishNamed, maskPhone,
+  verifySignature, messagesOf, kindOf, groupOf, picturesFor, inSentOrder, codeIn, newCode, parishNamed, maskPhone,
   readSummary, draftLink, linkUrl, fetchMedia, WHATSAPP_DDL, GRAPH,
   phoneIdentity, phoneOfIdentity, chatUrl, ticketIn, ticketText, ticketUrl, newSecret, keeperOf,
 } from './whatsapp.mjs';
@@ -80,6 +80,20 @@ test('a poster and its words a moment apart are one announcement', () => {
   assert.deepEqual(groupOf(rows, 't2').map(r => r.id), ['p1', 't1', 'p2', 't2']);
   assert.deepEqual(groupOf(rows, 'old').map(r => r.id), ['old']);
   assert.deepEqual(groupOf(rows, 'later').map(r => r.id), ['later']);
+});
+
+test('within a second, the picture with the caption comes first, whichever was logged first', () => {
+  const logged = [
+    { id: 'b', type: 'image', sent_at: 100 },
+    { id: 't', type: 'text', body: 'The words', sent_at: 100 },
+    { id: 'a', type: 'image', body: 'ORC - Cronulla Beach', sent_at: 100 },
+    { id: 'c', type: 'image', sent_at: 100 },
+    { id: 'old', type: 'image', body: 'Last week', sent_at: 90 },
+    { id: 'next', type: 'image', sent_at: 101 },
+  ];
+  assert.deepEqual(inSentOrder(logged).map(r => r.id), ['old', 'a', 'b', 't', 'c', 'next'],
+    'the second comes first; within one, the captioned picture, then as logged');
+  assert.deepEqual(logged.map(r => r.id), ['b', 't', 'a', 'c', 'old', 'next'], 'a copy, not sorted in place');
 });
 
 test('a forward of several pictures is one draft, of up to six', () => {

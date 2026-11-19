@@ -63,7 +63,7 @@ import { readIntoDraft, readForSuggestion } from '../lib/draft-read.mjs';
 import { ensureSuggestionsTable, suggestionPosterKey, fillFromRead, OPEN_LIMIT, POSTER_DAILY_LIMIT } from '../lib/suggestions.mjs';
 import {
   whatsappConfig, ensureWhatsappTables, verifySignature, messagesOf, kindOf, fetchMedia, sendText,
-  codeIn, groupOf, picturesFor, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
+  codeIn, groupOf, picturesFor, inSentOrder, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
   IMAGE_TYPES, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES, MAX_IMAGE_BYTES, TICKET_MINUTES, TICKETS_PER_HOUR,
   phoneIdentity, ticketIn, ticketText, ticketUrl, newCode, newSecret, ticketsPastKeeping, keeperOf,
 } from '../lib/whatsapp.mjs';
@@ -295,10 +295,12 @@ async function handle(env, io, m) {
   // The rest of the announcement: a forward's other pictures, and its
   // words, which come a moment after the pictures or a moment before.
   await io.sleep(SETTLE_MS);
-  const recent = async () => (await db.prepare(
+  // In the order sent: logged as they landed (rowid), the captioned picture
+  // first within its second (whatsapp.mjs inSentOrder).
+  const recent = async () => inSentOrder((await db.prepare(
     `SELECT id, type, body, media_id, media_type, sent_at, draft_id, suggestion_id, outcome FROM whatsapp_messages
      WHERE phone = ? AND sent_at >= ? ORDER BY sent_at, rowid`
-  ).bind(m.from, since(LATE_TEXT_S)).all()).results || [];
+  ).bind(m.from, since(LATE_TEXT_S)).all()).results || []);
   const isImageRow = (r) => r.type === 'image';
   const made = (r) => r[door.column];
 

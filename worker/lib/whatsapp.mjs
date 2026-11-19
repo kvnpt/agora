@@ -339,6 +339,21 @@ export function newSecret() {
 // ── what goes with what ──
 
 /**
+ * A phone's messages in the order they were sent. WhatsApp stamps them to the
+ * second, and the pictures of one forward share it: each comes as a delivery
+ * of its own, logged in whatever order they land. It puts the caption on the
+ * first picture, so within a second a captioned picture leads; otherwise they
+ * stay as they came. The first picture is the draft's poster (run 504, 12 Nov
+ * 2026: the uncaptioned one landed first and took its place).
+ *
+ * @param {Array<{type, body, sent_at}>} rows  in the order they were logged
+ */
+export function inSentOrder(rows) {
+  const lead = (r) => (r.type === 'image' && r.body ? 0 : 1);
+  return [...rows].sort((a, b) => a.sent_at - b.sent_at || lead(a) - lead(b));
+}
+
+/**
  * A message's group: the run of messages from its phone, each within
  * GROUP_GAP_S of the next. Forwarding a poster and the text under it sends
  * two messages a second apart, which are one announcement.
