@@ -244,6 +244,16 @@ nobody sends takes its poster with it. The card waits for the message, says when
 it went, and can be closed without stopping anything. It is not offered with
 **Add me as a permanent editor** ticked: a claim is for an account.
 
+**Gorgon's PDFs.** Gorgon (gorgon.orthodoxy.au, the chant notation editor)
+can't take a pasted PDF on an iPhone, so its editor waits a minute for one at
+this number instead. The webhook asks Gorgon, over the `GORGON` service binding
+(its `GorgonWhatsApp` entrypoint, never reachable from the web), about every PDF
+and every "Gorgon code 482 193": Gorgon takes a PDF whose caption or phone
+carries a live code, or that comes from a phone linked to the Gorgon account
+waiting (this table's email, passed along: Access tells Gorgon only the email).
+A PDF Gorgon takes is downloaded here (up to 25 MB) and handed over; nothing is
+filed in Agora. Any other PDF, or Gorgon down, gets the usual "not PDFs yet".
+
 ## Emails about claims
 
 Without them a claimant learned the outcome only by signing in again, and an

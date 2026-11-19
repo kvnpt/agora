@@ -228,17 +228,17 @@ export function kindOf(m) {
  * with the same token.
  * @returns {Promise<{ok: true, bytes: ArrayBuffer, mediaType: string}|{ok: false, error: string}>}
  */
-export async function fetchMedia({ token, mediaId, graph = GRAPH, fetchImpl = fetch }) {
+export async function fetchMedia({ token, mediaId, graph = GRAPH, fetchImpl = fetch, maxBytes = MAX_IMAGE_BYTES }) {
   const auth = { authorization: `Bearer ${token}` };
   const meta = await fetchImpl(`${graph}/${encodeURIComponent(mediaId)}`, { headers: auth }).catch(() => null);
   if (!meta || !meta.ok) return { ok: false, error: `media lookup ${meta ? meta.status : 'failed'}` };
   const m = await meta.json().catch(() => ({}));
   if (!m.url) return { ok: false, error: 'media has no url' };
-  if (m.file_size && Number(m.file_size) > MAX_IMAGE_BYTES) return { ok: false, error: 'too large', tooLarge: true };
+  if (m.file_size && Number(m.file_size) > maxBytes) return { ok: false, error: 'too large', tooLarge: true };
   const res = await fetchImpl(m.url, { headers: auth }).catch(() => null);
   if (!res || !res.ok) return { ok: false, error: `media download ${res ? res.status : 'failed'}` };
   const bytes = await res.arrayBuffer();
-  if (bytes.byteLength > MAX_IMAGE_BYTES) return { ok: false, error: 'too large', tooLarge: true };
+  if (bytes.byteLength > maxBytes) return { ok: false, error: 'too large', tooLarge: true };
   const mediaType = String(m.mime_type || res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   return { ok: true, bytes, mediaType };
 }
@@ -321,6 +321,19 @@ export function ticketIn(text) {
   const m = /^\s*send my suggestion\b[\s\S]*?\bcode\b\W{0,3}(\d{3})\s?(\d{3})(?!\d)/i.exec(String(text || ''));
   return m ? m[1] + m[2] : null;
 }
+
+/**
+ * Gorgon's code (gorgon.orthodoxy.au: "Gorgon code 482 193"): a scan's PDF
+ * is on its way for the editor that showed it. Never a link code or a
+ * suggestion's, which carry no "Gorgon".
+ */
+export function gorgonCodeIn(text) {
+  const m = /\bgorgon\b\D{0,16}?(\d{3})\s?(\d{3})(?!\d)/i.exec(String(text || ''));
+  return m ? m[1] + m[2] : null;
+}
+
+/** The most a PDF for Gorgon may be: its own cap (lib/whatsapp.js MAX_FILE there). */
+export const GORGON_MAX_BYTES = 25 * 1024 * 1024;
 
 /** The message the Suggest dialog opens WhatsApp with. */
 export const ticketText = (parishName, code) =>
@@ -458,6 +471,8 @@ export const REPLIES = {
   other: () => 'I can read posters (pictures) and text. Send a picture of it instead.',
   tooLarge: () => 'That picture is too large for me to read. Send a screenshot of it instead.',
   mediaFailed: () => 'I couldn\'t download that picture from WhatsApp. Send it again in a minute.',
+  gorgonTooLarge: () => 'That PDF is too large for Gorgon (25 MB at most). Save it to Files and use Upload there instead.',
+  gorgonFailed: () => 'I couldn\'t download that PDF from WhatsApp. Send it again in a minute.',
   // `at` is "at St Nicholas, Punchbowl", or "without a parish yet".
   read: (summary, at, link) => summary
     ? `Got it: ${summary}. It's a draft ${at} until it's published: ${link}`
