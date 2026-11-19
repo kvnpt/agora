@@ -10,8 +10,12 @@
 //
 // By the name, which is what a poster gives: a title that names several
 // services is them one after another ("Matins & Divine Liturgy" is 1 hour
-// then 1½, so 2½ hours). Nothing else is guessed: a Paraklesis, a talk or a
-// youth night keeps no end until somebody gives it one.
+// then 1½, so 2½ hours). A feast is two hours at least (Kevin, 19 Nov 2026,
+// after St Nicholas, Punchbowl's "Feast of Saint Catherine, Tuesday 6:30 PM,
+// Vespers and the Breaking of the Five Loaves"): its services and what
+// follows them, longer only when its name says so (Matins and Liturgy, a
+// festival). Nothing else is guessed: a Paraklesis, a talk or a youth night
+// keeps no end until somebody gives it one.
 
 /** The services a name can join, in the order they are held, and how long each runs. */
 const SERVICES = [
@@ -23,6 +27,8 @@ const BIBLE_STUDY = 90;
 /** A fair or a festival: the whole day's food and stalls. */
 const FAIR_WORDS = new Set(['fair', 'fete', 'festival', 'bazaar', 'market', 'paniyiri', 'panigiri', 'panigyri']);
 const FAIR = 240;
+/** A feast: its services and its celebration. */
+const FEAST = 120;
 
 const wordsOf = (t) => String(t || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim().split(' ').filter(Boolean);
 
@@ -36,12 +42,23 @@ export function servicesNamed(title) {
  * How long something usually runs, by its name: { minutes, what } — `what`
  * says which, for a note ("Matins and Liturgy") — or null when its name gives
  * nothing to go by. A Liturgy by its kind alone ("Holy Eucharist") is a
- * Liturgy's length.
+ * Liturgy's length, and a feast, by its kind or its name, two hours unless
+ * its name says longer.
  *
  * @param {{title?: string, event_type?: string}} x
  */
 export function usualLength(x) {
   const title = (x && x.title) || '';
+  const byName = lengthByName(title);
+  const feast = (x && x.event_type === 'feast') || wordsOf(title).includes('feast');
+  if (feast && !(byName && byName.minutes > FEAST)) return { minutes: FEAST, what: 'a feast' };
+  if (byName) return byName;
+  if (x && x.event_type === 'liturgy') return { minutes: 90, what: 'Liturgy' };
+  return null;
+}
+
+/** How long a name says something runs: its services in turn, a Bible study, a fair; else null. */
+function lengthByName(title) {
   const named = SERVICES.filter(s => servicesNamed(title).includes(s.word));
   if (named.length) {
     return { minutes: named.reduce((n, s) => n + s.minutes, 0), what: named.map(s => s.name).join(' and ') };
@@ -49,7 +66,6 @@ export function usualLength(x) {
   const w = wordsOf(title);
   if (w.includes('bible') && w.some(v => v.startsWith('stud'))) return { minutes: BIBLE_STUDY, what: 'Bible study' };
   if (w.some(v => FAIR_WORDS.has(v))) return { minutes: FAIR, what: 'a fair or festival' };
-  if (x && x.event_type === 'liturgy') return { minutes: 90, what: 'Liturgy' };
   return null;
 }
 

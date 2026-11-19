@@ -947,6 +947,7 @@ export function registerAdminRoutes(router) {
       baseUrl: env.ANTHROPIC_BASE_URL,
       image: bytes,
       mediaType,
+      today,
       context: posterContext({ ...at, timezone: zone }, today, rules, note),
     });
     console.log(JSON.stringify({ poster_read: {

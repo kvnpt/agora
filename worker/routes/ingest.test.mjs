@@ -248,6 +248,32 @@ test('a poster and its caption become one draft at the sender’s parish, and th
     'the reply quotes the poster');
 });
 
+test('a feast poster that prints only "Tuesday" is the coming Tuesday, for two hours, neither "from poster"', async () => {
+  // St Nicholas, Punchbowl's feast of St Catherine (Kevin, 19 Nov 2026): the
+  // parish was right, the date was not. The reader's date is overruled by
+  // the weekday it says was printed alone, counted from the parish's today.
+  const f = fresh();
+  f.link();
+  const feast = { ...READ, events: [{ ...READ.events[0], title: 'Feast of Saint Catherine the Great Martyr',
+    date_printed: false, date: '2026-11-25', weekday_printed: 'Tuesday', start_time: '18:30', end_time: null,
+    event_type: 'feast', venue: null, description: 'Vespers and the Service of the Breaking of the Five Loaves.' }] };
+  await withReader(feast, async () => { await f.deliver([image()]); });
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date());
+  const at = new Date(`${today}T00:00:00Z`);
+  const tuesday = new Date(at.getTime() + ((2 - at.getUTCDay() + 7) % 7) * 864e5).toISOString().slice(0, 10);
+  const [d] = f.drafts();
+  const card = f.raw.prepare('SELECT date, start_time, end_time, year_printed, read_fields, read_notes FROM draft_events WHERE draft_id = ?').get(d.id);
+  assert.deepEqual([card.date, card.start_time, card.end_time, card.year_printed], [tuesday, '18:30', '20:30', 0]);
+  const marked = JSON.parse(card.read_fields);
+  assert.ok(marked.includes('title') && marked.includes('start_time'));
+  assert.ok(!marked.includes('date') && !marked.includes('end_time'), 'worked out, not printed');
+  const notes = JSON.parse(card.read_notes).map(n => [n.field, n.text]);
+  assert.ok(notes.some(([field, t]) => field === 'date' && /^Printed only as “Tuesday”, so the coming one: \d+ \w+\. Check it\.$/.test(t)));
+  assert.ok(notes.some(([field, t]) => field === 'end_time' && /a feast usually runs 2 hours: until 8:30pm/.test(t)));
+  assert.match(f.graph.texts()[0], /^Got it: Feast of Saint Catherine the Great Martyr, Tue \d+ \w+ 6:30pm\./);
+});
+
 test('a delivery Meta repeats is read once', async () => {
   const f = fresh();
   f.link();

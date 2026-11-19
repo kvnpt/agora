@@ -33,6 +33,22 @@ test('nothing is guessed for a name that gives nothing to go by, but a Liturgy b
   assert.equal(mins('Holy Eucharist', 'liturgy'), 90);
 });
 
+test('a feast is two hours, by its kind or its name, unless its name says longer', () => {
+  // Kevin, 19 Nov 2026: "a feast is default 2 hours". St Nicholas, Punchbowl's
+  // "Feast of Saint Catherine, Tuesday 6:30 PM, Vespers and the Breaking of
+  // the Five Loaves" printed no end.
+  assert.deepEqual(usualLength({ title: 'Feast of Saint Catherine the Great Martyr', event_type: 'feast' }),
+    { minutes: 120, what: 'a feast' });
+  assert.equal(mins('Feast of St Nicholas', 'prayer'), 120, 'by its name');
+  assert.equal(mins('Great Vespers and Artoklasia', 'feast'), 120, 'by its kind: more than the Vespers alone');
+  assert.equal(mins('Matins & Divine Liturgy', 'feast'), 150, 'its services, when they run longer');
+  assert.equal(mins('Feast Day Paniyiri', 'feast'), 240);
+  assert.deepEqual(endOf({ title: 'Feast of Saint Catherine', event_type: 'feast', start_time: '18:30' }),
+    { end: '20:30', usual: { minutes: 120, what: 'a feast' } });
+  // A feast's Liturgy kinded as a Liturgy is a Liturgy's length.
+  assert.equal(mins('Divine Liturgy', 'liturgy'), 90);
+});
+
 test('an end of its own wins; a usual one never runs past midnight', () => {
   assert.deepEqual(endOf({ title: 'Divine Liturgy', start_time: '09:00', end_time: '10:15' }), { end: '10:15', usual: null });
   assert.deepEqual(endOf({ title: 'Divine Liturgy', start_time: '10:00' }), { end: '11:30', usual: { minutes: 90, what: 'Liturgy' } });
