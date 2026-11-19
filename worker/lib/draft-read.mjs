@@ -81,6 +81,7 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
     images: pictures,
     split: apart,
     words: words.parts.length,
+    today,
     context: posterContext({ ...parish, timezone: zone }, today, rules, note,
       { image: pictures.length > 0, whatsapp, pictures: pictures.length, split: apart }),
   }, send);
@@ -203,6 +204,7 @@ export async function readForSuggestion(env, parishId, { apiKey, images = [], no
     apiKey,
     baseUrl: env.ANTHROPIC_BASE_URL,
     images,
+    today,
     context: posterContext({ id: parishId, ...(parish || {}), timezone: zone }, today, rules, note,
       { image: images.length > 0, whatsapp, pictures: images.length }),
   });

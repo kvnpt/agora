@@ -339,7 +339,10 @@ Park's Christmas Fair under "Liturgy 10AM" starts at 11:30am (Kevin, 4 Nov
 2026).
 **Usual lengths** (`worker/lib/durations.mjs`, Kevin 4 Nov 2026): a Liturgy 1½
 hours, Matins 1, Vespers 1½, a Bible study 1½, a fair or festival 4; a name
-with several services is them in turn (Matins & Liturgy 2½). A card the poster
+with several services is them in turn (Matins & Liturgy 2½). A feast, by its
+kind or the word in its name, is 2 hours, or longer when its name says so
+(Kevin, 19 Nov 2026, after the feast of St Catherine's Vespers and
+Artoklasia printed no end). A card the poster
 gives no end gets one (`suggestEnds`), never marked "from poster" and with a
 note to check it; nothing for a name that gives nothing to go by, or past
 midnight.
@@ -729,10 +732,23 @@ within a week — on the nearest day of its weekday (the Saturday before a
 Sunday), and becomes an event with a note saying so. With no occasion to date
 it from it stays a service, with a note that the poster does not say it is
 weekly. A sign's services are regular by being on the sign. A poster that
-prints no date anywhere, only a weekday over its times, is the parish's weekly
-schedule for that day (Kevin, 31 Oct 2026, St Paul, Dandenong's "Sunday"
-poster): the reader gives its `every` as "Sunday, on a poster with no date".
-A feast day's poster prints its date, so its "Sat" is still that occasion's.
+prints no date anywhere, only a weekday over the parish's ordinary services,
+is the parish's weekly schedule for that day (Kevin, 31 Oct 2026, St Paul,
+Dandenong's "Sunday" poster): the reader gives its `every` as "Sunday, on a
+poster with no date". A feast day's poster usually prints its date, so its
+"Sat" is still that occasion's.
+
+**A weekday printed alone is the coming one.** A poster for one occasion
+that gives only a weekday is not every week's: St Nicholas, Punchbowl's
+"Feast of Saint Catherine the Great Martyr, Tuesday 6:30 PM" (forwarded
+Thursday 19 Nov 2026) came back on the wrong date, and Kevin: "Tuesday would
+mean the coming Tuesday 24th Nov". The reader says whether the day of the
+month is printed (`date_printed`, before it writes the date) and is given the
+coming week by name to find it in; when only a weekday is printed, the Worker
+puts the card on the first such day on or after the parish's today, whatever
+date the reader worked out (`normalizeEvent` in `worker/lib/poster-read.mjs`),
+with a note to check it and no "from poster" mark. Read on that weekday, it
+is that day; a run of days keeps its length.
 
 **A person can move a card up to the timetable.** The reader can still get
 it wrong the other way: before the rule above, St Paul, Dandenong's weekday

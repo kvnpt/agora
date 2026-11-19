@@ -119,10 +119,68 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
 });
 
+test('a poster for one occasion that prints only a weekday is the coming one, counted from today', () => {
+  // St Nicholas, Punchbowl's feast of St Catherine, forwarded on Thursday
+  // 19 Nov 2026: "Feast of Saint Catherine the Great Martyr, Tuesday 6:30 PM,
+  // St Nicholas Church Punchbowl, Vespers and the Service of the Breaking of
+  // the Five Loaves". No date on it: Kevin, "Tuesday would mean the coming
+  // Tuesday 24th Nov". The reader dated it wrong (here, the 25th: the feast's
+  // day in some calendars, and a Wednesday).
+  const empty = { address: '', phone: '', email: '', website: '' };
+  const feast = (o = {}) => ({ title: 'Feast of Saint Catherine the Great Martyr', feast: '', date_printed: false,
+    date: '2026-11-25', weekday_printed: 'Tuesday', year_printed: false, cancelled: false, after: '', start_time: '18:30',
+    end_time: null, end_date: '', event_type: 'feast', languages: [], venue: null,
+    description: 'Vespers and the Service of the Breaking of the Five Loaves.', notes: [], ...o });
+  const read = (ev, today) => normalizeRead({ kind: 'poster', events: [ev], services: [], details: empty }, { today }).events[0];
+
+  const e = read(feast(), '2026-11-19');
+  assert.equal(e.date, '2026-11-24');
+  assert.equal(e.printed_weekday, 'Tuesday');
+  assert.equal(e.year_printed, 0);
+  assert.deepEqual(e.suggested, ['date'], 'worked out, not printed: never "from poster"');
+  assert.deepEqual(e.read_notes, [{ field: 'date', text: 'Printed only as “Tuesday”, so the coming one: 24 November. Check it.' }]);
+  // No date at all from the reader: the same.
+  assert.equal(read(feast({ date: null }), '2026-11-19').date, '2026-11-24');
+  // Read on a Tuesday, it is that day; on the Wednesday, the week after.
+  assert.equal(read(feast(), '2026-11-24').date, '2026-11-24');
+  assert.equal(read(feast(), '2026-11-25').date, '2026-12-01');
+  // Over a month's end.
+  assert.equal(read(feast({ weekday_printed: 'Tue' }), '2026-11-26').date, '2026-12-01');
+  // A run of days keeps its length: "Friday to Sunday".
+  const run = read(feast({ weekday_printed: 'Friday', date: '2026-11-27', end_date: '2026-11-29' }), '2026-11-19');
+  assert.deepEqual([run.date, run.end_date], ['2026-11-20', '2026-11-22']);
+
+  // A printed date is the poster's, whatever its weekday says (sameYear and
+  // the editor's checks look after a misprint), and nothing is moved without
+  // a today to count from, or a weekday to count to.
+  const printed = read(feast({ date_printed: true, date: '2026-12-01' }), '2026-11-19');
+  assert.deepEqual([printed.date, printed.suggested, printed.read_notes], ['2026-12-01', undefined, []]);
+  assert.equal(read(feast(), undefined).date, '2026-11-25');
+  assert.equal(read(feast({ weekday_printed: null }), '2026-11-19').date, '2026-11-25');
+  // A read from before date_printed is not a "no".
+  const { date_printed, ...old } = feast();
+  assert.equal(read(old, '2026-11-19').date, '2026-11-25');
+
+  // The reader is told so, and given the week to find it in.
+  assert.match(SYSTEM_PROMPT, /- date_printed: true when the image prints the day of the month for this date/);
+  assert.match(SYSTEM_PROMPT, /When it prints only a weekday, the date is the coming one: the first such weekday on or after today/);
+  assert.match(SYSTEM_PROMPT, /"Feast of Saint Catherine, Tuesday 6:30 PM, Vespers and the Breaking of the Five Loaves" is one event on the coming Tuesday/);
+  assert.match(SYSTEM_PROMPT, /a poster of the parish's ordinary services that prints no date anywhere, and not one for a feast or another occasion/);
+  const props = POSTER_SCHEMA.properties.events.items.properties;
+  assert.equal(props.date_printed.type, 'boolean', 'no union');
+  const order = Object.keys(props);
+  assert.ok(order.indexOf('date_printed') < order.indexOf('date'), 'said before the date is written');
+  assert.ok(POSTER_SCHEMA.properties.events.items.required.includes('date_printed'));
+  assert.ok(!props.notes.items.properties.field.enum.includes('date_printed'));
+});
+
 test('the context names the parish, its day, and the services already on the site', () => {
   const text = posterContext(PARISH, '2026-10-08', RULES);
   assert.match(text, /St Nicholas, 1 Church St, Marrickville NSW\. Time zone Australia\/Sydney\./);
   assert.match(text, /Today there is Thursday 8 October 2026\./);
+  // The week after it, by name, to find "Tuesday" in.
+  assert.match(text, /The coming days: Friday 9 October, Saturday 10 October, Sunday 11 October, Monday 12 October, Tuesday 13 October, Wednesday 14 October, Thursday 15 October\./);
+  assert.match(posterContext(PARISH, '2026-11-26', RULES), /The coming days: Friday 27 November, .*Monday 30 November, Tuesday 1 December, Wednesday 2 December, Thursday 3 December\./);
   assert.match(text, /- Sundays 09:00 Divine Liturgy/);
   assert.match(text, /- youth: /);
   // The weeks and the end, so a programme's 6pm on the second Sunday reads as the rule it is.
@@ -445,9 +503,10 @@ test('a poster with no date, only a weekday over its times, is that weekday’s 
   assert.deepStrictEqual(r.services.map(s => [s.title, s.day_of_week, s.start_time, s.read_notes.length]),
     [['Matins', 0, '09:00', 0], ['Divine Liturgy', 0, '10:15', 0], ['Sunday School', 0, '11:30', 0], ['Fellowship', 0, '12:00', 0]]);
   assert.deepStrictEqual(r.events, []);
-  assert.match(SYSTEM_PROMPT, /A poster that prints no date anywhere, only a weekday over its times/);
+  assert.match(SYSTEM_PROMPT, /A poster that prints no date anywhere, only a weekday over the parish's ordinary services/);
   assert.match(SYSTEM_PROMPT, /"Sunday, on a poster with no date"/);
-  // A feast day's poster prints its date, so its "Sat" is still that occasion's.
+  // A feast day's poster prints its date, so its "Sat" is still that
+  // occasion's; one that prints only a weekday is the coming one (below).
   assert.match(SYSTEM_PROMPT, /"Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion/);
 });
 
@@ -676,4 +735,16 @@ test('readPoster gives the parts when it is asked to tell posters apart, and non
   assert.deepStrictEqual(apart.parts.map(p => p.read.events[0].title), ['A', 'B']);
   assert.deepStrictEqual(apart.read.events.map(e => e.title), ['A', 'B'], 'the whole read too');
   assert.strictEqual((await go(false)).parts, null);
+});
+
+test('readPoster counts a weekday printed alone from the today it is given, in the read and in each part', async () => {
+  const doc = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [],
+    posters: [announce([1]), announce([2])],
+    events: [tagged(1, 'Feast of Saint Catherine', '2026-11-25', { date_printed: false, weekday_printed: 'Tuesday' }),
+      tagged(2, 'Youth night', '2026-11-27', { date_printed: true, weekday_printed: 'Friday' })] };
+  const two = [{ bytes: image, mediaType: 'image/jpeg' }, { bytes: image, mediaType: 'image/jpeg' }];
+  const r = await readPoster({ apiKey: 'k', images: two, context: 'ctx', split: true, words: 0, today: '2026-11-19',
+    fetchImpl: fakeFetch(haikuStream(JSON.stringify(doc))) });
+  assert.deepStrictEqual(r.read.events.map(e => e.date), ['2026-11-24', '2026-11-27']);
+  assert.deepStrictEqual(r.parts.map(p => p.read.events[0].date), ['2026-11-24', '2026-11-27']);
 });

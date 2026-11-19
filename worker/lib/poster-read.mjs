@@ -87,7 +87,7 @@ export const readKind = (k) => (READ_KINDS.includes(k) ? k : 'poster');
 const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
 
 /** The fields of one event, in the order the editor's form shows them. */
-const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed', 'cancelled', 'after', 'start_time', 'end_time',
+const EVENT_FIELDS = ['title', 'feast', 'date_printed', 'date', 'weekday_printed', 'year_printed', 'cancelled', 'after', 'start_time', 'end_time',
   'end_date', 'event_type', 'languages', 'venue', 'description', 'notes'];
 
 /** One weekly service off a sign or a flyer: a rule to be, not an event. */
@@ -130,6 +130,10 @@ export const POSTER_SCHEMA = {
         properties: {
           title: nullable({ type: 'string' }),
           feast: { type: 'string', description: 'The saint or feast commemorated that day, or a regular meeting\'s own topic that day, in English; empty if none' },
+          // Before the date, so the reader says whether a poster prints one
+          // before it writes one: "Tuesday 6:30 PM" prints none, and is the
+          // coming Tuesday (comingDay). A boolean: no union.
+          date_printed: { type: 'boolean', description: 'true when the image prints the day of the month for this date; false when it gives only a weekday ("Tuesday") or no day at all' },
           date: nullable({ type: 'string', format: 'date' }),
           weekday_printed: nullable({ type: 'string' }),
           year_printed: { type: 'boolean' },
@@ -155,7 +159,7 @@ export const POSTER_SCHEMA = {
               additionalProperties: false,
               required: ['field', 'text'],
               properties: {
-                field: { type: 'string', enum: EVENT_FIELDS.filter(f => f !== 'notes') },
+                field: { type: 'string', enum: EVENT_FIELDS.filter(f => f !== 'notes' && f !== 'date_printed') },
                 text: { type: 'string' },
               },
             },
@@ -272,7 +276,7 @@ Everything an image announces is one of two things, and an image can announce bo
 1. A REGULAR SERVICE: something the parish holds on a weekday every week, or on some weeks of every month — the Sunday Liturgy, Saturday Vespers, a choir practice every Tuesday, a Bible study on the second Wednesday. It belongs on the parish's timetable, in services. Some are regular only for a while ("every Friday in August", "Wednesdays in Lent from 18 February", "until Christmas"): give its first and last dates.
 2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date. Two services on the same date, each printed with its own name and time, are two entries: under "Saturday 4 April", "Divine Liturgy 9am" and "Vespers 6pm" are two events on the 4th.
 A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, what that meeting is about (this month's activity or topic), a different time, a guest, that it is cancelled or moved. The site already shows the rest. A poster can announce both at once: "St Emilia's Mums Group, now on the first Friday of each month" over "Coaster-making Workshop, Friday 6 November, 10am" is the group in services (the first Friday of each month) and that Friday's meeting in events.
-What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week. A poster that prints no date anywhere, only a weekday over its times ("Sunday: Matins 9:00am, Divine Liturgy 10:15am, Sunday School 11:30am"), is the parish's weekly schedule for that day: every item on it is a regular service.
+What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week. A poster that prints no date anywhere, only a weekday over the parish's ordinary services ("Sunday: Matins 9:00am, Divine Liturgy 10:15am, Sunday School 11:30am"), is the parish's weekly schedule for that day: every item on it is a regular service. A poster for one occasion that prints only a weekday is not: a feast, a saint's day, a talk or a fundraiser happens once, so "Feast of Saint Catherine, Tuesday 6:30 PM, Vespers and the Breaking of the Five Loaves" is one event on the coming Tuesday.
 
 What to return:
 - kind: what the image is. "timetable" for a sign, board or notice giving the parish's regular services, such as the board out the front of the church, with or without its contact details; "poster" for any poster, flyer, programme, newsletter or bulletin; "not_an_event" when the image announces no event and no regular service.
@@ -286,7 +290,8 @@ What to return:
 For each event:
 - title: the event's name, in normal capitalisation even when the image prints it in capitals ("Feast of St Nicholas", not "FEAST OF ST NICHOLAS"). For a date of a regular service, whether it is one of the parish's below or one in services, the service's name as given there ("Orthros and Divine Liturgy", "St Emilia's Mums Group"), with what that date is about in feast and not in the title. Do not add the parish's name unless it is part of the event's name.
 - feast: the saint or feast the date commemorates, when the image gives one beside the service ("Luke the Evangelist", "Sixth Sunday of Luke"); for a date of a regular group, class or meeting, that date's own activity or topic as printed ("Coaster-making Workshop"). Empty when it gives none, and for an event that is itself the feast ("Feast of St Nicholas").
-- date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false.
+- date_printed: true when the image prints the day of the month for this date ("24 November", "Tuesday 24th"); false when it gives only a weekday ("Tuesday 6:30 PM") or no day at all.
+- date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false. When it prints only a weekday, the date is the coming one: the first such weekday on or after today, from the coming days listed below.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
 - cancelled: true only when the image says, in so many words, that this is not held on this date: "No Liturgy on Sunday 25 January", "Bible study is cancelled this Wednesday", "No Vespers this Saturday". Then the entry is that service on that date: its title is the service's name as given in the parish's regular services below, its start_time is the time printed for it or null when none is, and its description is the reason only if the image gives one ("Father is away"), else null. One entry per service and date called off. A service moved to another time, day or place is not cancelled: it is that date's entry with its new time or venue. A service the image simply does not list is not cancelled either: say nothing of it. A whole period without a service and no dates named ("no Bible study over January") is not listed in events: say it in the image's notes. false for everything else.
@@ -301,7 +306,7 @@ For each event:
 
 For each regular service:
 - title: the service or activity as printed, in English and normal capitalisation ("Divine Liturgy", "Orthros and Divine Liturgy", "Church Choir Practice").
-- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date. The one exception is a poster that prints no date anywhere: its weekday is every week's, and every is that weekday followed by ", on a poster with no date" ("Sunday, on a poster with no date").
+- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date. The one exception is a poster of the parish's ordinary services that prints no date anywhere, and not one for a feast or another occasion: its weekday is every week's, and every is that weekday followed by ", on a poster with no date" ("Sunday, on a poster with no date").
 - day: the weekday it is held on.
 - start_time, end_time: 24-hour HH:MM; end_time empty when none is printed ("8.00 - 10.00 am" is "08:00" to "10:00").
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
@@ -360,7 +365,7 @@ export function posterContext(parish, today, rules = [], note = '', { image = tr
     : `The parish: ${parish.name}${parish.address ? `, ${parish.address}` : ''}. Time zone ${parish.timezone || 'Australia/Sydney'}.`;
   return [
     whose,
-    `Today there is ${weekday} ${d} ${MONTHS[m - 1]} ${y}.`,
+    `Today there is ${weekday} ${d} ${MONTHS[m - 1]} ${y}. The coming days: ${comingDays(today)}.`,
     `Its regular services:\n${regular}`,
     `Kinds of event:\n${kinds}`,
     // Several pictures forwarded at once are one announcement: a programme
@@ -371,6 +376,29 @@ export function posterContext(parish, today, rules = [], note = '', { image = tr
     image ? (pictures > 1 ? 'Read the images.' : 'Read the image.') : 'Read the message.',
   ].join('\n\n');
 }
+
+/**
+ * The week after today, by name: "Friday 20 November, …, Thursday 26
+ * November". A poster that prints only "Tuesday" means the coming one, and
+ * the reader is better at finding it in a list than at counting to it.
+ */
+function comingDays(today) {
+  if (!isLocalDate(today)) return '';
+  return [1, 2, 3, 4, 5, 6, 7].map((n) => {
+    const at = addDays(today, n);
+    return `${DAY_NAMES[dowOf(at)]} ${dayMonth(at)}`;
+  }).join(', ');
+}
+
+/**
+ * The first `day` (0 for Sunday) on or after today: "Tuesday", read on
+ * Thursday 19 November, is the 24th; read on a Tuesday, it is that day.
+ */
+function comingDay(day, today) {
+  if (day == null || !isLocalDate(today)) return null;
+  return addDays(today, (day - dowOf(today) + 7) % 7);
+}
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
 
 /**
  * A WhatsApp forward of several pictures, which may be several posters at
@@ -455,7 +483,7 @@ export const draftFieldName = (f) => FIELD_NAMES[f] || f;
  * the service it follows, and that it is called off — which reaches the card
  * with the finished read, squared with the timetable, never a field at a time.
  */
-const NOT_IN_FORM = new Set(['notes', 'after', 'cancelled', 'poster']);
+const NOT_IN_FORM = new Set(['notes', 'after', 'cancelled', 'poster', 'date_printed']);
 
 /** Which open strings are worth streaming a character at a time. */
 const typesItself = (path) => path.length === 3 && path[0] === 'events'
@@ -487,6 +515,8 @@ export function readFailure(status) {
  * @param {boolean} [o.split]   several images may be several posters: say which is which (splitRead)
  * @param {number} [o.words]    how many parts the sender's words are in (noteParts), for splitRead
  * @param {string} o.context    posterContext()
+ * @param {string} [o.today]    the parish's own 'YYYY-MM-DD', as in the context: a weekday printed
+ *   with no date is the coming one from it
  * @param {Function} [o.fetchImpl]
  * @param {(event: string, payload: object) => void} emit
  *   'kind' {kind} · 'field' {index, name, value, done} · 'item' {index}
@@ -597,8 +627,8 @@ export async function readPoster(o, emit = () => {}) {
     console.error(`[poster-read] unreadable answer: ${e.message}`);
     return { ok: false, retry: true, ms: ms(), error: 'The reader’s answer could not be understood — try again.' };
   }
-  const parts = apart ? splitRead(doc, { pictures: list.length, words: o.words || 0 }) : null;
-  return { ok: true, read: normalizeRead(doc), parts, usage, ms: ms() };
+  const parts = apart ? splitRead(doc, { pictures: list.length, words: o.words || 0, today: o.today }) : null;
+  return { ok: true, read: normalizeRead(doc, { today: o.today }), parts, usage, ms: ms() };
 }
 
 const clean = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().replace(/\s+/g, ' ').slice(0, n) : null);
@@ -695,7 +725,7 @@ function normalizeService(v) {
  * capped. A value that does not fit is dropped with a note saying what was
  * read, rather than stored as something the form cannot show.
  */
-export function normalizeRead(doc) {
+export function normalizeRead(doc, { today } = {}) {
   const d = doc && typeof doc === 'object' ? doc : {};
   const raw = Array.isArray(d.events) ? d.events : [];
   const rawServices = Array.isArray(d.services) ? d.services : [];
@@ -704,7 +734,7 @@ export function normalizeRead(doc) {
   const otherName = other && clean(other.name, 200);
   const language = clean(d.written_in, 40);
   const kind = readKind(d.kind);
-  const events = sameYear(raw.slice(0, MAX_EVENTS).map(normalizeEvent));
+  const events = sameYear(raw.slice(0, MAX_EVENTS).map(e => normalizeEvent(e, today)));
   // The reader is told the most it may list, so a poster with more comes back
   // with exactly that many and nothing to say the rest were left out: Red
   // Hill's December came back as 20 with no word of 20–24 December. Reaching
@@ -773,7 +803,7 @@ export function normalizeRead(doc) {
  * @param {{pictures: number, words?: number}} o  how many of each the reader was shown
  * @returns {Array<{pictures: number[], words: number[], read: object}>|null}
  */
-export function splitRead(doc, { pictures: n, words: k = 0 }) {
+export function splitRead(doc, { pictures: n, words: k = 0, today } = {}) {
   const d = doc && typeof doc === 'object' ? doc : {};
   if (!Array.isArray(d.posters) || !d.posters.length || !(n > 1)) return null;
   const ints = (v, max) => [...new Set((Array.isArray(v) ? v : []).filter(x => Number.isInteger(x) && x >= 1 && x <= max))]
@@ -831,7 +861,7 @@ export function splitRead(doc, { pictures: n, words: k = 0 }) {
       services: p.services,
       // A sign's details are the sign's: once, with the services.
       details: p === firstWithServices ? d.details : null,
-    }),
+    }, { today }),
   }));
 }
 
@@ -949,19 +979,36 @@ function onTheDay(rule, occasion) {
   };
 }
 
-function normalizeEvent(e) {
+/**
+ * @param {object} e  one event as the reader wrote it
+ * @param {string} [today]  the parish's own 'YYYY-MM-DD': what a weekday on
+ *   its own is counted from
+ */
+function normalizeEvent(e, today) {
   const ev = e && typeof e === 'object' ? e : {};
   const notes = (Array.isArray(ev.notes) ? ev.notes : [])
     .filter(n => n && typeof n.text === 'string' && n.text.trim())
     .map(n => ({ field: draftFieldName(String(n.field || '')), text: n.text.trim().slice(0, 300) }));
 
-  const date = isLocalDate(ev.date) ? ev.date : null;
+  let date = isLocalDate(ev.date) ? ev.date : null;
   if (ev.date && !date) notes.push({ field: 'date', text: `Read as “${String(ev.date).slice(0, 40)}”, which is not a date.` });
+  // One event over several days: how many after its first, only when it ends after it starts.
+  const span = date && isLocalDate(ev.end_date) && ev.end_date > date ? daysBetween(date, ev.end_date) : 0;
+  // Only a weekday printed ("Tuesday 6:30 PM"): the coming one, counted from
+  // today, whatever date the reader worked out. St Nicholas, Punchbowl's
+  // feast of St Catherine (Kevin, 19 Nov 2026) printed only "Tuesday", and
+  // was read on Thursday the 19th to the wrong date; the coming Tuesday is
+  // the 24th. Not "from poster": the poster gives no date.
+  const said = checks.printedWeekday(ev.weekday_printed);
+  const coming = ev.date_printed === false ? comingDay(said, today) : null;
+  if (coming) {
+    date = coming;
+    notes.push({ field: 'date', text: `Printed only as “${DAY_NAMES[said]}”, so the coming one: ${dayMonth(coming)}. Check it.` });
+  }
   const start = hhmm(ev.start_time);
   if (ev.start_time && !start) notes.push({ field: 'start_time', text: `Read as “${String(ev.start_time).slice(0, 40)}”.` });
   const end = hhmm(ev.end_time);
-  // One event over several days: its last day, only after its first.
-  const endDate = date && isLocalDate(ev.end_date) && ev.end_date > date ? ev.end_date : null;
+  const endDate = date && span ? addDays(date, span) : null;
 
   const languages = langList.names(Array.isArray(ev.languages) ? ev.languages : []);
   return {
@@ -976,7 +1023,7 @@ function normalizeEvent(e) {
     languages: languages.length ? languages : null,
     location_override: clean(ev.venue, 300),
     printed_weekday: clean(ev.weekday_printed, 20),
-    year_printed: ev.year_printed === true ? 1 : ev.year_printed === false ? 0 : null,
+    year_printed: coming ? 0 : ev.year_printed === true ? 1 : ev.year_printed === false ? 0 : null,
     // The service it follows, as printed: not a field of the card, but what
     // afterServices and matchOccurrences (drafts.mjs) go by.
     after: clean(ev.after, 200),
@@ -985,5 +1032,6 @@ function normalizeEvent(e) {
     // somebody from a service that is running.
     cancelled: ev.cancelled === true ? 1 : null,
     read_notes: notes,
+    ...(coming ? { suggested: ['date'] } : {}),
   };
 }
