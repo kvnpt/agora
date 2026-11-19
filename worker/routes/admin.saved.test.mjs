@@ -102,6 +102,18 @@ test('the table made on first use is the baseline\'s', () => {
   assert.deepEqual(cols(lazy), cols(base));
 });
 
+test('the account\'s calendar link is made once, kept, and is no data write', async () => {
+  const t = fresh();
+  t.raw.exec('DROP TABLE calendar_links');   // a deploy ahead of migration 040
+  const one = await t.call('GET', '/api/admin/saved/calendar');
+  assert.equal(one.status, 200);
+  assert.match(one.body.path, /^\/saved\/[A-Za-z0-9_-]{22}\.ics$/);
+  assert.equal(one.dataWrite, false);
+  const two = await t.call('GET', '/api/admin/saved/calendar');
+  assert.equal(two.body.path, one.body.path, 'the same link every time, so a phone subscribed once stays subscribed');
+  assert.deepEqual(t.raw.prepare('SELECT email FROM calendar_links').all(), [{ email: 'dev' }]);
+});
+
 test("a parish's favourite count is the accounts that starred it, and needs no table to answer", async () => {
   const t = fresh();
   const router = new Router();

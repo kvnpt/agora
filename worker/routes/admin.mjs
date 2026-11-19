@@ -38,6 +38,7 @@ import { jurisdictionLogos, jurisdictionLogoKey, LOGO_JURISDICTIONS } from '../l
 import slugs from '../../public/shared/slugs.js';
 import savedShared from '../../public/shared/saved.js';
 import { readSaved, writeSaved } from '../lib/saved-items.mjs';
+import { tokenFor } from '../lib/calendar-links.mjs';
 import langList from '../../public/shared/languages.js';
 import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
@@ -835,6 +836,14 @@ export function registerAdminRoutes(router) {
     if (!body || typeof body.saved !== 'object' || body.saved === null) return json({ error: 'Nothing to save' }, 400);
     const out = await writeSaved(c.env.DB, c.who.identity, body.saved, { merge: body.merge === true });
     return json({ identity: c.who.identity, ...out });
+  }));
+
+  // The account's own calendar: its private link, made the first time it is
+  // asked for (lib/calendar-links.mjs). What it holds is what this account
+  // Saves, read from saved_items whenever the calendar is fetched.
+  router.get('/api/admin/saved/calendar', signedIn(async (c) => {
+    const token = await tokenFor(c.env.DB, c.who.identity);
+    return json({ path: `/saved/${token}.ics` }, 200, { 'cache-control': 'no-store' });
   }));
 
   router.post('/api/admin/suggestions', signedIn(async (c) => {

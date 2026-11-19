@@ -194,6 +194,9 @@ in as somebody else takes the new account's copy instead of merging, since the
 last person's things are already on theirs. The page tells a person with no role
 from a visitor by `/api/admin/ping`'s 403 (Access let the request through,
 `admin_roles` did not); their account menu has no Admin panel, only Sign out.
+The account's bookmarks are also its calendar: `/api/admin/saved/calendar`
+hands it one private link, `/saved/<token>.ics`, made the first time it asks
+(docs/architecture.md, "Every link has a calendar too").
 
 ## A phone on WhatsApp
 

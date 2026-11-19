@@ -9,7 +9,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { serveCalendar, calendarPath, dateFileName, feedWindow, BACK_DAYS, AHEAD_DAYS } from './calendar.mjs';
+import { serveCalendar, calendarPath, dateFileName, feedWindow, savedToken, BACK_DAYS, AHEAD_DAYS, SAVED_NAME } from './calendar.mjs';
+import { tokenFor, newToken } from '../lib/calendar-links.mjs';
+import { writeSaved } from '../lib/saved-items.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -172,4 +174,107 @@ test('a link naming no parish here, or none at all, is no calendar', async () =>
   assert.equal((await get('/nowhere.ics')).res.status, 404);
   assert.equal((await get('/sun/liturgy.ics')).res.status, 404, 'every parish in Oceania is not a calendar');
   assert.equal((await get('/sgr')), null, 'not a calendar’s address: the page goes on');
+});
+
+// ── A person's own calendar: what they Save, one subscription ──────────
+
+const KEVIN = 'someone@example.org';
+/** A token for KEVIN, and what he has saved. */
+async function savedAs(env, bookmarks) {
+  await writeSaved(env.DB, KEVIN, { bookmarks: bookmarks.map((b, i) => ({ at: i + 1, ...b })) });
+  return tokenFor(env.DB, KEVIN);
+}
+
+test('only /saved/<token> is a person\'s calendar', () => {
+  const t = newToken();
+  assert.equal(savedToken(`/saved/${t}`), t);
+  assert.equal(savedToken('/saved/short'), null);
+  assert.equal(savedToken(`/saved/${t}/more`), null);
+  assert.equal(savedToken('/sgr'), null);
+});
+
+test('a saved service is every date of it; a saved date is that date alone', async () => {
+  const { raw, env, get } = fresh();
+  const liturgy = ruleId(raw, SGR, 'Sunday Divine Liturgy');
+  const vespers = ruleId(raw, SMG, 'Saturday Vespers');
+  const token = await savedAs(env, [
+    { kind: 'rule', id: String(liturgy) },
+    { kind: 'event', id: `${vespers}:2026-10-03` },
+  ]);
+  const { res, text } = await get(`/saved/${token}.ics`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^text\/calendar/);
+  assert.ok(unfold(text).includes(`X-WR-CALNAME:${SAVED_NAME}`));
+  assert.ok(text.includes('REFRESH-INTERVAL'), 'a subscription, looked at again');
+  const evs = eventsOf(text);
+  assert.equal(evs.filter(e => e.SUMMARY === 'Sunday Divine Liturgy').length, 15, 'the whole service, as /sgr.ics has it');
+  const v = evs.filter(e => e.SUMMARY === 'Saturday Vespers');
+  assert.deepEqual(v.map(e => e.UID), [`${vespers}:2026-10-03@orthodoxy.au`], 'one Saturday, not the rest');
+  assert.ok(/^St Michael|^Sts\.? Michael/.test(v[0].LOCATION));
+  const starts = evs.map(e => e.DTSTART);
+  assert.deepEqual(starts, [...starts].sort(), 'in date order');
+});
+
+test('a one-off saved is in it; a date saved beyond the season still comes; a past or hidden one does not', async () => {
+  const { raw, env, get } = fresh();
+  const vespers = ruleId(raw, SMG, 'Saturday Vespers');
+  const fair = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Christmas Fair', '2026-12-05T23:00:00Z', 'social', 'approved', 'headless')`).run(SGR).lastInsertRowid;
+  const gone = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Old picnic', '2026-08-01T01:00:00Z', 'social', 'approved', 'headless')`).run(SGR).lastInsertRowid;
+  const hid = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Hidden talk', '2026-10-20T08:00:00Z', 'talk', 'hidden', 'headless')`).run(SGR).lastInsertRowid;
+  const token = await savedAs(env, [
+    { kind: 'event', id: String(fair) },
+    { kind: 'event', id: String(gone) },
+    { kind: 'event', id: String(hid) },
+    { kind: 'event', id: `${vespers}:2027-03-06` },
+  ]);
+  const evs = eventsOf((await get(`/saved/${token}.ics`)).text);
+  assert.deepEqual(evs.map(e => e.UID), [`${fair}@orthodoxy.au`, `${vespers}:2027-03-06@orthodoxy.au`]);
+});
+
+test('a saved date called off stays in it, saying so', async () => {
+  const { raw, env, get } = fresh();
+  const liturgy = ruleId(raw, SGR, 'Sunday Divine Liturgy');
+  raw.prepare("INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind) VALUES (?, '2026-10-11', 'cancelled')").run(liturgy);
+  const token = await savedAs(env, [{ kind: 'event', id: `${liturgy}:2026-10-11` }]);
+  const [e] = eventsOf((await get(`/saved/${token}.ics`)).text);
+  assert.equal(e.SUMMARY, 'Cancelled: Sunday Divine Liturgy');
+  assert.equal(e.TRANSP, 'TRANSPARENT');
+});
+
+test('nothing saved is an empty calendar, not a missing one; a token nobody has is no calendar', async () => {
+  const { env, get } = fresh();
+  const token = await tokenFor(env.DB, KEVIN);
+  const { res, text } = await get(`/saved/${token}.ics`);
+  assert.equal(res.status, 200);
+  assert.equal(eventsOf(text).length, 0);
+  assert.ok(unfold(text).includes(`X-WR-CALNAME:${SAVED_NAME}`));
+  assert.equal((await get(`/saved/${newToken()}.ics`)).res.status, 404);
+  assert.equal((await get('/saved/nope.ics')).res.status, 404);
+});
+
+test('a Save is in the next look, though saving bumps no data version', async () => {
+  // The edge cache, as the Worker has it: kept under the version and a name.
+  const kept = new Map();
+  const had = globalThis.caches;
+  globalThis.caches = { default: {
+    async match(k) { const r = kept.get(String(k)); return r ? r.clone() : undefined; },
+    async put(k, r) { kept.set(String(k), r.clone()); },
+  } };
+  try {
+    const { raw, env, get } = fresh();
+    const liturgy = ruleId(raw, SGR, 'Sunday Divine Liturgy');
+    const token = await savedAs(env, [{ kind: 'event', id: `${liturgy}:2026-10-04` }]);
+    assert.equal(eventsOf((await get(`/saved/${token}.ics`)).text).length, 1);
+    assert.equal(eventsOf((await get(`/saved/${token}.ics`)).text).length, 1, 'answered from the edge');
+    // A second later: the row's updated_at moves.
+    raw.prepare("UPDATE saved_items SET updated_at = '2099-01-01T00:00:00Z'").run();
+    await writeSaved(env.DB, KEVIN, { bookmarks: [{ kind: 'event', id: `${liturgy}:2026-10-04`, at: 1 }, { kind: 'event', id: `${liturgy}:2026-10-11`, at: 2 }] });
+    raw.prepare("UPDATE saved_items SET updated_at = '2099-01-01T00:00:01Z'").run();
+    assert.equal(eventsOf((await get(`/saved/${token}.ics`)).text).length, 2);
+  } finally {
+    globalThis.caches = had;
+  }
 });

@@ -72,6 +72,20 @@ calendar: 404. Feeds are kept at the edge under the data version and the day.
 The cPanel mail host Kevin has was weighed and not used: an emailed invite or a
 CalDAV calendar there would be a second copy of the dates that goes stale.
 
+**The page offers two of them, and only two** (Kevin, 19 Nov 2026: one
+subscription a person, collected by Save, rather than one per service). An
+event card's calendar button adds that date alone, as a file
+(`/<id>.ics`, or Google's own add page). Every week of a service is Save, and
+the Saved card's Add to calendar is **one private link per account**,
+`/saved/<token>.ics`, that follows what the account saves
+(`worker/lib/calendar-links.mjs`, `calendar_links`, migration 040). The token is
+128 random bits and the only key: the address is never in the link, which every
+calendar server that fetches it would keep. It reads `saved_items` when it is
+fetched, so it needs a sign-in: kept in a browser alone, a calendar server could
+not know what is saved. A Save bumps no data version, so its edge copy is keyed
+by `saved_items.updated_at` as well. Parish links (`/sgr.ics`) still answer,
+for a parish to hand out, with no button on the page.
+
 **A box drawn again keeps what it has.** The page writes its lists as strings,
 and for a year put them in whole (`innerHTML`): every row a new element, every
 logo and poster in it a new picture. Safari draws a new picture a frame or more

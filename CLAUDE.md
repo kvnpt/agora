@@ -80,6 +80,8 @@ for them, are in the doc it links to — read that before changing the area.
   island (`data-keep`) is the scripts' own.
 - A link's calendar is the link + `.ics`: the lens's dates written out one by
   one (never an RRULE), each by its own id; a cancelled one stays, titled so.
+  The page offers one date's file and ONE subscription a person (Saved,
+  `/saved/<token>.ics`), never one per service.
 - A synthetic id is `"<scheduleId>:YYYY-MM-DD"`. The feed widens, never shrinks.
   A date segment is a FROM, never a single day.
 

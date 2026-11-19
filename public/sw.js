@@ -8,6 +8,7 @@
 // the last feed it saw instead of an error.
 //
 // Not kept: map tiles (the browser's own cache keeps them), posters, /admin,
+// a calendar file (a link + .ics, for the phone's calendar, never the page),
 // and every /api/ path but the bundle. They still go out through here, not
 // around it: Safari sends a request this file lets fall through past its own
 // HTTP cache, so a tile or a poster came down again on every visit (measured
@@ -34,7 +35,7 @@ function keyFor(request) {
   if (url.origin !== self.location.origin || request.method !== 'GET' || request.headers.has('range')) return null;
   // The bundle under one key whatever its window: offline, the last one is the one.
   if (url.pathname === BUNDLE) return BUNDLE;
-  if (NEVER.test(url.pathname)) return null;
+  if (NEVER.test(url.pathname) || /\.ics$/i.test(url.pathname)) return null;
   return url.pathname;
 }
 

@@ -4,6 +4,8 @@
 //   /sgr/sun/liturgy.ics     one timetable line (a date card's "Every Sunday")
 //   /sgr+smg+spp.ics         a list of parishes (Favourites)
 //   /20:2026-11-22.ics       one date, a file to open ("This date")
+//   /saved/<token>.ics       a person's own: what they Save, one subscription
+//                            that follows them (lib/calendar-links.mjs)
 //
 // The link is read with the page's own grammar (public/shared/url-state.js,
 // through pageOf) and its dates come out of the page's own lens
@@ -24,6 +26,9 @@ import { fetchWindowRows } from '../lib/expand.mjs';
 import { collectionFeed } from '../lib/lite-page.mjs';
 import { cachedHtml } from '../lib/data-version.mjs';
 import { calendarText } from '../lib/ics.mjs';
+import { identityOf } from '../lib/calendar-links.mjs';
+import { readSaved } from '../lib/saved-items.mjs';
+import { parseInstanceId } from '../../public/shared/project.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import linkWords from '../../public/shared/link-words.js';
 
@@ -139,6 +144,75 @@ async function dateText(env, origin, id, now) {
 /** '20:2026-11-22' → 'orthodoxy-20-2026-11-22.ics'. */
 export const dateFileName = (id) => `orthodoxy-${String(id).replace(/[^\w-]+/g, '-')}.ics`;
 
+/** '/saved/<token>' → the token; null for any other path. */
+export function savedToken(path) {
+  const m = /^\/saved\/([A-Za-z0-9_-]{22})$/.exec(path || '');
+  return m ? m[1] : null;
+}
+
+/** What a person's calendar is called on their phone. */
+export const SAVED_NAME = 'Saved · orthodoxy.au';
+/** The most single dates beyond the window read one by one. */
+const MAX_LATER = 20;
+
+const inList = (n) => Array(n).fill('?').join(', ');
+
+/**
+ * A person's calendar: every date of each service they saved whole, and each
+ * date they saved, a fortnight back to a season ahead (a saved date further
+ * out still comes, read on its own). The services' parishes are projected
+ * whole and the saved ones picked out after, so the dedup is the page's.
+ * Saving nothing is an empty calendar, never a missing one: the phone keeps
+ * the subscription and fills it again at the next Save.
+ */
+export async function savedText(env, origin, marks, now) {
+  const db = env.DB;
+  const ruleIds = new Set(marks.filter(b => b.kind === 'rule').map(b => String(b.id)));
+  const dateIds = new Set(marks.filter(b => b.kind === 'event').map(b => String(b.id)));
+  const sids = [...new Set([...ruleIds, ...[...dateIds].map(id => parseInstanceId(id)).filter(Boolean).map(x => String(x.scheduleId))])]
+    .filter(id => /^\d+$/.test(id)).slice(0, 500);
+  const stored = [...dateIds].filter(id => /^\d+$/.test(id)).slice(0, 500);
+  const [fromRules, fromEvents] = await Promise.all([
+    sids.length ? db.prepare(`SELECT DISTINCT parish_id FROM schedules WHERE id IN (${inList(sids.length)})`).bind(...sids).all() : { results: [] },
+    stored.length ? db.prepare(`SELECT DISTINCT parish_id FROM events WHERE id IN (${inList(stored.length)})`).bind(...stored).all() : { results: [] },
+  ]);
+  const ids = [...new Set([...(fromRules.results || []), ...(fromEvents.results || [])].map(r => r.parish_id))];
+  let kept = [];
+  const w = feedWindow(now);
+  if (ids.length) {
+    const mine = new Set(ids);
+    const [rows, events, cross] = await Promise.all([
+      fetchWindowRows(db, w.fromUtc, w.toUtc, ids.length === 1 ? { parishId: ids[0] } : {}),
+      db.prepare(
+        `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, p.jurisdiction, p.timezone
+         FROM events e JOIN parishes p ON e.parish_id = p.id
+         WHERE e.source_adapter != 'schedule' AND e.parish_id IN (${inList(ids.length)}) AND e.start_utc >= ? AND e.start_utc <= ?`
+      ).bind(...ids, w.fromUtc, w.toUtc).all(),
+      db.prepare('SELECT event_id, parish_id FROM event_parishes').all().catch(() => ({ results: [] })),
+    ]);
+    if (ids.length > 1) rows.schedules = rows.schedules.filter(s => mine.has(s.parish_id));
+    const feed = collectionFeed({
+      rows,
+      events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
+      cross: cross.results || [], parishIds: ids, named: ids, route: {}, now: w.from, days: w.days,
+    });
+    kept = feed.filter(e => (e.schedule_id != null && ruleIds.has(String(e.schedule_id))) || dateIds.has(String(e.id)));
+  }
+  // A date saved beyond the season, on its own.
+  const have = new Set(kept.map(e => String(e.id)));
+  const later = [...dateIds].filter(id => !have.has(id)).slice(0, MAX_LATER);
+  const found = await Promise.all(later.map(id => findEvent(db, id).catch(() => null)));
+  for (const f of found) {
+    const e = f && f.event;
+    if (!e || e.status === 'hidden' || e.status === 'rejected') continue;
+    if (Date.parse(e.start_utc) < Date.parse(w.fromUtc)) continue;
+    kept.push({ ...e, id: String(e.id) });
+  }
+  kept.sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+  const parishes = await parishesFor(db, kept, new Map());
+  return calendarText({ name: SAVED_NAME, events: kept, parishes, origin, now });
+}
+
 /**
  * The answer to a `.ics` address, or null when it is not one (the caller
  * goes on as it would have).
@@ -148,11 +222,27 @@ export async function serveCalendar(request, env, ctx, { now = Date.now() } = {}
   const url = new URL(request.url);
   const path = calendarPath(url.pathname);
   if (path == null) return null;
-  const page = pageOf(path, now);
-  const route = page && page.route;
   const notFound = () => new Response('No calendar here.\n', {
     status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300' },
   });
+
+  // A person's own. Their saving writes no data version, so the copy kept
+  // at the edge is keyed by when they last saved as well.
+  const token = savedToken(path);
+  if (token) {
+    const email = await identityOf(env.DB, token);
+    if (!email) return notFound();
+    const had = await readSaved(env.DB, email);
+    const res = await cachedHtml({
+      request, env, ctx, type: TYPE,
+      name: `ics-saved/${token}@${localDateOf(ZONE, now)}@${had ? had.updated_at : 'none'}`,
+      build: () => savedText(env, url.origin, (had && had.saved.bookmarks) || [], now),
+    });
+    return res || notFound();
+  }
+
+  const page = pageOf(path, now);
+  const route = page && page.route;
   if (!route) return notFound();
 
   if (route.eventId && !(route.parishSlugs && route.parishSlugs.length)) {
