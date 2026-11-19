@@ -5,7 +5,8 @@ name: CI
 # The old gate booted server.js and curled /health — a reasonable check when the
 # app was a long-lived Express process. There is no process to boot now, so the
 # equivalent checks are: the test suite passes, the Worker actually builds, and
-# the D1 schema applies cleanly to an empty database.
+# the D1 schema applies cleanly to an empty database (`check`); and the page's
+# main screens open in a real browser (`doors`).
 
 on:
   pull_request:
@@ -92,3 +93,50 @@ jobs:
             echo "::error::d1/ is stale — run 'npm run gen:seed' and commit the result"
             exit 1
           }
+
+  # The page's main screens, opened in a real browser (e2e/doors.test.mjs):
+  # home on a phone and wide, a parish's card, its Calendar and Month, and Add
+  # service and Edit service as an owner. `check` runs none of next.js,
+  # editing.js, month.js or bundle.js; this opens the doors they draw, the way a
+  # person does, against `wrangler dev` on the seed. It starts its own Worker
+  # and database, so it needs no secret. Beside `check`, not after it.
+  doors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      # Chromium for the Playwright pinned in package.json, kept between runs
+      # under that version. --with-deps installs the system libraries it needs
+      # whether or not the browser itself came from the cache.
+      - name: Which Playwright
+        id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Open the doors
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npm run test:doors
+
+      # What the page looked like when a door failed.
+      - name: Keep what a failing door showed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doors
+          path: e2e/out/
+          if-no-files-found: ignore

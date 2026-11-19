@@ -190,11 +190,11 @@ the workflow itself. Highest leverage first.
    file in `d1/migrations/` is not applied to production — adopting
    `wrangler d1 migrations apply` gives a tracking table to check against; CI
    needs a read-only D1 token.
-2. **Browser checks committed and run in CI.** CI runs none of `app.js`,
-   `map.js`, `filters.js`, `bundle.js`, and each PR's Playwright checks were
-   scripts in a scratchpad that did not outlive the session. A smoke suite
-   against `wrangler dev` with a fixture seed and stubbed tiles: the map loads, a
-   sheet opens, a card expands, the edit dialogs open.
+2. **Browser checks committed and run in CI.** *Done, 19 Nov 2026:*
+   `e2e/doors.test.mjs`, CI's `doors` job — home on a phone and wide, a
+   parish's card from home and from its link, its Calendar and Month, Add
+   service and Edit service, against `wrangler dev` on the seed. Each PR's own
+   checks are still scratchpad scripts; a new main screen adds its door there.
 3. **Tests that know D1's limits.** better-sqlite3 accepted a six-term
    compound SELECT that D1 refuses, and every draft delete returned 500 in
    production. Run route tests on workerd's D1, or a test that counts UNION terms

@@ -1,9 +1,10 @@
 // The page saved to a Home Screen: its icon, its name, and sw.js.
 //
-// Nothing in CI opens a browser, so these pin what a browser would read: the
-// manifest's icons are the files and sizes it says, both pages link them
-// outside the head the Worker rewrites (where a link's own head would drop
-// them), and sw.js keeps only what it means to keep.
+// CI's browser (e2e/doors.test.mjs) never saves the page to a Home Screen, so
+// these pin what a phone would read: the manifest's icons are the files and
+// sizes it says, both pages link them outside the head the Worker rewrites
+// (where a link's own head would drop them), and sw.js keeps only what it
+// means to keep.
 
 import test from 'node:test';
 import assert from 'node:assert';

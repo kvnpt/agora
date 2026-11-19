@@ -159,9 +159,12 @@ for them, are in the doc it links to — read that before changing the area.
 - Every push to `main` deploys (Workers Builds). Green CI is the merge gate.
 - Every PR gets a Worker Preview on a copy of the data. A Preview binds only
   `[previews]` in `wrangler.toml`; never put a secret there.
-- CI runs none of `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js`, `map.js`: a change there
-  is checked in a browser ([docs/browser-checks.md](docs/browser-checks.md)) and
-  the PR says how. Check the way in, not just the behaviour.
+- CI parses every page script and opens the main doors in a browser
+  (`e2e/doors.test.mjs`), and runs nothing else of `next/next.js`,
+  `next/editing.js`, `next/month.js`, `bundle.js`, `map.js`: a change there is
+  checked in a browser ([docs/browser-checks.md](docs/browser-checks.md)) and
+  the PR says how. Check the way in, not just the behaviour; a new main screen
+  gets its door in `e2e/doors.test.mjs`.
 - A schema change is two files (baseline + `d1/migrations/`), and the migration
   is applied to production **before** the merge.
 - The seed is a dev fixture, not production; never make it authoritative.

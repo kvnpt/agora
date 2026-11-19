@@ -24,10 +24,24 @@ queue rather than a safeguard. Merging is deploying, so it is the check being
 What that buys has a limit worth naming, and it is not "CI cannot see the
 frontend". `public/shared/` is covered well — the projection, the timezone maths,
 the dedup and the slug tables are imported by the suite directly, which is half
-the point of the modules being shared. What nothing *executes* is the page built
-on top of them: `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js`, `map.js`. A few tests read
-those as text, to assert they reach for the shared table rather than keeping a
-private copy, and that is not the same as running them.
+the point of the modules being shared. What the suite does not *execute* is the
+page built on top of them: `next/next.js`, `next/editing.js`, `next/month.js`,
+`bundle.js`, `map.js`. A few tests read those as text, to assert they reach for
+the shared table rather than keeping a private copy, and that is not the same
+as running them.
+
+Two checks narrow that, and only that far:
+
+- **Every page script parses** (`d1/page-scripts.test.mjs`, in `npm test`):
+  every file under `public/`, every inline `<script>`, and every script a page
+  names is a file that is there. On 19 Nov 2026 a syntax error at the end of
+  `next.js` passed the whole suite and the Worker's build; a merge would have
+  deployed a blank page.
+- **The doors** (`e2e/doors.test.mjs`, CI's `doors` job, about two minutes
+  beside `check`): a real browser on `wrangler dev` opens home, a parish's card,
+  its Calendar and Month, Add service and Edit service, and fails on anything
+  the page throws. It would have stopped #168, whose Add service and Edit
+  service would not open from 31 Oct to 3 Nov.
 
 So a change to rendering, filtering or wiring merges on the strength of whatever
 its author did to check it, and the PR should say what that was. Reproducing the
@@ -94,7 +108,7 @@ an object always passes, and the value then renders as `[object Object]`.
 Every pull request gets a **Worker Preview**: Workers Builds builds the branch
 with `npx wrangler preview` and comments the link on the PR —
 `<branch>-agora.<subdomain>.workers.dev`. It is the way to see a change to the
-four files CI never runs, from a phone, before merging.
+page scripts CI only opens the doors of, from a phone, before merging.
 
 A Preview binds **only** what `wrangler.toml`'s `[previews]` block declares —
 Cloudflare inherits no binding, var or secret from the top level — and that
