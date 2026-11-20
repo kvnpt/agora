@@ -3847,8 +3847,9 @@
   const parishLinks = (pid) => ((window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || []).filter(l => l.parish_id === pid && l.url);
   /**
    * Google Maps, then whatever the parish has: a phone, a website, a live
-   * stream, a way to donate. More than fit scroll sideways, as Maps' do. Its
-   * own links are smaller, under these (linksHTML).
+   * stream, a way to donate, and last its own links (a festival, a youth
+   * group's Instagram), all one line of pills. More than fit scroll
+   * sideways, as Maps' do (Kevin, 20 Nov 2026).
    */
   function actionsHTML(p) {
     const gmaps = mapsHref(p);
@@ -3857,11 +3858,8 @@
       ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
       ${p.website ? out(p.website, I.globe, 'Website') : ''}
       ${p.live_url ? out(p.live_url, I.live, 'Watch live') : ''}
-      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}`;
-  }
-  /** A parish's own links (a festival, a youth group's Instagram), as small buttons, or ''. */
-  function linksHTML(p) {
-    return parishLinks(p.id).map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('');
+      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}
+      ${parishLinks(p.id).map(l => out(l.url, I.link, l.label || l.slug)).join('')}`;
   }
   /**
    * An open card again, from the bundle as it now is, where it was scrolled
@@ -3880,9 +3878,7 @@
     const top = el.querySelector('.ph');
     if (top) paint(top, parishTopHTML(p));
     const acts = el.querySelector('.actions');
-    if (acts) paint(acts, actionsHTML(p));
-    const own = el.querySelector('.p-links');
-    if (own) { const html = linksHTML(p); paint(own, html); own.hidden = !html; }
+    if (acts) { const html = actionsHTML(p); paint(acts, html); acts.hidden = !html.trim(); }
     el._segs = segsFor({ parish: p, focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
@@ -4180,8 +4176,7 @@
       <div class="sheet-scroll">
         <div class="ph">${parishTopHTML(p)}</div>
         <div class="sheet-link">${linkChip(segs)}</div>
-        <div class="actions">${actionsHTML(p)}</div>
-        <div class="p-links"${linksHTML(p) ? '' : ' hidden'}>${linksHTML(p)}</div>
+        <div class="actions"${actionsHTML(p).trim() ? '' : ' hidden'}>${actionsHTML(p)}</div>
         <div class="summary">${summaryHTML(p)}</div>
         <section class="today card ptoday" aria-label="Today" style="--pc:${parishColor(p)}"></section>
         <div class="p-details">${detailsHTML(p)}</div>
@@ -4434,14 +4429,14 @@
           ${stripe ? `<span class="cstripe" style="background:${stripe}"></span>` : ''}
           <div class="ckind"><span class="ckicker">${esc(c.kicker || '')}</span>${badges.map(badgeHTML).join('')}</div>
           <h1>${esc(c.title)}</h1>
-          <div class="chero-acts">
-            ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Create list</span></button>`}
-            ${c.listId ? `<button class="hbtn" type="button" data-act="addparishes">${I.plus}<span>Add parishes</span></button>` : ''}
-            ${c.listId ? `<button class="hbtn" type="button" data-act="listcal" aria-haspopup="menu">${I.calAdd}<span>Calendar</span></button>` : ''}
-            <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
-            ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
-            <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
-            ${c.viewPath ? `<button class="hbtn" type="button" data-act="deleteview">${I.x}<span>Remove</span></button>` : ''}
+          <div class="actions">
+            ${c.listId || c.viewPath ? '' : `<button class="abtn" type="button" data-act="savelist">${I.plus}<span>Create list</span></button>`}
+            ${c.listId ? `<button class="abtn" type="button" data-act="addparishes">${I.plus}<span>Add parishes</span></button>` : ''}
+            ${c.listId ? `<button class="abtn" type="button" data-act="listcal" aria-haspopup="menu">${I.calAdd}<span>Calendar</span></button>` : ''}
+            <button class="abtn" type="button" data-act="share">${I.share}<span>Share</span></button>
+            ${c.listId && c.listId !== 'fav' ? `<button class="abtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
+            <button class="abtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
+            ${c.viewPath ? `<button class="abtn" type="button" data-act="deleteview">${I.x}<span>Remove</span></button>` : ''}
           </div>
           <p>${esc(c.blurb || '')}${c.listId === 'fav' ? ` <span data-kept>${keptHTML()}</span>` : ''}</p>
         </div>
@@ -4868,8 +4863,8 @@
     return `<div ${lookAttrs(BOOKMARK_LOOK, 'chero')}>
           <span class="ckicker">Your list</span>
           <h1>Saved</h1>
-          <div class="chero-acts">
-            <button class="hbtn" type="button" data-act="savedcal" aria-haspopup="menu">${I.calAdd}<span>Add to calendar</span></button>
+          <div class="actions">
+            <button class="abtn" type="button" data-act="savedcal" aria-haspopup="menu">${I.calAdd}<span>Add to calendar</span></button>
           </div>
           <p data-kept>${keptHTML()}</p>
         </div>
