@@ -197,7 +197,7 @@ test('Add service opens, and the service it adds is on the timetable', async (t)
 });
 
 // Since 19 Nov 2026 a line has no pencil: the way in is the line, its date's
-// card, that card's Edit, then Edit the service.
+// card, that card's Edit, then its date's menu: Edit series (20 Nov 2026).
 test('Edit service opens from a line\'s date, with the service as it is, and saves', async (t) => {
   const page = await open(t, `/${RYDE}`);
   const card = parishCard(page);
@@ -205,7 +205,8 @@ test('Edit service opens from a line\'s date, with the service as it is, and sav
   const date = page.locator('.sheet.event.open');
   await date.waitFor();
   await date.locator('.abtn[data-edit-event]').click();
-  await page.locator('.event-edit-backdrop.open .ev-series [data-ev-series]').click();
+  await page.locator('.event-edit-backdrop.open [data-f="date"] .cf-u').click();
+  await page.locator('.cf-menu .cf-row', { hasText: 'Edit series' }).click();
   const form = page.locator('.rule-backdrop.open .rule-form');
   await form.waitFor();
   assert.equal(await form.locator('[data-rf="title"]').inputValue(), 'Saturday Vespers');

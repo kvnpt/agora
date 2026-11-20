@@ -42,13 +42,3 @@ test('a part is a button in its colour, and says so to a screen reader', () => {
   assert.ok(t.includes('>Fish &lt;&amp; chips&gt;</button>'), 'what the poster says is escaped');
   assert.ok(!F.part('title', 'x', '').includes('cf-  '), 'grey has no colour class');
 });
-
-test('the tally says what is left in each colour, and nothing when nothing is', () => {
-  const h = F.tallyHTML({ miss: 1, chg: 2, guess: 0, read: 4 });
-  assert.match(h, /1 to fill in/);
-  assert.match(h, /2 change what's on file/);
-  assert.match(h, /4 read/);
-  assert.ok(!/to check/.test(h));
-  assert.match(F.tallyHTML({ chg: 1 }), /1 changes what's on file/);
-  assert.strictEqual(F.tallyHTML({}), '');
-});

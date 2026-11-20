@@ -177,7 +177,19 @@
 .ee-status-done { color: var(--success); }
 .ee-status-error { color: var(--danger); }
 .ee-status-note { color: var(--ee-muted); }
+/* A plain read says nothing under the poster: its cards say it. */
+.ee-status:empty { display: none; }
 .ee-poster-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+/* Nothing to say beside the poster: no gap for it. */
+.ee-poster-actions:not(:has(> :not([hidden]))) { display: none; }
+.ee-poster-side:not(:has(> .ee-status:not(:empty), > .ee-read-notes:not([hidden]), > .ee-poster-actions > :not([hidden]))) { display: none; }
+/* Replace and Remove, floated on the poster's top right corner (Kevin, 20
+   Nov 2026; .cf-fab, below, as Edit event's poster has them). */
+.ee-thumb-wrap { position: relative; flex: 0 0 auto; }
+/* On a thumbnail (no card face), smaller and tucked in. */
+.ee:not(.has-face) .cf-fabs { top: 4px; right: 4px; gap: 4px; }
+.ee:not(.has-face) .cf-fab { width: 28px; height: 28px; }
+.ee:not(.has-face) .cf-fab svg { width: 15px; height: 15px; }
 /* The reader's notes on the poster as a whole, each its own line under the
    status — quieter than the status, and never run on into it. */
 .ee-read-notes { display: flex; flex-direction: column; gap: 4px; }
@@ -201,6 +213,7 @@
   .ee.has-poster > .ee-poster { grid-column: 1; position: sticky; top: 0; }
   .ee.has-poster > .ee-main { grid-column: 2; }
   .ee.has-poster .ee-poster-card { flex-direction: column; }
+  .ee.has-poster .ee-thumb-wrap, .ee.has-poster .ee-thumb-btn { width: 100%; }
   .ee.has-poster .ee-thumb { width: 100%; max-height: 64vh; object-fit: contain; }
 }
 .ee-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -1004,19 +1017,32 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 /* The colour says where it came from. */
 .ee-card.is-face .ee-mark { display: none !important; }
 
-/* A part: its words, a dotted line under them in its colour. */
+/* A part: its words, a dotted line under them. Grey leaves nothing to do,
+   so its dots are faint and thin; amber, red and violet ask something of
+   the person and stay strong (Kevin, 20 Nov 2026: "dotted lines less
+   prominent unless orange or more"). What was read off the poster is grey
+   too, with a small green dot inside it, before its words ("Normal dotted
+   colour for underline"; "Green dot to the left of each item"; "inside each
+   text object as an embellishment of the scanned text"). A part is its own
+   box (inline-block), so the dot is the words', however they wrap.
+   --cf-line and --cf-w are the dots' colour and weight, for the kind's pill too. */
 .cf-u {
-  display: inline; margin: 0; padding: 0; border: 0; background: none;
+  --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px;
+  position: relative;
+  display: inline-block; max-width: 100%; margin: 0; padding: 0; border: 0; background: none;
   font: inherit; color: inherit; text-align: left; letter-spacing: inherit; cursor: pointer;
-  text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2.5px;
+  text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: var(--cf-w);
   text-underline-offset: 6px; text-decoration-skip-ink: none;
-  text-decoration-color: var(--cf, var(--cf-as));
+  text-decoration-color: var(--cf-line);
   -webkit-tap-highlight-color: transparent; border-radius: 4px;
 }
 .cf-u:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
-.cf-u:hover { text-decoration-thickness: 3px; }
-.cf-read { --cf: var(--cf-read); } .cf-guess { --cf: var(--cf-guess); } .cf-miss { --cf: var(--cf-miss); }
-.cf-chg { --cf: var(--cf-chg); } .cf-as { --cf: var(--cf-as); }
+.cf-u:hover { text-decoration-thickness: calc(var(--cf-w) + .5px); }
+.cf-read { --cf: var(--cf-read); --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px; }
+.cf-as { --cf: var(--cf-as); --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px; }
+.cf-guess { --cf: var(--cf-guess); --cf-line: var(--cf-guess); --cf-w: 2.5px; }
+.cf-miss { --cf: var(--cf-miss); --cf-line: var(--cf-miss); --cf-w: 2.5px; }
+.cf-chg { --cf: var(--cf-chg); --cf-line: var(--cf-chg); --cf-w: 2.5px; }
 .cf-u.cf-empty { color: var(--cf-ink-3); font-weight: 500; }
 .cf-u.cf-miss.cf-empty { color: var(--cf-miss); font-weight: 650; }
 
@@ -1031,7 +1057,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 }
 .cf-kpill::after {
   content: ''; position: absolute; left: 9px; right: 9px; bottom: -7px;
-  border-bottom: 2.5px dotted var(--cf, var(--cf-as));
+  border-bottom: var(--cf-w, 1.5px) dotted var(--cf-line, color-mix(in srgb, var(--cf-as) 50%, transparent));
 }
 .cf-kpill-none { background: none; color: var(--cf-ink-2); box-shadow: inset 0 0 0 1.5px var(--border, var(--line, #d1d5db)); }
 .cf-kpill-none.cf-miss { color: var(--cf-miss); box-shadow: inset 0 0 0 1.5px var(--cf-miss); }
@@ -1110,39 +1136,23 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
   font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
 }
 .cf-desc-from + .cf-desc { margin-top: 8px; }
+/* In the part, before its words: its own inline-block, so the part's
+   dotted line does not run under it. */
+.cf-u.cf-read::before, .cf-kpill.cf-read::before {
+  content: ''; display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 7px 0 0;
+  border-radius: 50%; background: var(--cf-read); vertical-align: middle; pointer-events: none;
+}
+.cf-title .cf-u.cf-read::before { width: 9px; height: 9px; margin-right: 9px; }
+/* In the kind's pill, before the kind. */
+.cf-kpill.cf-read::before { margin: 0 2px 0 -3px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--card, #fff) 70%, transparent); }
 .cf-desc .cf-u { display: block; width: 100%; white-space: pre-wrap; text-underline-offset: 5px; }
-.cf-desc.cf-desc-empty .cf-u { display: inline; width: auto; }
+.cf-desc.cf-desc-empty .cf-u { display: inline-block; width: auto; }
 .cf-desc.cf-desc-empty { padding: 0; background: none; box-shadow: none; }
 .ee-cards > .ee-card.is-face:not(:only-child) .cf-desc:not(.cf-desc-empty) { background: var(--card-2, var(--ee-field)); box-shadow: none; }
 
 /* The card's own lines (whose event, combine) under it, apart. */
 .ee-card.is-face .ee-combine { margin: 20px 0 6px; }
 
-/* Over the cards: what is in each colour, and the key. */
-.ee-tally { display: flex; flex-direction: column; }
-.cf-tally { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; color: var(--cf-ink-2); }
-.cf-tally > b { color: var(--text); font-weight: 650; margin-right: 2px; }
-.cf-chip {
-  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
-  font-size: 12.5px; font-weight: 650; white-space: nowrap;
-  background: color-mix(in srgb, var(--cf) 13%, transparent); color: var(--cf);
-}
-.cf-chip::before { content: ''; width: 12px; border-bottom: 2.5px dotted var(--cf); transform: translateY(-2px); }
-.cf-keybtn {
-  margin-left: auto; display: inline-flex; align-items: center; gap: 2px; min-height: 30px; padding: 2px 2px 2px 6px;
-  font: inherit; font-size: 12.5px; font-weight: 650; color: var(--accent-text, var(--accent));
-  background: none; border: 0; border-radius: 999px; cursor: pointer;
-}
-.cf-keybtn svg { transition: transform .15s; }
-.cf-keybtn[aria-expanded="true"] svg { transform: rotate(180deg); }
-.cf-keybtn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
-.cf-key {
-  display: grid; grid-template-columns: 30px 1fr; gap: 9px 10px; align-items: baseline;
-  margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--card-2, var(--ee-field));
-  font-size: 13.5px; line-height: 1.4; color: var(--cf-ink-2);
-}
-.cf-key i { display: block; border-bottom: 3px dotted var(--cf); transform: translateY(-4px); }
-.cf-key b { font-weight: 650; color: var(--text); }
 /* Shut, a card says it in dots, one per colour still on it. */
 .cf-dots { display: inline-flex; gap: 4px; align-items: center; }
 .cf-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cf); }
@@ -1172,6 +1182,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .cf-row .cf-tick { flex: none; width: 18px; height: 18px; color: var(--text); }
 .cf-row.cf-danger, .cf-row.cf-danger > svg { color: var(--danger, #d92d20); }
 .cf-sep { height: 1px; margin: 4px 8px; background: var(--line, rgba(60, 60, 67, .14)); }
+.cf-mhead { padding: 8px 12px 4px; font-size: 12.5px; font-weight: 650; color: var(--text-2, var(--muted, #6b7280)); }
 .cf-roundel {
   flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
   background: var(--k-bg); color: var(--k-fg); font-size: 11.5px; font-weight: 800;
@@ -1191,7 +1202,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
    event card has it, to check each line against (the mockups, 19 Nov 2026). */
 @media (max-width: 899px) {
   .ee.has-face .ee-poster-card { flex-direction: column; gap: 8px; }
-  .ee.has-face .ee-thumb-btn { width: 100%; }
+  .ee.has-face .ee-thumb-wrap, .ee.has-face .ee-thumb-btn { width: 100%; }
   .ee.has-face .ee-thumb { width: 100%; max-height: 340px; object-fit: contain; object-position: center; }
 }
 
@@ -1219,10 +1230,10 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 
 /* ── Edit event, as the event's card (next/editing.js editFace) ──────────
    The same parts as Add event's, over the edit form's own rows (.edit-row,
-   data-cf-row), each opened under its part; what the date is (Cancel,
-   Break…) its buttons, the rest behind More. */
+   data-cf-row), each opened under its part; what the date is (Edit
+   series, Cancel, Break…, the rest) a menu out of the date. */
 .cf-card.is-face { display: flex; flex-direction: column; }
-.cf-card.is-face > .ev-series { order: 5; }
+.cf-card.is-face > [data-cf-row="poster"] { order: 2; margin: 0 0 18px; }
 .cf-card.is-face > [data-f="kind"] { order: 10; }
 .cf-card.is-face > [data-f="title"], .cf-card.is-face > [data-cf-row="title"] { order: 20; }
 .cf-card.is-face > [data-f="feast"], .cf-card.is-face > [data-cf-row="feast"] { order: 30; }
@@ -1231,26 +1242,98 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .cf-card.is-face > [data-f="time"], .cf-card.is-face > [data-cf-row="time"] { order: 50; }
 .cf-card.is-face > [data-f="where"], .cf-card.is-face > [data-cf-row="where"] { order: 60; }
 .cf-card.is-face > [data-f="languages"], .cf-card.is-face > [data-cf-row="languages"] { order: 70; }
-.cf-card.is-face > .cf-acts { order: 75; }
-.cf-card.is-face > [data-f="description"], .cf-card.is-face > [data-cf-row="description"] { order: 80; }
+.cf-card.is-face > [data-f="description"], .cf-card.is-face > [data-cf-row="description"] { order: 72; }
 .cf-card.is-face > [data-cf-row="parish"] { order: 85; margin-top: 22px; }
-.cf-card.is-face > [data-cf-row="poster"] { order: 86; margin-top: 22px; }
+/* A one-off's context, at its foot with whose it is (Kevin, 20 Nov 2026):
+   the parishes it includes, then No live badge. */
+.cf-card.is-face > [data-f="context"] { order: 86; margin-top: 12px; }
+.cf-card.is-face > [data-f="context"]:empty { display: none; }
+.cf-card.is-face > [data-cf-row="live"].cf-live { order: 87; margin-top: 14px; }
 .cf-card.is-face > .rf-error { order: 95; }
 .cf-card.is-face > .form-actions { order: 99; }
-.cf-card.is-face > :is(.ev-tools, [data-cf-row="kind"], [data-cf-row="live"]),
+.cf-card.is-face > :is(.ev-tools, .ev-series, [data-cf-row="kind"], [data-cf-row="live"]:not(.cf-live)),
 .cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"], [data-cf-row="description"], [data-cf-row="date"],
   [data-cf-row="lastday"], [data-cf-row="time"], [data-cf-row="where"], [data-cf-row="languages"]):not(.cf-on),
 .cf-card.is-face > .cf-off { display: none !important; }
 
-/* The service it is a date of: one box, the service's own pencil at its end. */
-.cf-card.is-face > .ev-series { margin: 0 0 14px; padding: 11px 12px 11px 14px; border-radius: 14px; font-size: 14.5px; font-weight: 600; color: var(--text); }
-.cf-card.is-face > .ev-series .ev-link {
-  padding: 6px 13px; border-radius: 999px; font-size: 13.5px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+/* A date of a service: ⟳ after it, part of it (Kevin, 20 Nov 2026: "The 🔁
+   becomes part of the date indicating it's one in a series"), violet with
+   the dots while the date is held otherwise. Its own box, so not dotted. */
+.cf-rep { display: inline-block; margin-left: 8px; color: var(--cf-ink-2); vertical-align: -3px; }
+.cf-rep svg { display: block; width: 18px; height: 18px; }
+.cf-chg .cf-rep { color: var(--cf-chg); }
+
+/* The poster at the card's top, where it is on the card (Kevin, 20 Nov
+   2026): a low blank box to add one, or the poster with Replace and Remove
+   floated on its corner. Which dates it goes on is a menu out of either
+   (editing.js putItOn); a range's days open under it. */
+.cf-card.is-face > [data-cf-row="poster"] > label { display: none; }
+.rf-poster.cf-poster { position: relative; display: block; }
+.cf-poster-img {
+  display: block; width: 100%; max-height: 340px; object-fit: contain; cursor: zoom-in;
+  border-radius: 14px; border: 1px solid var(--border, var(--line)); background: var(--card-2, var(--ee-field));
 }
+/* Low, about two fifths of what it was ("Maybe 40%", Kevin, 20 Nov 2026):
+   the picture's sign beside its two lines. */
+.cf-poster-blank {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; min-height: 60px; padding: 9px 16px; cursor: pointer; font: inherit; text-align: left; color: var(--cf-ink-2);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--border, var(--line))); border-radius: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+.cf-poster-blank:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.cf-poster-blank > svg { flex: none; color: var(--accent-text, var(--accent)); }
+.cf-poster-blank > span { display: flex; flex-direction: column; min-width: 0; }
+.cf-poster-blank b { font-size: 15.5px; font-weight: 650; line-height: 1.25; color: var(--text); }
+.cf-poster-blank small { font-size: 13px; line-height: 1.3; }
+/* The poster's own buttons, as the card head's X and Share are over a
+   poster (next.css .gbtn): glass, light or dark with the page. */
+.cf-fabs { position: absolute; top: 8px; right: 8px; display: flex; gap: 8px; }
+.cf-fab {
+  display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%;
+  color: var(--text, #1c1c1e); background: var(--glass, rgba(255, 255, 255, .72));
+  border: 1px solid var(--glass-line, rgba(255, 255, 255, .6)); box-shadow: 0 1px 6px rgba(0, 0, 0, .08);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.cf-fab:hover { background: var(--glass-solid, rgba(250, 250, 252, .97)); }
+.cf-fab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .4)); }
+.cf-fab svg { width: 20px; height: 20px; }
+.cf-fab-danger { color: var(--danger, #d92d20); }
+/* Include other parishes, a pill at the foot, and who is taking part. */
+.cf-include svg { flex: none; width: 17px; height: 17px; }
+.cf-taking { margin: 8px 2px 0; font-size: 13.5px; color: var(--cf-ink-2); }
+/* A one-off's bin, floating at the bottom of the card as the event card's
+   own toolbar does (next.css .floatbar), neutral: it asks Cancel or Delete. */
+.form-sheet.has-cf-floatbar { position: relative; }
+.form-sheet.has-cf-floatbar .frame-body { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+.cf-floatbar {
+  position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3;
+  transform: translateX(-50%); display: flex; padding: 3px; border-radius: 24px;
+  background: var(--glass-solid, rgba(250, 250, 252, .97)); border: 1px solid var(--glass-line, rgba(255, 255, 255, .6));
+  box-shadow: var(--shadow-lift, 0 10px 40px rgba(0, 0, 0, .18));
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .cf-floatbar { background: var(--glass, rgba(255, 255, 255, .72)); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+.cf-floatbar button {
+  width: 46px; height: 40px; padding: 0; border: 0; border-radius: 20px; display: grid; place-items: center;
+  color: var(--text); background: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.cf-floatbar button svg { width: 23px; height: 23px; }
+.cf-floatbar button:active, .cf-floatbar button[aria-expanded="true"] { background: var(--line, rgba(60, 60, 67, .12)); }
+.cf-floatbar button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .3)); }
+/* Typing, it would sit on the keyboard. */
+.form-sheet-back.fs-kb .cf-floatbar { display: none; }
+/* A range from the menu: which, its two days, then the picture. */
+.cf-poster-range { margin-top: 12px; }
+.cf-poster-range > p { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--text); }
+.cf-poster-go { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.cf-poster-go .rf-btn { display: inline-flex; align-items: center; gap: 8px; }
+.cf-poster-go .rf-btn svg { width: 18px; height: 18px; }
 .cf-card .cf-kind { margin-top: 2px; }
 .cf-card .cf-kind .ev-state { font-size: 11px; padding: 4px 8px; }
-.cf-card .cf-plain { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
 
 /* Typed where they stand. */
 .cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"], [data-cf-row="description"]).cf-on > label {
@@ -1284,16 +1367,4 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .cf-card.is-face > .edit-row.cf-on input:not([type="checkbox"]), .cf-card.is-face > .edit-row.cf-on select,
 .cf-card.is-face > .edit-row.cf-on .df-btn { background-color: var(--card, #fff); }
 
-/* What the date is: Cancel and Break, and More for the rest. */
-.cf-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; margin: 22px 0 4px; }
-.cf-act {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  min-height: 70px; padding: 10px 6px; border-radius: 16px;
-  font: inherit; font-size: 15px; font-weight: 650; color: var(--accent-text, var(--accent));
-  background: var(--card, #fff); border: 1px solid var(--border, var(--line)); cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.cf-act:hover, .cf-act:active { background: color-mix(in srgb, var(--accent) 7%, var(--card, #fff)); }
-.cf-act:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
-.cf-act svg { flex: none; }
 .cf-card .cf-desc { margin-top: 18px; }
