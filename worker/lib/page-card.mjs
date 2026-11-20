@@ -307,7 +307,7 @@ export function parishCardHTML(m) {
   const gmaps = mapsHref(p);
   const times = timetableHTML(m.rules, { today, color: m.color });
   const website = p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '';
-  // Its own links, a festival or a youth group's page, small under the buttons; Donate stays among them.
+  // Its own links, a festival or a youth group's page, last in the line of pills.
   const own = (m.links || []).filter(l => l.url);
   // The room at its top the page's map moves into on a phone, the parish
   // alone on it (next.js mapToCard), kept so nothing jumps when it comes.
@@ -323,8 +323,8 @@ export function parishCardHTML(m) {
         ${p.website ? outBtn(p.website, I.globe, 'Website') : ''}
         ${p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         ${p.donation_url ? outBtn(p.donation_url, I.heart, 'Donate') : ''}
+        ${own.map(l => outBtn(l.url, I.link, l.label || l.slug)).join('')}
       </div>
-      ${own.length ? `<div class="p-links">${own.map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('')}</div>` : ''}
       <div class="summary">${summaryHTML(m, today)}</div>
       ${todayBoxHTML(m, today)}
       <div class="p-details"><h2 class="sec"><span>Details</span></h2>
