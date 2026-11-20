@@ -289,6 +289,13 @@ different from what is on file (a programme's 8:15 against the timetable's
 8am, a date's own subtitle, an edit not yet saved), **grey** as it is. Green
 and amber go grey once the part has been opened: Add event sends the same
 value back, which drops the read's mark and note (`drafts.mjs updateCard`).
+Green and grey leave nothing to do, so their dots are faint and thin; amber,
+red and violet stay strong (Kevin, 20 Nov 2026). Over the cards, only those
+three are counted ("2 to check"), beside the **Key**; what was read is not.
+The line under the poster says only what the cards cannot: a plain read has
+none, and a timetable read, a read that found nothing, a new service its dates
+go onto, a date called off, another parish's event or a translation each get a
+short sentence.
 The form's rows are the same rows as before, hidden until their part opens
 (flex `order` puts each under its part), so every check, save and question
 works as it did. Edit event keeps Cancel and Break… as buttons and puts

@@ -177,6 +177,8 @@
 .ee-status-done { color: var(--success); }
 .ee-status-error { color: var(--danger); }
 .ee-status-note { color: var(--ee-muted); }
+/* A plain read says nothing under the poster: its cards say it. */
+.ee-status:empty { display: none; }
 .ee-poster-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 /* The reader's notes on the poster as a whole, each its own line under the
    status — quieter than the status, and never run on into it. */
@@ -1004,19 +1006,28 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 /* The colour says where it came from. */
 .ee-card.is-face .ee-mark { display: none !important; }
 
-/* A part: its words, a dotted line under them in its colour. */
+/* A part: its words, a dotted line under them in its colour. Green (read)
+   and grey (as it is) leave nothing to do, so their dots are faint and thin;
+   amber, red and violet ask something of the person and stay strong (Kevin,
+   20 Nov 2026: "dotted lines less prominent unless orange or more").
+   --cf-line and --cf-w are the dots' colour and weight, for the kind's pill
+   and the key too. */
 .cf-u {
+  --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px;
   display: inline; margin: 0; padding: 0; border: 0; background: none;
   font: inherit; color: inherit; text-align: left; letter-spacing: inherit; cursor: pointer;
-  text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2.5px;
+  text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: var(--cf-w);
   text-underline-offset: 6px; text-decoration-skip-ink: none;
-  text-decoration-color: var(--cf, var(--cf-as));
+  text-decoration-color: var(--cf-line);
   -webkit-tap-highlight-color: transparent; border-radius: 4px;
 }
 .cf-u:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
-.cf-u:hover { text-decoration-thickness: 3px; }
-.cf-read { --cf: var(--cf-read); } .cf-guess { --cf: var(--cf-guess); } .cf-miss { --cf: var(--cf-miss); }
-.cf-chg { --cf: var(--cf-chg); } .cf-as { --cf: var(--cf-as); }
+.cf-u:hover { text-decoration-thickness: calc(var(--cf-w) + .5px); }
+.cf-read { --cf: var(--cf-read); --cf-line: color-mix(in srgb, var(--cf-read) 40%, transparent); --cf-w: 1.5px; }
+.cf-as { --cf: var(--cf-as); --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px; }
+.cf-guess { --cf: var(--cf-guess); --cf-line: var(--cf-guess); --cf-w: 2.5px; }
+.cf-miss { --cf: var(--cf-miss); --cf-line: var(--cf-miss); --cf-w: 2.5px; }
+.cf-chg { --cf: var(--cf-chg); --cf-line: var(--cf-chg); --cf-w: 2.5px; }
 .cf-u.cf-empty { color: var(--cf-ink-3); font-weight: 500; }
 .cf-u.cf-miss.cf-empty { color: var(--cf-miss); font-weight: 650; }
 
@@ -1031,7 +1042,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 }
 .cf-kpill::after {
   content: ''; position: absolute; left: 9px; right: 9px; bottom: -7px;
-  border-bottom: 2.5px dotted var(--cf, var(--cf-as));
+  border-bottom: var(--cf-w, 1.5px) dotted var(--cf-line, color-mix(in srgb, var(--cf-as) 50%, transparent));
 }
 .cf-kpill-none { background: none; color: var(--cf-ink-2); box-shadow: inset 0 0 0 1.5px var(--border, var(--line, #d1d5db)); }
 .cf-kpill-none.cf-miss { color: var(--cf-miss); box-shadow: inset 0 0 0 1.5px var(--cf-miss); }
@@ -1121,7 +1132,6 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 /* Over the cards: what is in each colour, and the key. */
 .ee-tally { display: flex; flex-direction: column; }
 .cf-tally { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; color: var(--cf-ink-2); }
-.cf-tally > b { color: var(--text); font-weight: 650; margin-right: 2px; }
 .cf-chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
   font-size: 12.5px; font-weight: 650; white-space: nowrap;
@@ -1141,7 +1151,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
   margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--card-2, var(--ee-field));
   font-size: 13.5px; line-height: 1.4; color: var(--cf-ink-2);
 }
-.cf-key i { display: block; border-bottom: 3px dotted var(--cf); transform: translateY(-4px); }
+.cf-key i { display: block; border-bottom: calc(var(--cf-w) + 1px) dotted var(--cf-line); transform: translateY(-4px); }
 .cf-key b { font-weight: 650; color: var(--text); }
 /* Shut, a card says it in dots, one per colour still on it. */
 .cf-dots { display: inline-flex; gap: 4px; align-items: center; }

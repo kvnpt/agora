@@ -2172,8 +2172,10 @@
     }
 
     /**
-     * Over the cards, how many parts are in each colour, and the key to them
-     * (Kevin, 19 Nov 2026): "From the poster · 1 to fill in · 4 read".
+     * Over the cards, how many parts still ask something of the person, and
+     * the key to the colours (Kevin, 19 Nov 2026). No "From the poster" and
+     * no count of what was read (Kevin, 20 Nov 2026): "2 to check · Key", or
+     * the Key alone while only green and grey are on the cards.
      */
     function refreshTally() {
       const box = $('tally');
@@ -2183,12 +2185,10 @@
         if (!c.counts || discarding(c) || c.publish.state === 'done') continue;
         for (const k of Object.keys(sum)) sum[k] += c.counts[k];
       }
-      const read = !!(state.draft && (state.draft.poster_path || waWords()));
-      const chips = FACE.tallyHTML(sum);
-      box.hidden = !chips;
-      if (!chips) return;
-      const lead = state.draft && state.draft.poster_path ? 'From the poster' : read ? 'From WhatsApp' : 'This event';
-      const html = `<div class="cf-tally"><b>${lead}</b>${chips}<button type="button" class="cf-keybtn" aria-expanded="${!!state.keyOpen}" data-ee="key">Key${FACE.ICON.down}</button></div>`
+      const coloured = Object.values(sum).some(Boolean);
+      box.hidden = !coloured;
+      if (!coloured) return;
+      const html = `<div class="cf-tally">${FACE.tallyHTML(sum)}<button type="button" class="cf-keybtn" aria-expanded="${!!state.keyOpen}" data-ee="key">Key${FACE.ICON.down}</button></div>`
         + (state.keyOpen ? FACE.legendHTML() : '');
       FACE.draw(box, html);
     }
@@ -2797,67 +2797,63 @@
       if (opts.onRead) opts.onRead(d.draft);
     }
 
+    /**
+     * The line under the poster: only what the cards cannot say for
+     * themselves, and short (Kevin, 20 Nov 2026: "Sometimes the green text is
+     * useful, but in this case it was not"). A plain read, one event or a
+     * programme of them, says nothing: each card shows what was read in its
+     * dots, and a date of a service shows the timetable's line it goes onto.
+     * What is said: where a read went other than the feed, a read that found
+     * nothing, an order Publish keeps, and what is waiting on the person.
+     */
     function readSummary(draft) {
       const kind = draft.read_kind;
       const sign = kind === 'timetable';
       const events = state.cards.filter(c => !isPristine(c));
       const n = events.length;
-      const regular = events.filter(c => c.fields.occurrence).length;
       const svcs = (draft.read_services || state.services || []).length;
       const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
-      let text;
+      // Of the cards read: "This event is", "All 3 are", "One is", "2 are".
+      const are = (k) => (k === n ? (n === 1 ? 'This event is' : `All ${n} are`) : k === 1 ? 'One is' : `${k} are`);
+      const said = [];
       // Two categories, whatever the image is (poster-read.mjs): what is held
       // regularly, for the timetable, and what happens once, for the feed.
-      if (sign && svcs) {
-        text = `Read as the parish’s timetable: ${plural(svcs, 'weekly service', 'weekly services')}${draft.read_details ? ' and its details' : ''}. Check each against the photo, then add it.`;
-      } else if (sign) {
-        text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
+      if (sign) {
+        said.push(svcs ? `Read as the parish’s timetable: ${plural(svcs, 'weekly service', 'weekly services')}${draft.read_details ? ' and its details' : ''}.`
+          : 'A sign, but no services could be read from it: add them by hand.');
       } else if (kind === 'not_an_event' && !svcs && !n) {
-        text = 'This does not look like an event poster — fill in the details by hand.';
-      } else if (svcs && n && events.some(c => linkedToRead(c))) {
-        // A service and its own dates off one poster (St Emilia's, 5 Nov
-        // 2026): the service new, or on the timetable already (next month's).
-        const linked = events.filter(linkedToRead);
-        const isNew = (c) => isNewOcc(c.fields.occurrence);
-        const anyNew = linked.some(isNew);
-        const allNew = linked.every(isNew);
-        const nameOf = (c) => String(((isNew(c) ? linkedService(c.fields.occurrence) : ruleOf(c.fields.occurrence)) || {}).title || '').trim();
-        const names = [...new Set(linked.map(nameOf).filter(Boolean))];
-        const days = linked.map(c => dateLabel(occDate(c.fields.occurrence))).join(', ');
-        const one = linked.length === 1;
-        const rest = n - linked.length;
-        const held = allNew ? 'held regularly, for the timetable' : anyNew ? 'held regularly' : 'already on the timetable';
-        const then = allNew ? `Publish adds the service first, then ${one ? 'the date' : 'the dates'} onto it`
-          : anyNew ? 'Publish adds what is new to the timetable first, then each date onto its service'
-            : `Publish puts ${one ? 'the date' : 'the dates'} onto the service`;
-        text = `Read from the poster: ${names.join(' and ') || plural(svcs, 'thing held regularly', 'things held regularly')}, ${held}, and ${one ? 'its date' : 'its dates'} ${days} with ${one ? 'that day’s' : 'each day’s'} own details${rest ? `, and ${plural(rest, 'other event', 'other events')}` : ''}. Check each against it. ${then}; the poster stays on ${one ? 'that date' : 'those dates'}.`;
-      } else if (svcs && n) {
-        text = `Read from the poster: ${plural(svcs, 'thing held regularly', 'things held regularly')}, for the timetable, and ${plural(n, 'event', 'events')} for the feed. Check each against it — what goes on the timetable takes its description with it${posterIsDated() ? '; the poster stays on the dates it gives' : ', and the poster'}.`;
+        said.push('Not an event poster, it seems: fill in the details by hand.');
+      } else if (svcs && !n) {
+        // No card, and why: it went on the timetable.
+        said.push(`Held regularly, so ${svcs === 1 ? 'it goes' : 'they go'} on the timetable, not the feed.`);
       } else if (svcs) {
-        text = `Read as something held regularly, so it goes on the timetable rather than in the events. Check ${svcs === 1 ? 'it' : `all ${svcs}`} against the poster, then add ${svcs === 1 ? 'it' : 'them'} — the poster and its description go with ${svcs === 1 ? 'it' : 'them'}, on every date.`;
-      } else if (regular) {
-        text = `${plural(n, 'date', 'dates')} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
-      } else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
-      else text = 'Read from the poster. Check the details against it, then publish.';
+        // A service and its own dates off one poster (St Emilia's, 5 Nov
+        // 2026): each card shows the service it goes onto; what it cannot
+        // show is that a new one is added before its dates go onto it.
+        const linked = events.filter(c => isNewOcc(c.fields.occurrence));
+        if (linked.length) {
+          const names = [...new Set(linked.map(c => String((linkedService(c.fields.occurrence) || {}).title || '').trim()))];
+          const one = names.length === 1 && names[0];
+          said.push(`Publish adds ${one || 'the new services'} to the timetable first, then ${linked.length === 1 ? 'the date' : 'the dates'} onto ${one ? 'it' : 'them'}.`);
+        }
+      }
       // Another parish's events: this one takes part, and says what they replace here.
       const here = events.filter(hereOnFile).length;
       const hosted = events.filter(c => c.fields.host_parish_id && !hereOnFile(c)).length;
       if (hosted && state.parish) {
-        text += ` ${hosted === 1 ? 'One is' : `${hosted} are`} at another parish, so ${state.parish.name} is set as taking part — check the services ${hosted === 1 ? 'it replaces' : 'they replace'} here.`;
+        said.push(`${are(hosted)} at another parish, so ${state.parish.name} takes part: check what ${hosted === 1 ? 'it replaces' : 'they replace'} here.`);
       }
       // Dates the poster calls off: each asks on its own card.
       const off = events.filter(c => calledOff(c)).length;
       if (off) {
-        text += ` ${off === 1 ? 'One says a service is' : `${off} say a service is`} not held that day: nothing is cancelled until you confirm it on ${off === 1 ? 'its card' : 'each card'}.`;
+        said.push(`${off === 1 ? 'A date is' : `${off} dates are`} called off: nothing is cancelled until you confirm it on ${off === 1 ? 'its card' : 'each card'}.`);
       }
       // Its own, already on file: filled in, not made twice.
-      if (here) {
-        text += ` ${here === 1 ? 'One is' : `${here} are`} already on file here: publishing adds the poster to ${here === 1 ? 'it' : 'them'} rather than a second.`;
-      }
+      if (here) said.push(`${are(here)} already on file: the poster goes onto ${here === 1 ? 'it' : 'them'}.`);
       // The read is in English; the poster stays attached in the original.
-      if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
+      if (draft.read_language) said.push(`Translated from ${draft.read_language}.`);
       renderReadNotes(draft);
-      return text;
+      return said.join(' ');
     }
 
     /**
@@ -2931,19 +2927,6 @@
      * rule).
      */
     const posterIsDated = () => state.cards.some(c => !isPristine(c) && isDate(c.fields.date));
-
-    /**
-     * Is this card a date of one of the read's own services: one proposed in
-     * it ("new:s1:…"), or one the read found on the timetable already?
-     */
-    const linkedToRead = (c) => {
-      const occ = c.fields.occurrence;
-      if (!occ) return false;
-      if (isNewOcc(occ)) return true;
-      if (!root.AgoraSigns || !state.rules) return false;
-      return root.AgoraSigns.compareSign(state.services, state.rules, today()).rows
-        .some(r => r.rule && String(r.rule.id) === occOf(occ));
-    };
 
     /** The cards that are dates of the read's service `i`, still to publish. */
     const datesOf = (i) => {

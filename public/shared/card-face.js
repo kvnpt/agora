@@ -136,8 +136,10 @@
     `<div class="cf-fact cf-${name}" data-fact="${name}"${extra}>${ICON[icon]}<span>${inner}</span></div>`;
 
   /**
-   * How many parts are in each colour, as chips: "1 to fill in", "2 to
-   * check", "4 read", "1 changes what's on file". Empty when none are coloured.
+   * How many parts ask something of the person, as chips: "1 to fill in",
+   * "1 changes what's on file", "2 to check". What was read as printed is not
+   * counted (Kevin, 20 Nov 2026: "remove the green count"): its dots say it.
+   * Empty when nothing is asked.
    */
   function tallyHTML(counts) {
     const n = (k) => counts[k] || 0;
@@ -145,7 +147,6 @@
       n('miss') && `<span class="cf-chip cf-miss">${n('miss')} to fill in</span>`,
       n('chg') && `<span class="cf-chip cf-chg">${n('chg')} change${n('chg') === 1 ? 's' : ''} what's on file</span>`,
       n('guess') && `<span class="cf-chip cf-guess">${n('guess')} to check</span>`,
-      n('read') && `<span class="cf-chip cf-read">${n('read')} read</span>`,
     ].filter(Boolean);
     return chips.join('');
   }
