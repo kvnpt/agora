@@ -127,6 +127,31 @@ never exists for a round trip beside the thing it replaces):
 | Replace a stored one-off | `event_replaces` + `status='replaced'` | integer |
 | Replace a schedule occurrence | `schedule_overrides` kind `combined` | `"sid:date"` |
 
+**The host can be one date of a service** (migration 041; Kevin, 20 Nov 2026,
+"Build it"): the cathedral's own 9am Liturgy on the 25th, which the deanery
+closes for. The same routes take the date's id (`POST
+/api/admin/events/<sid:date>/escalate`, `combineHost` in
+`worker/routes/admin.mjs`). A date is projected and never stored, so its
+parishes are `occurrence_parishes` (rule, date, parish), keyed as an override
+is, and a service it stands in for is a `combined` override naming it by
+`combined_into_schedule_id` + `combined_into_date` instead of
+`combined_into_event_id`. The projection gives both one id
+(`combined_into_event_id` is the event's integer or the date's
+`"sid:date"`, `combinedInto` in `project.mjs`), and every reader of who takes
+part joins `event_parishes` and `occurrence_parishes` as one list, a date's
+under its own id (`worker/lib/taking-part.mjs`), so the bundle, the feed and
+the cards treat the two hosts alike. What is read one parish at a time (its
+painted card, its `.ics`) reads another parish's dates it takes part in on
+their own (`hostedDates`), never the host's rules. A date stands in for other
+services' dates only: a stored one-off that day is the one-off's to combine
+into it, and a date already combined into something else hosts nothing.
+"This and every following" asks about a date's combine with its overrides and
+carries it onto the new rule or lets it go; ending a service, or changing it
+so a date is no longer one of its dates, lets the combine go, and the services
+held at it come back. The back office's notices list a date's combine and can
+withdraw from it, though it cannot be marked read (`parish_notices_seen`
+holds events' ids).
+
 `event_replaces` is described as legacy in old comments. It is pre-v26 but **not**
 redundant: it is the only path for combining against a stored one-off.
 
@@ -267,7 +292,7 @@ as `patch_feast`), and its card follows the date onto the new rule after
 "this and every following". A cancelled, combined or on-break date stays on its
 parish's Calendar, struck through with its word; the open feeds leave all three
 out for now, where the app v3 replaced showed a break.
-**Break…** (a date of a service) and **Include other parishes…** (a one-off)
+**Break…** (a date of a service) and **Include other parishes…** (a one-off, or a date of a service)
 open their own dialogs in place of the form. The combine is the add-event
 editor's lists (nearest first, "needs an owner"), so a tick that is not the
 person's own becomes an ask, as it does there. A timetable line on a break
@@ -322,7 +347,9 @@ suppressed, combined, or a live badge other than its service's.
 **A one-off** (the same night): its date opens its fields, as any part does.
 Its foot is its context, as an event card's foot is (where the calendar
 feeds are): whose it is (the parish, when there is a choice), **Include other
-parishes…** as a pill, who is taking part, and No live badge. **Cancel and
+parishes…** as a pill, who is taking part, and No live badge. A date of a
+service has the same pill and who is taking part at its foot (migration 041),
+unless the date is itself combined into something else. **Cancel and
 Delete** are a neutral bin floating at the bottom of the card, where the
 event card's own toolbar sits (`.cf-floatbar`); it asks which. There is no
 row of buttons on either card. A part closes on the click outside it, never the press, so a

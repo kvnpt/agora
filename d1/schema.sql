@@ -409,6 +409,12 @@ CREATE TABLE schedule_overrides (
   patch_location_parish_id TEXT,
   patch_location_lat      REAL,
   patch_location_lng      REAL,
+  -- A 'combined' date held at a date of another service rather than at an
+  -- event (migration 041): St Spyridon's Liturgy on the 25th, held at St
+  -- Catherine's Liturgy that day. Set together, or neither; an override names
+  -- an event (combined_into_event_id) or a date, never both.
+  combined_into_schedule_id INTEGER REFERENCES schedules(id) ON DELETE CASCADE,
+  combined_into_date      TEXT,
 
   UNIQUE(schedule_id, occurrence_date)
 );
@@ -416,6 +422,7 @@ CREATE TABLE schedule_overrides (
 CREATE INDEX idx_overrides_schedule ON schedule_overrides(schedule_id);
 CREATE INDEX idx_overrides_combined ON schedule_overrides(combined_into_event_id);
 CREATE INDEX idx_overrides_date     ON schedule_overrides(occurrence_date);
+CREATE INDEX idx_overrides_combined_occ ON schedule_overrides(combined_into_schedule_id, combined_into_date);
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- schedule_breaks — a stretch of dates a service is not running
@@ -511,6 +518,10 @@ CREATE INDEX idx_week_exceptions_schedule ON schedule_week_exceptions(schedule_i
 --   event_replaces                    replace a stored one-off      (integer id)
 --   schedule_overrides kind=combined  replace a schedule occurrence ("sid:date")
 --
+-- The host is an event or, since migration 041, a date of a service: then
+-- occurrence_parishes is its event_parishes, and a replaced date's override
+-- names it by combined_into_schedule_id + combined_into_date.
+--
 -- event_replaces is pre-v26 but NOT redundant: it is the only path for
 -- combining against a stored one-off. Both run in the same transaction.
 -- ─────────────────────────────────────────────────────────────────────────
@@ -527,6 +538,20 @@ CREATE TABLE event_replaces (
 );
 
 CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
+
+-- The parishes taking part in one DATE of a service (migration 041): a
+-- deanery's Sunday Liturgy at the cathedral, which is the cathedral's own
+-- 9am Liturgy that week. The date is projected and never stored, so its
+-- combine is keyed by the date, as an override is; the bundle sends these
+-- with event_parishes, under the date's id ("sid:YYYY-MM-DD").
+CREATE TABLE occurrence_parishes (
+  schedule_id     INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  occurrence_date TEXT NOT NULL,   -- 'YYYY-MM-DD' LOCAL to the parish, as an override's
+  parish_id       TEXT NOT NULL REFERENCES parishes(id),
+  PRIMARY KEY (schedule_id, occurrence_date, parish_id)
+);
+
+CREATE INDEX idx_occurrence_parishes_parish ON occurrence_parishes(parish_id);
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- adapter_runs — scrape history

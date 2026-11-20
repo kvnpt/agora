@@ -13,7 +13,7 @@
 
 import { OffsetCache, offsetAt } from '../../public/shared/tz.mjs';
 import langList from '../../public/shared/languages.js';
-import { expandOne, isValidOccurrence } from './expand.mjs';
+import { expandOne, isValidOccurrence, parseInstanceId } from './expand.mjs';
 
 const PATCH_COLS = [
   'patch_title', 'patch_start_time', 'patch_end_time', 'patch_event_type',
@@ -84,7 +84,8 @@ function mergePatch(s, zone, body, cur) {
 }
 
 const hasContent = (cur) =>
-  PATCH_COLS.some(c => cur[c] != null) || cur.combined_into_event_id != null;
+  PATCH_COLS.some(c => cur[c] != null) || cur.combined_into_event_id != null
+  || cur.combined_into_schedule_id != null;
 
 function upsert(db, scheduleId, date, kind, cur) {
   return db.prepare(`
@@ -92,8 +93,9 @@ function upsert(db, scheduleId, date, kind, cur) {
       (schedule_id, occurrence_date, kind, patch_title, patch_start_time, patch_end_time,
        patch_event_type, patch_languages, patch_feast, patch_description, patch_location_override,
        patch_hide_live, patch_parish_scoped, patch_poster_path, combined_into_event_id,
-       patch_location_parish_id, patch_location_lat, patch_location_lng, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+       patch_location_parish_id, patch_location_lat, patch_location_lng,
+       combined_into_schedule_id, combined_into_date, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
     ON CONFLICT(schedule_id, occurrence_date) DO UPDATE SET
       kind=excluded.kind,
       patch_title=excluded.patch_title, patch_start_time=excluded.patch_start_time,
@@ -107,6 +109,8 @@ function upsert(db, scheduleId, date, kind, cur) {
       patch_location_parish_id=excluded.patch_location_parish_id,
       patch_location_lat=excluded.patch_location_lat,
       patch_location_lng=excluded.patch_location_lng,
+      combined_into_schedule_id=excluded.combined_into_schedule_id,
+      combined_into_date=excluded.combined_into_date,
       updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
   `).bind(
     scheduleId, date, kind,
@@ -117,6 +121,7 @@ function upsert(db, scheduleId, date, kind, cur) {
     cur.patch_poster_path ?? null,
     cur.combined_into_event_id ?? null,
     cur.patch_location_parish_id ?? null, cur.patch_location_lat ?? null, cur.patch_location_lng ?? null,
+    cur.combined_into_schedule_id ?? null, cur.combined_into_date ?? null,
   ).run();
 }
 
@@ -198,14 +203,25 @@ export async function hideInstance(db, scheduleId, date) {
   return { ok: true };
 }
 
-/** Mark a schedule instance as combined into a one-off event (deanery, feast). */
-export async function setCombined(db, scheduleId, date, combiningEventId) {
+/**
+ * Mark a schedule instance as combined into what holds it instead: a one-off
+ * event (deanery, feast), by its integer id, or a date of another service
+ * ("sid:YYYY-MM-DD", migration 041) — the cathedral's own Liturgy that day.
+ * One or the other, never both: the date says where everybody went.
+ */
+export async function setCombined(db, scheduleId, date, into) {
   const s = await loadSchedule(db, scheduleId);
   if (!s) return { error: 'Schedule not found', code: 404 };
   if (!isValidOccurrence(s, date)) return { error: 'Not a valid occurrence of this schedule', code: 400 };
+  const host = parseInstanceId(String(into));
+  if (host && String(host.scheduleId) === String(scheduleId) && host.date === date) {
+    return { error: 'A date cannot be held at itself', code: 400 };
+  }
   const existing = await loadOverride(db, scheduleId, date);
   const cur = existing ? { ...existing } : {};
-  cur.combined_into_event_id = combiningEventId;
+  cur.combined_into_event_id = host ? null : into;
+  cur.combined_into_schedule_id = host ? host.scheduleId : null;
+  cur.combined_into_date = host ? host.date : null;
   await upsert(db, scheduleId, date, 'combined', cur);
   return { ok: true };
 }

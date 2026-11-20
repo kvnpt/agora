@@ -18,6 +18,7 @@ import { jurisdictionLogos } from '../lib/juris-logos.mjs';
 import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 import { cachedJson } from '../lib/data-version.mjs';
 import { favouriteCount } from '../lib/saved-items.mjs';
+import { crossRows, takingPartIn } from '../lib/taking-part.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
@@ -79,7 +80,9 @@ export function registerPublicRoutes(router) {
          WHERE e.source_adapter != 'schedule' AND e.start_utc <= ?
            AND (e.start_utc >= ? OR e.end_utc >= ?)`
       ).bind(to, from, from).all(),
-      env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all(),
+      // Who takes part: in an event, by its id, and in a date of a service,
+      // by the date's id (migration 041, lib/taking-part.mjs).
+      crossRows(env.DB),
       jurisdictionColorOverrides(env.DB),
       // A parish's own links. Small — a handful of rows in total — and needed
       // by the sheet the moment a parish is opened, so it rides along rather
@@ -107,7 +110,7 @@ export function registerPublicRoutes(router) {
       // held (migration 035). Rows again; the browser joins them to their rules.
       week_exceptions: (rows.week_exceptions || []).map(withoutAuthor),
       events: (oneOffs.results || []).map(withoutAuthor),
-      event_parishes: cross.results || [],
+      event_parishes: cross,
       // Carried in the bundle rather than fetched separately: every reader of a
       // jurisdiction colour runs during the first render, so a second round
       // trip would mean drawing the map once in the old colours and again in
@@ -186,7 +189,8 @@ export function registerPublicRoutes(router) {
     const parsed = parseInstanceId(params.id);
     if (parsed) {
       const inst = await expandOne(env.DB, parsed.scheduleId, parsed.date);
-      return inst ? json(inst) : json({ error: 'Event not found' }, 404);
+      // With who takes part in it, as a stored event's comes (migration 041).
+      return inst ? json({ ...inst, combined_parishes: await takingPartIn(env.DB, inst.id) }) : json({ error: 'Event not found' }, 404);
     }
     const row = await env.DB.prepare(
       `SELECT e.*, p.name AS parish_name, p.jurisdiction, p.address AS parish_address,

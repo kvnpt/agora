@@ -119,6 +119,8 @@ for them, are in the doc it links to — read that before changing the area.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.
+  Its host is an event or one date of a service (`occurrence_parishes`).
+  Read who takes part from `worker/lib/taking-part.mjs`, never `event_parishes` alone.
 - Where is a unit of four fields: at home, at another parish, or a place of its
   own with a pin (a square on the map). `worker/lib/venues.mjs` reads it, for
   every route that takes one.

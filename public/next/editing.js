@@ -1243,7 +1243,7 @@
           <button class="rf-btn" type="button" data-ev-tool="cancel" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel event' : 'Cancel event'}</button>
           ${series && host.may('override.edit', series.rule.parish_id) ? `<button class="rf-btn" type="button" data-ev-break>${e.status === 'break' ? 'Edit the break' : 'Break…'}</button>` : ''}
           ${series ? `<button class="rf-btn" type="button" data-ev-tool="suppress" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
-          ${series ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}
+          ${series && e.status === 'combined' ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}
           ${headless ? '<button class="rf-btn danger" type="button" data-ev-delete>Delete</button>' : ''}
         </div>
         ${eventFieldsHTML(e, { series, parish, start, end, multi, parishes })}
@@ -1503,7 +1503,7 @@
       <div class="cf-fact" data-f="where">${F.ICON.where}<span class="cf-fact-t"></span></div>
       <div class="cf-fact" data-f="languages">${F.ICON.chat}<span class="cf-fact-t"></span></div>
       <div class="cf-desc" data-f="description"></div>
-      ${series ? '' : '<div class="cf-context" data-f="context"></div>'}`);
+      <div class="cf-context" data-f="context"></div>`);
     const P = (name) => form.querySelector(`[data-f="${name}"]`);
     const rows = (name) => (FACE_GROUPS[name] || []).map(r => form.querySelector(`[data-cf-row="${r}"]`)).filter(Boolean);
     // Public / Parish only beside the kind's pill, where the card says it.
@@ -1667,9 +1667,13 @@
       F.menu(btn, items);
     }
 
-    // A one-off's foot: whose it is (the parish row, when there is a choice),
-    // then the parishes it includes, then No live badge; and its bin.
-    if (!series) {
+    // The foot is the card's context, where an event card has its calendar
+    // feeds: the parishes it includes, for a one-off and for one date of a
+    // service alike (Kevin, 20 Nov 2026: "Same with editing 1 event in a
+    // series, there needs to be an option to include other parishes down the
+    // bottom similarly"). A date held at another event that day has none:
+    // that one says where everybody went.
+    {
       const ctx = P('context');
       const comb = tool('[data-ev-combine]');
       const added = (e.combined_parishes || ((root.agoraBundle && root.agoraBundle.raw && root.agoraBundle.raw.event_parishes) || [])
@@ -1680,6 +1684,10 @@
           + (added.length ? `<p class="cf-taking">Taking part: ${added.map(p => esc(p.name)).join(', ')}</p>` : ''));
         ctx.addEventListener('click', (ev) => { if (ev.target.closest('[data-cf-include]')) comb.click(); });
       }
+    }
+    // A one-off's foot goes on: whose it is (the parish row, when there is a
+    // choice), then No live badge; and its bin.
+    if (!series) {
       const liveRow = form.querySelector('[data-cf-row="live"]');
       if (liveRow) liveRow.classList.add('cf-live');
       // The bin, floating at the bottom of the card where its toolbar is
@@ -1858,17 +1866,22 @@
   async function combine(id) {
     const e = host.event(id);
     const EE = root.AgoraEventEditor;
-    if (!e || seriesOf(id) || !EE || !host.may('event.edit', e.parish_id)) return;
+    if (!e || !EE || !host.may('event.edit', e.parish_id)) return;
+    // One date of a service is a host too (migration 041): its parishes and
+    // the other services' dates it stands in for, by the date's own id. It
+    // stands in for services' dates only; an event that day is the event's
+    // to combine into it.
+    const series = seriesOf(id);
     const parish = host.parish(e.parish_id) || { id: e.parish_id, name: e.parish_name };
     const zone = e.timezone || parish.timezone || 'Australia/Sydney';
-    const date = (await tz()).localPartsOf(zone, Date.parse(e.start_utc)).date;
+    const date = series ? series.date : (await tz()).localPartsOf(zone, Date.parse(e.start_utc)).date;
     const f = frame({ title: 'Include other parishes', sub: `${e.title} · ${longDate(date)}`, cls: 'combine-backdrop' });
     f.body.innerHTML = `<div class="detail-edit-form cb-form">
         <div class="ee-section-title">Also appears at</div>
         <div data-list="also"></div>
         <div class="ee-section-title">In place of their own services that day</div>
         <div class="ee-list" data-list="replaces"><div class="ee-empty">Loading…</div></div>
-        <div class="edit-row-hint">Whatever is ticked here stops being its own card and shows as a tombstone pointing at this event: nothing disappears.</div>
+        <div class="edit-row-hint">Whatever is ticked here stops being its own card and shows as a tombstone pointing at this ${series ? 'date' : 'event'}: nothing disappears.</div>
         <div class="cb-ask" hidden>
           <p>Some of what is ticked is not yours. Yours goes ahead now, and an owner is asked for the rest.</p>
           <input data-cb-reason placeholder="Why: the owner reads this" autocomplete="off">
@@ -1947,7 +1960,8 @@
     if (!cands || !current) { replBox.innerHTML = '<div class="ee-empty">Could not load that day. Close and try again.</div>'; return; }
     for (const pid of current.additive_parish_ids || []) also.add(pid);
     const ids = new Set(cands.map(c => String(c.id)));
-    candidates = [...cands, ...(current.replaced_events || []).filter(c => !ids.has(String(c.id)))];
+    const standIn = (c) => !series || /:/.test(String(c.id));
+    candidates = [...cands.filter(standIn), ...(current.replaced_events || []).filter(c => !ids.has(String(c.id)))];
     for (const c of current.replaced_events || []) replaces.add(String(c.id));
     paintAlso();
     paintReplaces();

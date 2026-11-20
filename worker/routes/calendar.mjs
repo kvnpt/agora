@@ -27,6 +27,7 @@
 import { pageOf, findEvent } from './pages.mjs';
 import { fetchWindowRows } from '../lib/expand.mjs';
 import { collectionFeed } from '../lib/lite-page.mjs';
+import { crossRows, hostedDates } from '../lib/taking-part.mjs';
 import { cachedHtml } from '../lib/data-version.mjs';
 import { calendarText } from '../lib/ics.mjs';
 import { identityOf } from '../lib/calendar-links.mjs';
@@ -122,14 +123,17 @@ async function feedText(env, origin, route, now, name = null) {
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?`
     ).bind(w.fromUtc, w.toUtc).all(),
-    env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all().catch(() => ({ results: [] })),
+    crossRows(env.DB),
   ]);
   const mine = new Set(ids);
   if (named.length > 1) rows.schedules = rows.schedules.filter(s => mine.has(s.parish_id));
+  // Another parish's service on a date one of these takes part in (migration
+  // 041): not among their rules, so read on its own.
+  const hosted = await hostedDates(env.DB, ids, w.fromUtc.slice(0, 10), w.toUtc.slice(0, 10));
   const feed = collectionFeed({
     rows,
-    events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
-    cross: cross.results || [], parishIds: ids, named: ids, route, now: w.from, days: w.days,
+    events: [...(events.results || []).map(({ updated_by, ...e }) => e), ...hosted],   // eslint-disable-line no-unused-vars
+    cross, parishIds: ids, named: ids, route, now: w.from, days: w.days,
   });
   const parishes = await parishesFor(env.DB, feed, new Map(named.map(p => [p.id, p])));
   return calendarText({ name: name || calendarName(route, named), events: feed, parishes, origin, now });
@@ -216,13 +220,13 @@ export async function savedText(env, origin, marks, now) {
          FROM events e JOIN parishes p ON e.parish_id = p.id
          WHERE e.source_adapter != 'schedule' AND e.parish_id IN (${inList(ids.length)}) AND e.start_utc >= ? AND e.start_utc <= ?`
       ).bind(...ids, w.fromUtc, w.toUtc).all(),
-      db.prepare('SELECT event_id, parish_id FROM event_parishes').all().catch(() => ({ results: [] })),
+      crossRows(db),
     ]);
     if (ids.length > 1) rows.schedules = rows.schedules.filter(s => mine.has(s.parish_id));
     const feed = collectionFeed({
       rows,
       events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
-      cross: cross.results || [], parishIds: ids, named: ids, route: {}, now: w.from, days: w.days,
+      cross, parishIds: ids, named: ids, route: {}, now: w.from, days: w.days,
     });
     kept = feed.filter(e => (e.schedule_id != null && ruleIds.has(String(e.schedule_id))) || dateIds.has(String(e.id)));
   }

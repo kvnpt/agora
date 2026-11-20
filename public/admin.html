@@ -4067,14 +4067,15 @@
           <div class="ask-meta">${esc(n.owner_name)}${n.seen ? '' : ' \u00b7 new'}</div>
           <div class="btn-row">
             <button class="btn btn-outline" data-notice-withdraw="${esc(n.parish_id)}"
-                    data-notice-event="${n.event_id}">Take my parish out</button>
+                    data-notice-event="${esc(String(n.event_id))}">Take my parish out</button>
             ${n.seen ? '' : `<button class="btn btn-outline" data-notice-seen="${esc(n.parish_id)}"
                     data-notice-event="${n.event_id}">Mark read</button>`}
           </div>
         </div>`).join('');
 
       el.querySelectorAll('[data-notice-withdraw]').forEach(b =>
-        b.addEventListener('click', () => withdrawParish(b.dataset.noticeWithdraw, Number(b.dataset.noticeEvent))));
+        // An event's integer id, or a date of a service ("sid:YYYY-MM-DD", migration 041).
+        b.addEventListener('click', () => withdrawParish(b.dataset.noticeWithdraw, /^\d+$/.test(b.dataset.noticeEvent) ? Number(b.dataset.noticeEvent) : b.dataset.noticeEvent)));
       el.querySelectorAll('[data-notice-seen]').forEach(b =>
         b.addEventListener('click', () => markNoticeSeen(b.dataset.noticeSeen, Number(b.dataset.noticeEvent))));
     }
