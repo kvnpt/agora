@@ -211,7 +211,7 @@ async function findParish(db, slug) {
 }
 
 /** The event a bare id names, and its parish. Null when neither can be found. */
-async function findEvent(db, id) {
+export async function findEvent(db, id) {
   const inst = parseInstanceId(id);
   if (inst) {
     const ev = await expandOne(db, inst.scheduleId, inst.date);

@@ -1526,6 +1526,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .lck { color: var(--accent); opacity: 0; }
 .lrow.on .lck { opacity: 1; }
 .lrow.new { color: var(--accent); }
+/* The Saved calendar's links, under a whole service just saved (next.js offerSavedCalendar). */
+.savecal:not(:empty) { margin: 14px 0 6px; }
 
 /* A menu out of the button tapped (next.js openMenu): the account's, a card's ⋯. */
 .popmenu {

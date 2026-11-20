@@ -13,6 +13,7 @@ import { registerIngestRoutes } from './routes/ingest.mjs';
 import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
+import { serveCalendar } from './routes/calendar.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
 import { adminHostRedirect, subdomainRedirect } from './lib/admin-host.mjs';
 import slugs from '../public/shared/slugs.js';
@@ -150,6 +151,12 @@ export default {
     if (path.startsWith('/api/') || path === '/health') {
       return json({ error: 'Not found' }, 404);
     }
+    // A link with .ics on the end is its calendar (routes/calendar.mjs).
+    const cal = await serveCalendar(request, env, ctx).catch((err) => {
+      console.error(`[calendar] ${path}: ${err && err.message}`);
+      return new Response('No calendar here.\n', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    });
+    if (cal) return cal;
     // A page is v3 with this link's head (routes/pages.mjs); a file, and any
     // failure, is the asset layer's.
     const page = await servePage(request, env, ctx).catch(() => null);

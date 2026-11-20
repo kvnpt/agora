@@ -1288,6 +1288,21 @@ CREATE TABLE saved_items (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- calendar_links — a person's own calendar
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Migration 040. One private link per account, /saved/<token>.ics, which a
+-- phone subscribes to once and which follows what the person Saves. The token
+-- is 128 random bits and the only key a calendar server ever sees; `email` is
+-- the address Access verified, lower-cased, as saved_items is. See
+-- worker/lib/calendar-links.mjs.
+CREATE TABLE calendar_links (
+  token      TEXT PRIMARY KEY,
+  email      TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- whatsapp_links, whatsapp_codes, whatsapp_messages — posters by WhatsApp
 -- ─────────────────────────────────────────────────────────────────────────
 --

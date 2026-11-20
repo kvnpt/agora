@@ -78,6 +78,12 @@ for them, are in the doc it links to — read that before changing the area.
 - A box on the page is drawn with `paint` (`public/shared/morph.js`), never
   `innerHTML`: a row keeps its element and its pictures by its name, and an
   island (`data-keep`) is the scripts' own.
+- A link's calendar is the link + `.ics`: the lens's dates written out one by
+  one (never an RRULE), each by its own id; a cancelled one stays, titled so.
+  Saved is the home for subscriptions: the page offers one date's file, and
+  subscriptions only to what a person keeps (Saved, `/saved/<token>.ics`, and
+  their lists, `/saved/<token>/<list>.ics`), never one per service. A
+  parish's own link is for a poster, offered after Favourites or a list.
 - A synthetic id is `"<scheduleId>:YYYY-MM-DD"`. The feed widens, never shrinks.
   A date segment is a FROM, never a single day.
 
