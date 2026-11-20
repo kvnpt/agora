@@ -288,10 +288,9 @@ waits; no language is "No language"), **violet** different from what is on
 file (a programme's 8:15 against the timetable's 8am, a date's own subtitle,
 an edit not yet saved), and **grey**, faint and thin, as it is. What was read
 off the poster or the WhatsApp words is grey too, with a small **green dot**
-to its left (Kevin, 20 Nov 2026: "Normal dotted colour for underline", then
-"Green dot to the left of each item"), hung in the card's margin so the dots
-make one column down its left edge and the words stay in line; a part later
-in its line (the end time) carries its dot in the line. Green and amber go grey once the part has
+inside it, before its words (Kevin, 20 Nov 2026: "Normal dotted colour for
+underline", then "inside each text object as an embellishment of the scanned
+text"; not hung in the margin). Green and amber go grey once the part has
 been opened: Add event sends the same value back, which drops the read's mark
 and note (`drafts.mjs updateCard`). Nothing over the cards counts the colours
 and there is no key (Kevin, 20 Nov 2026: "get rid of the counts … and the key
@@ -313,15 +312,20 @@ instead of separate dropdown"): this date (or event) only and the file picker
 opens in that same tap; every date of the service as its own; or a range of
 the service's dates or the parish's, whose From and Until open under the
 poster first, then **Choose the image**.
-**What the date is goes in a menu out of the date** (Kevin, 20 Nov 2026:
-"cancel, break, more should all just go into a menu presented when tapping
-the date"): **Edit series** (the service's form), Cancel or Uncancel, Break…,
-Suppress, Include other parishes, No live badge and Delete, whichever this
-person may do; a one-off's starts with **Change the date**, which opens the
-date's fields. A date of a service carries ⟳ after it, part of it (tapping
-either is the same), and is **violet** while something holds it otherwise:
-cancelled, on a break, suppressed, combined, or a live badge other than its
-service's. There is no row of buttons on the card. A part closes on the click outside it, never the press, so a
+**A date of a service: what the date is goes in a menu out of the date**
+(Kevin, 20 Nov 2026: "cancel, break, more should all just go into a menu
+presented when tapping the date"): **Edit series** (the service's form),
+Cancel or Uncancel, Break…, Suppress and No live badge, whichever this person
+may do. The date carries ⟳ after it, part of it (tapping either is the same),
+and is **violet** while something holds it otherwise: cancelled, on a break,
+suppressed, combined, or a live badge other than its service's.
+**A one-off** (the same night): its date opens its fields, as any part does.
+Its foot is its context, as an event card's foot is (where the calendar
+feeds are): whose it is (the parish, when there is a choice), **Include other
+parishes…** as a pill, who is taking part, and No live badge. **Cancel and
+Delete** are a neutral bin floating at the bottom of the card, where the
+event card's own toolbar sits (`.cf-floatbar`); it asks which. There is no
+row of buttons on either card. A part closes on the click outside it, never the press, so a
 button under an open panel has not moved by the time the click lands. Without
 card-face.js loaded the forms are the rows, as they were.
 

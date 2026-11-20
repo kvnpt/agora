@@ -1462,13 +1462,17 @@
   // changes of its service, and what is changed and not yet saved, is
   // violet; anything needed and not there, red; the rest grey.
   //
-  // What the date is goes in a menu out of the date (Kevin, 20 Nov 2026:
-  // "cancel, break, more should all just go into a menu presented when
-  // tapping the date"): Edit series, Cancel, Break…, Suppress, Include other
-  // parishes, No live badge, Delete; a one-off's starts with Change the date.
-  // A date of a service carries ⟳ after it, as part of it, and is violet
-  // while one of those holds it (cancelled, on a break, suppressed, no live
-  // badge where its service has one).
+  // A date of a service: what the date is goes in a menu out of the date
+  // (Kevin, 20 Nov 2026: "cancel, break, more should all just go into a menu
+  // presented when tapping the date"): Edit series, Cancel, Break…, Suppress,
+  // No live badge. It carries ⟳ after it, as part of it, and is violet while
+  // one of those holds it (cancelled, on a break, suppressed, no live badge
+  // where its service has one).
+  //
+  // A one-off (Kevin, the same night): its date opens the date's fields, as
+  // any part does; Include other parishes and No live badge are at the foot
+  // with whose event it is, the card's context; Cancel and Delete are a
+  // neutral bin floating at the bottom, where the card's own toolbar is.
 
   const FACE_GROUPS = { title: ['title'], feast: ['feast'], description: ['description'], date: ['date', 'lastday'],
     time: ['time'], where: ['where'], languages: ['languages'] };
@@ -1498,7 +1502,8 @@
       <div class="cf-fact" data-f="time">${F.ICON.clock}<span class="cf-fact-t"></span></div>
       <div class="cf-fact" data-f="where">${F.ICON.where}<span class="cf-fact-t"></span></div>
       <div class="cf-fact" data-f="languages">${F.ICON.chat}<span class="cf-fact-t"></span></div>
-      <div class="cf-desc" data-f="description"></div>`);
+      <div class="cf-desc" data-f="description"></div>
+      ${series ? '' : '<div class="cf-context" data-f="context"></div>'}`);
     const P = (name) => form.querySelector(`[data-f="${name}"]`);
     const rows = (name) => (FACE_GROUPS[name] || []).map(r => form.querySelector(`[data-cf-row="${r}"]`)).filter(Boolean);
     // Public / Parish only beside the kind's pill, where the card says it.
@@ -1527,7 +1532,7 @@
       return false;
     };
     let open = null;
-    // Held otherwise than it would be: what the date menu sets.
+    // A date of a service held otherwise than it would be: what its menu sets.
     const altered = () => {
       const live = q('hide_live') ? q('hide_live').checked : false;
       return !!state || dirty('hide_live') || (rule ? live !== !!rule.hide_live : live);
@@ -1557,7 +1562,7 @@
       const day = F.dayText(date, multi ? val('last') : '', thisYear);
       F.draw(P('date').querySelector('.cf-fact-t'), series
         ? F.part('date', day, st({ changed: altered() }), { label: `Date, one of ${repeatsText(series.rule).replace(/^Repeats /, '')}`, after: `<span class="cf-rep">${F.ICON.repeat}</span>` })
-        : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') || altered() }), { empty: !day, label: 'Date' }));
+        : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') }), { empty: !day, label: 'Date' }));
 
       const a = val('start_time'), b = val('end_time');
       const usual = rule && (fromRule('start_time') || fromRule('end_time')) && rule.start_time
@@ -1600,9 +1605,9 @@
       for (const name of ['title', 'feast', 'description']) P(name).classList.toggle('cf-off', open === name);
     }
 
-    function openPart(key, btn, { fields = false } = {}) {
+    function openPart(key, btn) {
       if (key === 'event_type') return kindMenu(btn);
-      if (key === 'date' && !fields) return open === 'date' ? closePart() : dateMenu(btn);
+      if (key === 'date' && series) return dateMenu(btn);
       const g = FACE_OF[key];
       if (!g || (g === 'date' && series)) return;
       if (open === g) return closePart();
@@ -1639,21 +1644,16 @@
       ] : []));
     }
 
-    // What the date is, in one menu out of it: the service it is a date
-    // of, then what holds this date. Each row presses the hidden form's own
-    // button (.ev-tools), so it asks and does what it always has.
+    // What a date of a service is, in one menu out of it: the service, then
+    // what holds this date. Each row presses the hidden form's own button
+    // (.ev-tools), so it asks and does what it always has.
     function dateMenu(btn) {
       const items = [];
-      if (series) {
-        if (seriesBtn) items.push({ label: 'Edit series', sub: repeatsText(series.rule), icon: F.ICON.repeat, run: () => seriesBtn.click() });
-      } else {
-        items.push({ label: 'Change the date', sub: 'Or make it several days', icon: F.ICON.cal, run: () => openPart('date', btn, { fields: true }) });
-      }
-      if (items.length) items.push({ sep: true });
+      if (seriesBtn) items.push({ label: 'Edit series', sub: repeatsText(series.rule), icon: F.ICON.repeat, run: () => seriesBtn.click() }, { sep: true });
       const can = tool('[data-ev-tool="cancel"]');
       if (can) items.push(cancelled
         ? { label: 'Uncancel', sub: 'Back on, as usual', icon: F.ICON.undo, run: () => can.click() }
-        : { label: series ? 'Cancel this date' : 'Cancel the event', sub: 'Stays on show, struck through', icon: F.ICON.cancel, run: () => can.click() });
+        : { label: 'Cancel this date', sub: 'Stays on show, struck through', icon: F.ICON.cancel, run: () => can.click() });
       if (breakBtn) items.push(e.status === 'break'
         ? { label: 'The break', sub: 'Change it, or lift it', icon: F.ICON.pause, run: () => breakBtn.click() }
         : { label: 'Break…', sub: 'Not on for a while', icon: F.ICON.pause, run: () => breakBtn.click() });
@@ -1661,14 +1661,48 @@
       if (sup) items.push(hidden
         ? { label: 'Unsuppress', sub: 'Back in the feed', icon: F.ICON.eye, run: () => sup.click() }
         : { label: 'Suppress this date', sub: 'Gone from the feed, not cancelled', icon: F.ICON.eyeoff, run: () => sup.click() });
-      const comb = tool('[data-ev-combine]');
-      if (comb) items.push({ label: 'Include other parishes…', icon: F.ICON.plus, run: () => comb.click() });
       const live = q('hide_live');
       if (live) items.push({ label: 'No live badge', icon: F.ICON.live, toggle: live.checked,
         run: () => { live.checked = !live.checked; f.markDirty(); paintFace(); } });
-      const del = tool('[data-ev-delete]');
-      if (del) items.push({ sep: true }, { label: 'Delete', sub: 'Gone for good', icon: F.ICON.trash, danger: true, run: () => del.click() });
       F.menu(btn, items);
+    }
+
+    // A one-off's foot: whose it is (the parish row, when there is a choice),
+    // then the parishes it includes, then No live badge; and its bin.
+    if (!series) {
+      const ctx = P('context');
+      const comb = tool('[data-ev-combine]');
+      const added = (e.combined_parishes || ((root.agoraBundle && root.agoraBundle.raw && root.agoraBundle.raw.event_parishes) || [])
+        .filter(x => String(x.event_id) === String(e.id)).map(x => x.parish_id))
+        .map(id => host.parish(id)).filter(p => p && p.id !== e.parish_id);
+      if (comb) {
+        F.draw(ctx, `<button type="button" class="pill-btn cf-include" data-cf-include>${F.ICON.plus}<span>Include other parishes…</span></button>`
+          + (added.length ? `<p class="cf-taking">Taking part: ${added.map(p => esc(p.name)).join(', ')}</p>` : ''));
+        ctx.addEventListener('click', (ev) => { if (ev.target.closest('[data-cf-include]')) comb.click(); });
+      }
+      const liveRow = form.querySelector('[data-cf-row="live"]');
+      if (liveRow) liveRow.classList.add('cf-live');
+      // The bin, floating at the bottom of the card where its toolbar is
+      // (next.css .floatbar): neutral, and it asks which.
+      const can = tool('[data-ev-tool="cancel"]');
+      const del = tool('[data-ev-delete]');
+      const sheet = form.closest('.form-sheet');
+      if (sheet && (can || del)) {
+        const bar = document.createElement('div');
+        bar.className = 'cf-floatbar';
+        bar.setAttribute('role', 'toolbar');
+        bar.innerHTML = `<button type="button" aria-label="${del ? 'Cancel or delete' : 'Cancel'}" aria-haspopup="menu" title="${del ? 'Cancel or delete' : 'Cancel'}">${F.ICON.trash}</button>`;
+        sheet.append(bar);
+        sheet.classList.add('has-cf-floatbar');
+        bar.firstElementChild.addEventListener('click', (ev) => {
+          const items = [];
+          if (can) items.push(cancelled
+            ? { label: 'Uncancel', sub: 'Back on, as it was', icon: F.ICON.undo, run: () => can.click() }
+            : { label: 'Cancel the event', sub: 'Stays on show, struck through', icon: F.ICON.cancel, run: () => can.click() });
+          if (del) items.push({ label: 'Delete', sub: 'Gone for good', icon: F.ICON.trash, danger: true, run: () => del.click() });
+          F.menu(ev.currentTarget, items);
+        });
+      }
     }
 
     form.addEventListener('click', (ev) => {

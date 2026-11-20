@@ -1021,9 +1021,10 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
    so its dots are faint and thin; amber, red and violet ask something of
    the person and stay strong (Kevin, 20 Nov 2026: "dotted lines less
    prominent unless orange or more"). What was read off the poster is grey
-   too, with a small green dot to the left of it ("Normal dotted colour for
-   underline"; "Green dot to the left of each item"). A part is its own box
-   (inline-block), so the dot is the words', however they wrap.
+   too, with a small green dot inside it, before its words ("Normal dotted
+   colour for underline"; "Green dot to the left of each item"; "inside each
+   text object as an embellishment of the scanned text"). A part is its own
+   box (inline-block), so the dot is the words', however they wrap.
    --cf-line and --cf-w are the dots' colour and weight, for the kind's pill too. */
 .cf-u {
   --cf-line: color-mix(in srgb, var(--cf-as) 50%, transparent); --cf-w: 1.5px;
@@ -1135,21 +1136,15 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
   font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
 }
 .cf-desc-from + .cf-desc { margin-top: 8px; }
-/* Hung in the card's margin, one column of them down its left edge, so the
-   words stay in line with the rest: a fact's left of its sign, the words'
-   left of their box. A part after another in its line (the end time)
-   carries its dot in the line. */
+/* In the part, before its words: its own inline-block, so the part's
+   dotted line does not run under it. */
 .cf-u.cf-read::before, .cf-kpill.cf-read::before {
-  content: ''; position: absolute; left: -13px; top: calc(.5lh - 3.5px); width: 7px; height: 7px;
-  border-radius: 50%; background: var(--cf-read); pointer-events: none;
+  content: ''; display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 7px 0 0;
+  border-radius: 50%; background: var(--cf-read); vertical-align: middle; pointer-events: none;
 }
-@supports not (top: 1lh) { .cf-u.cf-read::before { top: calc(.62em - 3.5px); } }
-/* A fact's words start after its sign (20px) and the gap (12px). */
-.cf-fact-t > .cf-u.cf-read:first-child::before { left: -45px; }
-.cf-desc:not(.cf-desc-empty) .cf-u.cf-read::before { left: -28px; }
-.cf-dash + .cf-u.cf-read { margin-left: 4px; }
-.cf-dash + .cf-u.cf-read::before { position: static; display: inline-block; margin: 0 6px 0 0; vertical-align: middle; }
-.cf-kpill.cf-read::before { top: calc(50% - 3.5px); }
+.cf-title .cf-u.cf-read::before { width: 9px; height: 9px; margin-right: 9px; }
+/* In the kind's pill, before the kind. */
+.cf-kpill.cf-read::before { margin: 0 2px 0 -3px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--card, #fff) 70%, transparent); }
 .cf-desc .cf-u { display: block; width: 100%; white-space: pre-wrap; text-underline-offset: 5px; }
 .cf-desc.cf-desc-empty .cf-u { display: inline-block; width: auto; }
 .cf-desc.cf-desc-empty { padding: 0; background: none; box-shadow: none; }
@@ -1249,9 +1244,14 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .cf-card.is-face > [data-f="languages"], .cf-card.is-face > [data-cf-row="languages"] { order: 70; }
 .cf-card.is-face > [data-f="description"], .cf-card.is-face > [data-cf-row="description"] { order: 72; }
 .cf-card.is-face > [data-cf-row="parish"] { order: 85; margin-top: 22px; }
+/* A one-off's context, at its foot with whose it is (Kevin, 20 Nov 2026):
+   the parishes it includes, then No live badge. */
+.cf-card.is-face > [data-f="context"] { order: 86; margin-top: 12px; }
+.cf-card.is-face > [data-f="context"]:empty { display: none; }
+.cf-card.is-face > [data-cf-row="live"].cf-live { order: 87; margin-top: 14px; }
 .cf-card.is-face > .rf-error { order: 95; }
 .cf-card.is-face > .form-actions { order: 99; }
-.cf-card.is-face > :is(.ev-tools, .ev-series, [data-cf-row="kind"], [data-cf-row="live"]),
+.cf-card.is-face > :is(.ev-tools, .ev-series, [data-cf-row="kind"], [data-cf-row="live"]:not(.cf-live)),
 .cf-card.is-face > :is([data-cf-row="title"], [data-cf-row="feast"], [data-cf-row="description"], [data-cf-row="date"],
   [data-cf-row="lastday"], [data-cf-row="time"], [data-cf-row="where"], [data-cf-row="languages"]):not(.cf-on),
 .cf-card.is-face > .cf-off { display: none !important; }
@@ -1301,6 +1301,31 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
 .cf-fab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .4)); }
 .cf-fab svg { width: 20px; height: 20px; }
 .cf-fab-danger { color: var(--danger, #d92d20); }
+/* Include other parishes, a pill at the foot, and who is taking part. */
+.cf-include svg { flex: none; width: 17px; height: 17px; }
+.cf-taking { margin: 8px 2px 0; font-size: 13.5px; color: var(--cf-ink-2); }
+/* A one-off's bin, floating at the bottom of the card as the event card's
+   own toolbar does (next.css .floatbar), neutral: it asks Cancel or Delete. */
+.form-sheet.has-cf-floatbar { position: relative; }
+.form-sheet.has-cf-floatbar .frame-body { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+.cf-floatbar {
+  position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3;
+  transform: translateX(-50%); display: flex; padding: 3px; border-radius: 24px;
+  background: var(--glass-solid, rgba(250, 250, 252, .97)); border: 1px solid var(--glass-line, rgba(255, 255, 255, .6));
+  box-shadow: var(--shadow-lift, 0 10px 40px rgba(0, 0, 0, .18));
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .cf-floatbar { background: var(--glass, rgba(255, 255, 255, .72)); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+.cf-floatbar button {
+  width: 46px; height: 40px; padding: 0; border: 0; border-radius: 20px; display: grid; place-items: center;
+  color: var(--text); background: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.cf-floatbar button svg { width: 23px; height: 23px; }
+.cf-floatbar button:active, .cf-floatbar button[aria-expanded="true"] { background: var(--line, rgba(60, 60, 67, .12)); }
+.cf-floatbar button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .3)); }
+/* Typing, it would sit on the keyboard. */
+.form-sheet-back.fs-kb .cf-floatbar { display: none; }
 /* A range from the menu: which, its two days, then the picture. */
 .cf-poster-range { margin-top: 12px; }
 .cf-poster-range > p { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--text); }
