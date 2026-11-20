@@ -76,7 +76,9 @@ CalDAV calendar there would be a second copy of the dates that goes stale.
 person, collected by Save, never one per service; a parish's own link for
 people who never open the app). An event card's calendar button adds that date
 alone, as a file (`/<id>.ics`, or Google's own add page); its menu also offers
-"Every Sunday", which is Save. The Saved card's Add to calendar is **one private
+"Every Sunday", which is Save. Saving a whole service, from there or the Save
+sheet, shows the Saved calendar's links there and then, so nobody has to go to
+the Saved card for them. The Saved card's Add to calendar is **one private
 link per account**, `/saved/<token>.ics`, that follows what the account saves
 (`worker/lib/calendar-links.mjs`, `calendar_links`, migration 040). Favourites
 and each list of one's own are calendars too, under the same token

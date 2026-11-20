@@ -4819,6 +4819,7 @@
           <button class="lrow${isMarked('rule', rid) ? ' on' : ''}" type="button" data-mark="rule" data-id="${esc(rid)}">
             <span class="lic">${I.bookmark}</span><span class="ln"><b>Every ${esc(WD_LONG[r.day_of_week])}, ${esc(clock(r.start_time))}</b><small>Every date of this service</small></span><span class="lck">${I.check}</span></button>
         </div>
+        <div class="savecal" data-savecal></div>
       </div>`;
     pushSheet(html, 'mini');
   }
@@ -4977,6 +4978,30 @@
       head: menuNote('One calendar of what you save', 'It keeps up as you save and remove things. The link is yours alone.'),
       https: location.origin + path, name: 'Saved · orthodoxy.au',
     });
+  }
+  /**
+   * In the Save sheet, the moment a whole service is saved: the Saved
+   * calendar's links right there, so nobody has to go to the Saved card for
+   * them (Kevin, 20 Nov 2026).
+   */
+  async function offerSavedCalendar(box) {
+    const row = (attrs, icon, title, note) =>
+      `<a class="lrow" ${attrs}><span class="lic">${icon}</span><span class="ln"><b>${esc(title)}</b>${note ? `<small>${esc(note)}</small>` : ''}</span></a>`;
+    if (!S.who.signedIn) {
+      paint(box, `<p class="lay-note">It is in your Saved list. Sign in, and Saved becomes one calendar on your phone that keeps up with everything you save.</p>
+        <div class="lists">${row(`href="${esc(signInHref())}" data-sign-in`, I.signIn, 'Sign in', '')}</div>`);
+      return;
+    }
+    const path = await accountCalendar();
+    if (!path || !box.isConnected) return;
+    const https = location.origin + path, webcal = https.replace(/^https?:/, 'webcal:');
+    paint(box, `<p class="lay-note">It is in your Saved calendar. Add that to your phone's calendar once, and everything you save comes with it.</p>
+      <div class="lists">${calOrder(
+        row(`href="${esc(webcal)}"`, I.calAdd, 'Apple Calendar', 'iPhone, iPad and Mac'),
+        row(`href="https://calendar.google.com/calendar/r?cid=${esc(encodeURIComponent(webcal))}" target="_blank" rel="noopener"`, I.calAdd, 'Google Calendar', 'Google looks again about once a day'),
+        [row(`href="https://outlook.live.com/calendar/0/addfromweb?url=${esc(encodeURIComponent(https))}&amp;name=${esc(encodeURIComponent('Saved · orthodoxy.au'))}" target="_blank" rel="noopener"`, I.calAdd, 'Outlook', ''),
+          `<button class="lrow" type="button" data-act="cal-copy" data-url="${esc(https)}"><span class="lic">${I.link}</span><span class="ln"><b>Copy link</b><small>For another calendar app</small></span></button>`],
+      )}</div>`);
   }
   /** A list's calendar, Favourites ('fav') or one of your own: its parishes, following the list. */
   async function openListCalendar(btn, listId) {
@@ -5791,8 +5816,12 @@
     if ((b = t.closest('[data-poster]'))) { openPoster(b.dataset.poster); return; }
     if ((b = t.closest('[data-mark]'))) {
       toggleMark(b.dataset.mark, b.dataset.id);
-      b.classList.toggle('on', isMarked(b.dataset.mark, b.dataset.id));
+      const on = isMarked(b.dataset.mark, b.dataset.id);
+      b.classList.toggle('on', on);
       afterMarks();
+      // A whole service just saved: its calendar link there and then.
+      const box = b.dataset.mark === 'rule' && b.closest('.sheet')?.querySelector('[data-savecal]');
+      if (box) { if (on) offerSavedCalendar(box); else paint(box, ''); }
       return;
     }
     if ((b = t.closest('[data-view]'))) { openView(b.dataset.view); return; }
