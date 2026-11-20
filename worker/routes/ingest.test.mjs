@@ -956,3 +956,65 @@ test('Asks shows a WhatsApp sender’s number; Start a draft opens it as a forwa
   assert.equal((await g.call('POST', `/api/admin/suggestions/${y.id}/decide`, { decision: 'dismiss', note: 'Old' })).status, 200);
   assert.deepEqual(g.env.ASSETS_BUCKET.deleted.sort(), [y.poster_path.slice(1), y.images[0].slice(1)].sort());
 });
+
+// ── Gorgon: a scan's PDF for the chant editor (worker/routes/ingest.mjs toGorgon) ──
+
+/** Gorgon's GorgonWhatsApp entrypoint, faked: waits under one code, or for a linked email. */
+function fakeGorgon({ code = '482193', email = null } = {}) {
+  const calls = [];
+  let phone = null;
+  const mine = ({ from, text, linkedEmail }) => (text && text.includes(code.slice(3))) || from === phone || (email && linkedEmail === email);
+  return {
+    calls,
+    async message(m) {
+      calls.push(['message', m]);
+      if (m.kind === 'text') { phone = m.from; return { take: 'code', reply: 'Got it. Now share the PDF.' }; }
+      return mine(m) ? { take: 'pdf' } : { take: null };
+    },
+    async deliver(m) {
+      calls.push(['deliver', { ...m, bytes: new Uint8Array(m.bytes).length }]);
+      return { reply: 'Got it. Your PDF is opening in Gorgon.' };
+    },
+  };
+}
+const pdfDoc = (caption = null) => ({ type: 'document', document: { id: 'D1', mime_type: 'application/pdf', filename: 'Kontakion.pdf', ...(caption ? { caption } : {}) } });
+
+test('Gorgon: its code is answered by Gorgon, and the PDF after it is handed over', async () => {
+  const f = fresh();
+  f.env.GORGON = fakeGorgon();
+  f.graph.media.set('D1', { mime: 'application/pdf', bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 1, 2]) });
+  await f.deliver([text('Gorgon code 482 193')]);
+  await f.deliver([pdfDoc()]);
+  assert.deepEqual(f.env.GORGON.calls.map(c => c[0]), ['message', 'message', 'deliver']);
+  assert.equal(f.env.GORGON.calls[2][1].bytes, 6);
+  assert.equal(f.env.GORGON.calls[2][1].filename, 'Kontakion.pdf');
+  assert.deepEqual(f.graph.texts(), ['Got it. Now share the PDF.', 'Got it. Your PDF is opening in Gorgon.']);
+  assert.equal(f.drafts().length + f.suggestions().length, 0);
+});
+
+test('Gorgon: a linked phone’s PDF goes with its account’s email', async () => {
+  const f = fresh();
+  f.link();
+  f.env.GORGON = fakeGorgon({ email: 'dev' });
+  f.graph.media.set('D1', { mime: 'application/pdf', bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]) });
+  await f.deliver([pdfDoc()]);
+  assert.equal(f.env.GORGON.calls[0][1].linkedEmail, 'dev');
+  assert.deepEqual(f.graph.texts(), ['Got it. Your PDF is opening in Gorgon.']);
+});
+
+test('Gorgon: a PDF nobody waits for, or Gorgon unreachable, gets the usual answer', async () => {
+  const f = fresh();
+  f.env.GORGON = fakeGorgon();
+  await f.deliver([pdfDoc()]);
+  f.env.GORGON = { async message() { throw new Error('down'); } };
+  await f.deliver([pdfDoc()]);
+  const pdf = 'I can read pictures and text, not PDFs yet. Send a screenshot of it instead.';
+  assert.deepEqual(f.graph.texts(), [pdf, pdf]);
+});
+
+test('Gorgon: ordinary words and link codes never reach it', async () => {
+  const f = fresh();
+  f.env.GORGON = fakeGorgon();
+  await f.deliver([text('123 456')]);
+  assert.equal(f.env.GORGON.calls.length, 0);
+});

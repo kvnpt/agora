@@ -59,6 +59,16 @@ enabled = true
 binding = "ASSETS_BUCKET"
 bucket_name = "agora-assets"
 
+# Gorgon (gorgon.orthodoxy.au, the chant notation editor) waits for a scan's
+# PDF at this WhatsApp number: the webhook asks it, through this binding to its
+# GorgonWhatsApp entrypoint, whether a PDF or a "Gorgon code" is its own
+# (worker/routes/ingest.mjs toGorgon). Not reachable from the web. Without it,
+# or with Gorgon down, every PDF gets the usual "not PDFs yet" answer.
+[[services]]
+binding = "GORGON"
+service = "gorgon"
+entrypoint = "GorgonWhatsApp"
+
 
 # What a Preview binds, and the whole of it: a Preview inherits NO binding, var
 # or secret from the top level. So a Preview reads and writes agora-preview, a
