@@ -1923,8 +1923,27 @@
     const box = $('#today');
     paint(box, html);
     box.hidden = !html;
-    // Yours, not the map's: the pin between them goes, and the edge is the card's own (next.css).
+    // Yours, not the map's: the edge between them says whose, a bookmark
+    // or a star in their colour for the map's pin (next.css, Kevin 19 Nov 2026).
     box.classList.toggle('mine', !!mode);
+    box.classList.toggle('mine-bm', mode === 'bm');
+    box.classList.toggle('mine-fav', mode === 'fav');
+    // Turned on or off, its sign grows in; drawn again as it was, it stays.
+    const edge = mode || 'map';
+    if (box.dataset.edge && box.dataset.edge !== edge && html) {
+      box.classList.remove('morph');
+      void box.offsetWidth;
+      box.classList.add('morph');
+      const done = (e) => {
+        if (e.animationName !== 'edge-morph') return;
+        box.classList.remove('morph');
+        box.removeEventListener('animationend', done);
+        box.removeEventListener('animationcancel', done);
+      };
+      box.addEventListener('animationend', done);
+      box.addEventListener('animationcancel', done);
+    }
+    box.dataset.edge = edge;
     clipToday();
   }
   /**
