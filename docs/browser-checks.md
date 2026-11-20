@@ -236,7 +236,7 @@ with a `<template>` holding the same markup (islands aside): the two must be
 window.openParishSheet(id)        // open a parish card without clicking the map
 window.agoraOpenEventSheet(id)    // open an event card by id, synthetic ids too
 window.NextEdit.editDetails(pid)  // the details pencil
-window.NextEdit.editLine([ruleId])// a date's Edit the service
+window.NextEdit.editLine([ruleId])// a date's Edit series
 window.NextEdit.editEvent(id)     // an event card's pencil
 window.NextEdit.addEvent(pid)     // the add-event editor, as Add + opens it
 window.NextEdit.addService(pid)   // Add schedule

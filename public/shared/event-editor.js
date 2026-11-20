@@ -600,6 +600,10 @@
   const LINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
   // A speech bubble: words that came by message (WhatsApp, routes/ingest.mjs).
   const WA_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.4A8.5 8.5 0 1 1 21 11.5z"/></svg>';
+  // The poster's own buttons, floated on it (Kevin, 20 Nov 2026): Tabler's
+  // "replace" and a bin, as card-face.js has them.
+  const REPLACE_ICON = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M21 11V8a2 2 0 0 0-2-2h-6l3 3m0-6-3 3"/><path d="M3 13v3a2 2 0 0 0 2 2h6l-3-3m0 6 3-3"/></svg>';
+  const BIN_ICON = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6m4-6v6"/><path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>';
   const UNLINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="M8 2v3M2 8h3M16 19v3M19 16h3"/></svg>';
   const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
   const convertPillHTML = () =>
@@ -709,21 +713,24 @@
         </div>
         <p class="paste-note" data-ee="paste-note" aria-live="polite" hidden></p>
         <div class="ee-poster-card" data-ee="poster" hidden>
-          <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
+          <div class="ee-thumb-wrap">
+            <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
+            <div class="cf-fabs">
+              <button type="button" class="cf-fab" data-ee="replace" aria-label="Replace the poster" title="Replace">${REPLACE_ICON}</button>
+              <button type="button" class="cf-fab cf-fab-danger" data-ee="remove-poster" aria-label="Remove the poster" title="Remove">${BIN_ICON}</button>
+            </div>
+          </div>
           <div class="ee-poster-side">
             <div class="ee-status" data-ee="status" aria-live="polite"></div>
             <div class="ee-read-notes" data-ee="read-notes" hidden></div>
             <div class="ee-poster-actions">
               <button type="button" class="ee-link" data-ee="retry" hidden>Try again</button>
               <button type="button" class="ee-link" data-ee="stop" hidden>Stop watching</button>
-              <button type="button" class="ee-link" data-ee="replace">Replace</button>
-              <button type="button" class="ee-link ee-link-danger" data-ee="remove-poster">Remove poster</button>
             </div>
           </div>
         </div>
       </div>
       <div class="ee-main">
-        <div class="ee-tally" data-ee="tally" aria-live="polite" hidden></div>
         <div class="ee-wa" data-ee="whatsapp" hidden></div>
         <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
@@ -1975,12 +1982,6 @@
     }
     if (FACE) {
       el.addEventListener('click', onFacePointer, true);
-      // The key, folded under its button over the cards.
-      $('tally').addEventListener('click', (e) => {
-        if (!e.target.closest('[data-ee="key"]')) return;
-        state.keyOpen = !state.keyOpen;
-        refreshTally();
-      });
     }
 
     function openFace(card, key, btn) {
@@ -2130,7 +2131,7 @@
       P.languages = langsShown ? stateOf(['languages'], !!langs) : '';
       E.languages.hidden = !langsShown;
       if (langsShown) {
-        F.draw(E.languages.querySelector('.cf-fact-t'), F.part('languages', langs || (occ ? 'As the service' : 'Add the languages'),
+        F.draw(E.languages.querySelector('.cf-fact-t'), F.part('languages', langs || (occ ? 'As the service' : 'No language'),
           P.languages, { empty: !langs, label: 'Languages' }));
       }
 
@@ -2168,29 +2169,6 @@
           .map(k => `<i class="cf-dot cf-${k}" title="${esc(F.WORDS[k])}"></i>`).join('');
         if (dots) card.els.chips.insertAdjacentHTML('beforeend', `<span class="cf-dots">${dots}</span>`);
       }
-      refreshTally();
-    }
-
-    /**
-     * Over the cards, how many parts still ask something of the person, and
-     * the key to the colours (Kevin, 19 Nov 2026). No "From the poster" and
-     * no count of what was read (Kevin, 20 Nov 2026): "2 to check · Key", or
-     * the Key alone while only green and grey are on the cards.
-     */
-    function refreshTally() {
-      const box = $('tally');
-      if (!box || !FACE) return;
-      const sum = { miss: 0, chg: 0, guess: 0, read: 0 };
-      for (const c of state.cards) {
-        if (!c.counts || discarding(c) || c.publish.state === 'done') continue;
-        for (const k of Object.keys(sum)) sum[k] += c.counts[k];
-      }
-      const coloured = Object.values(sum).some(Boolean);
-      box.hidden = !coloured;
-      if (!coloured) return;
-      const html = `<div class="cf-tally">${FACE.tallyHTML(sum)}<button type="button" class="cf-keybtn" aria-expanded="${!!state.keyOpen}" data-ee="key">Key${FACE.ICON.down}</button></div>`
-        + (state.keyOpen ? FACE.legendHTML() : '');
-      FACE.draw(box, html);
     }
 
     /**

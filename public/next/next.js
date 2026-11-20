@@ -2795,7 +2795,7 @@
   /**
    * A parish's week. Its lines carry no pencil (Kevin, 19 Nov 2026): a line
    * opens its next date's card, for an editor as for anybody, and the
-   * service is changed from that date's Edit ("Edit the service", the line's
+   * service is changed from that date's Edit ("Edit series", the line's
    * days together or one of them). `only` keeps the lines that answer those
    * filters, as a collection's card has them (/services is its services); `focus` dims the
    * ones that do not, as a parish's own card has them (/sgr/talk). `among`:
@@ -6135,7 +6135,7 @@
           parish: (id) => S.byId.get(id),
           parishes: () => S.parishes,
           rule: (id) => S.rules.find(r => String(r.id) === String(id)),
-          // The rules of the timetable line a rule is on: a date's "Edit the service" edits the line.
+          // The rules of the timetable line a rule is on: a date's "Edit series" edits the line.
           line: (id) => {
             const r = S.rules.find(x => String(x.id) === String(id));
             return r ? [...lineRuleIds(r.parish_id, String(r.id))] : [String(id)];

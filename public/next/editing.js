@@ -209,7 +209,7 @@
   //
   // A rule's form (public/shared/rule-form.js), the same fields to add a
   // service as to edit one, in a dialog. Add is gated on `schedule.create`,
-  // Edit (a date's "Edit the service") on `schedule.edit` and Delete on `schedule.delete`, each at
+  // Edit (a date's "Edit series") on `schedule.edit` and Delete on `schedule.delete`, each at
   // the rule's parish. Every write at a parish read from somewhere asks
   // first whether to keep it by hand.
 
@@ -567,7 +567,7 @@
   }
 
   /**
-   * A timetable line's service, from a date's "Edit the service" (or the
+   * A timetable line's service, from a date's "Edit series" (or the
    * line itself, when it has no date to open). A line can be several rules
    * ("Mon–Fri 6pm Vespers" is five), edited together as the one service, or
    * one day of it on its own.
@@ -920,7 +920,7 @@
   }
 
   /** The poster: this date's or this event's, a range of them, or the service's own. */
-  function posterHTML(e, series, parish) {
+  function posterHTML(e, series, parish, face = null) {
     const has = !!e.poster_path;
     // The service's own poster shows here because this date has none; it is
     // the service's to change.
@@ -933,7 +933,22 @@
     const monthEnd = `${day.slice(0, 7)}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
     const name = e.title || 'service like this';
     const DF = RF().dateFieldHTML;
-    return `
+    // As the card (Kevin, 20 Nov 2026): at its top where the poster is, a
+    // blank box to add one, or the poster with Replace and Remove floated on
+    // its corner; a poster on several dates asks which to take it off.
+    const box = face ? (has ? `
+      <div class="rf-poster cf-poster">
+        <img class="cf-poster-img" alt="The poster" src="${esc(e.poster_path)}" data-evp-view>
+        <div class="cf-fabs">
+          <button class="cf-fab" type="button" data-evp-pick aria-label="${ruleOwn ? 'Put a different poster on this date' : 'Replace the poster'}" title="${ruleOwn ? 'A different one here' : 'Replace'}">${face.ICON.replace}</button>
+          ${!ruleOwn ? `<button class="cf-fab cf-fab-danger" type="button" data-evp-clear="${shared ? 'ask' : ''}" aria-label="Remove the poster" title="Remove">${face.ICON.trash}</button>` : ''}
+        </div>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
+      </div>` : `
+      <div class="rf-poster cf-poster">
+        <button class="cf-poster-blank" type="button" data-evp-pick>${face.ICON.picture}<b>Add an image</b><small>A poster or flyer for ${series ? 'this date' : 'this event'}</small></button>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
+      </div>`) : `
       <div class="rf-poster">
         <img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(e.poster_path)}"` : ' hidden'} data-evp-view>
         <div class="rf-poster-actions">
@@ -942,7 +957,8 @@
           ${shared ? '<button class="rf-btn danger" type="button" data-evp-clear="everywhere">Remove everywhere</button>' : ''}
         </div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
-      </div>
+      </div>`;
+    return `${box}
       ${ruleOwn ? `<div class="edit-row-hint">On every ${esc(name)}: the service’s own poster.
         ${series && host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Change it on the service</button>' : ''}</div>` : ''}
       <div class="ev-poster-scope"><span>Put ${ruleOwn ? 'a different one' : 'it'} on</span>
@@ -964,12 +980,12 @@
    * The poster box, live. It is drawn again from the bundle after each
    * upload, so what it offers (Remove, Remove everywhere) is what is there.
    */
-  function wirePoster(box, cur, { onSeries }) {
+  function wirePoster(box, cur, { onSeries, face = null }) {
     const paint = (msg = '', bad = false) => {
       const e = host.event(cur);
       if (!e) return;
       const parish = host.parish(e.parish_id);
-      box.innerHTML = posterHTML(e, seriesOf(e.id), parish);
+      box.innerHTML = posterHTML(e, seriesOf(e.id), parish, face);
       RF().wireDates(box, host.today());
       const st = box.querySelector('[data-evp-status]');
       st.textContent = msg;
@@ -1028,6 +1044,20 @@
         return input.click();
       }
       if (b.matches('[data-evp-clear]')) {
+        // The card's one bin, on a poster other dates show too: which.
+        if (b.dataset.evpClear === 'ask') {
+          const which = await askChoice({
+            title: 'Take the poster off?',
+            body: '<p>Other dates at this parish show this poster too.</p>',
+            choices: [{ value: 'one', label: 'From this one', danger: true },
+              { value: 'everywhere', label: 'From everything that shows it', danger: true }],
+          });
+          if (!which) return;
+          say('Removing…');
+          const res = await fetch(`/api/admin/events/${encodeURIComponent(cur)}/poster${which === 'everywhere' ? '?everywhere' : ''}`, { method: 'DELETE' }).catch(() => null);
+          if (!res || !res.ok) return say(res ? await errorText(res) : 'That did not go through. Check the connection.', true);
+          return after('Removed.');
+        }
         const everywhere = b.dataset.evpClear === 'everywhere';
         const go = await askChoice({
           title: everywhere ? 'Take this poster off everything that shows it?' : 'Take the poster off?',
@@ -1211,7 +1241,7 @@
         onChange: (id) => { q('parish_id').value = id; f.markDirty(); },
       });
     }
-    wirePoster(form.querySelector('[data-ev-poster]'), e.id, { onSeries: toService });
+    wirePoster(form.querySelector('[data-ev-poster]'), e.id, { onSeries: toService, face: root.AgoraCardFace || null });
 
     /** After a write: the page again from the bundle, and this card where it now is. */
     const done = async (msg, { to = e.id, through = null } = {}) => {
@@ -1399,6 +1429,9 @@
     if (kindRow) kindRow.dataset.cfRow = 'kind';
 
     const breakBtn = tool('[data-ev-break]');
+    // The service it is a date of: a pill by the date, in place of the box
+    // over the card (Kevin, 20 Nov 2026), for whoever may edit the service.
+    const seriesBtn = form.querySelector('.ev-series [data-ev-series]');
     const acts = [
       `<button type="button" class="cf-act${cancelled ? ' on' : ''}" data-cf-act="cancel">${cancelled ? F.ICON.undo : F.ICON.cancel}<span>${cancelled ? 'Uncancel' : series ? 'Cancel date' : 'Cancel event'}</span></button>`,
       breakBtn ? `<button type="button" class="cf-act" data-cf-act="break">${F.ICON.pause}<span>${e.status === 'break' ? 'The break' : 'Break…'}</span></button>` : '',
@@ -1465,7 +1498,7 @@
       const date = series ? series.date : val('date');
       const day = F.dayText(date, multi ? val('last') : '', thisYear);
       F.draw(P('date').querySelector('.cf-fact-t'), series
-        ? `<span class="cf-plain">${esc(day)}</span>`
+        ? `<span class="cf-plain">${esc(day)}</span>${seriesBtn ? `<button type="button" class="cf-series" data-cf-act="series" aria-label="Edit series: ${esc(repeatsText(series.rule))}" title="${esc(repeatsText(series.rule))}">${F.ICON.repeat}<span>Edit series</span></button>` : ''}`
         : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') }), { empty: !day, label: 'Date' }));
 
       const a = val('start_time'), b = val('end_time');
@@ -1490,7 +1523,7 @@
       P('languages').hidden = !service;
       if (service) {
         const langs = val('languages');
-        F.draw(P('languages').querySelector('.cf-fact-t'), F.part('languages', langs || 'Add the languages',
+        F.draw(P('languages').querySelector('.cf-fact-t'), F.part('languages', langs || 'No language',
           st({ value: !!langs, doubt: !series && !langs, changed: dirty('languages') || fromRule('languages') }), { empty: !langs, label: 'Languages' }));
       }
 
@@ -1577,6 +1610,7 @@
       const act = b.dataset.cfAct;
       if (act === 'cancel') tool('[data-ev-tool="cancel"]').click();
       else if (act === 'break' && breakBtn) breakBtn.click();
+      else if (act === 'series' && seriesBtn) seriesBtn.click();
       else if (act === 'more') moreMenu(b);
     });
     // Anything left open closes when somewhere else on the card is tapped:
