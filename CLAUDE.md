@@ -128,7 +128,7 @@ for them, are in the doc it links to — read that before changing the area.
   never narrowed to the person's own.
 - Signed in is not editing: details and events open behind their own pencil;
   the timetable carries Add +, and its lines no pencil: a service is edited
-  from a date's Edit ("Edit series", by its date), for whoever may edit it.
+  from a date's Edit (its date's menu, "Edit series"), for whoever may edit it.
 
 **Sources** — [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md)
 - A parish's address is where the service is.

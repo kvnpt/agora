@@ -600,9 +600,10 @@
   const LINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
   // A speech bubble: words that came by message (WhatsApp, routes/ingest.mjs).
   const WA_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.4A8.5 8.5 0 1 1 21 11.5z"/></svg>';
-  // The poster's own buttons, floated on it (Kevin, 20 Nov 2026): Tabler's
-  // "replace" and a bin, as card-face.js has them.
-  const REPLACE_ICON = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M21 11V8a2 2 0 0 0-2-2h-6l3 3m0-6-3 3"/><path d="M3 13v3a2 2 0 0 0 2 2h6l-3-3m0 6 3-3"/></svg>';
+  // The poster's own buttons, floated on it (Kevin, 20 Nov 2026): Replace,
+  // which is adding an image so it is drawn as Add an image is, and a bin,
+  // as card-face.js has them (ICON.picture, ICON.trash).
+  const PICTURE_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/></svg>';
   const BIN_ICON = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6m4-6v6"/><path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>';
   const UNLINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="M8 2v3M2 8h3M16 19v3M19 16h3"/></svg>';
   const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
@@ -716,7 +717,7 @@
           <div class="ee-thumb-wrap">
             <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
             <div class="cf-fabs">
-              <button type="button" class="cf-fab" data-ee="replace" aria-label="Replace the poster" title="Replace">${REPLACE_ICON}</button>
+              <button type="button" class="cf-fab" data-ee="replace" aria-label="Replace the poster" title="Replace">${PICTURE_ICON}</button>
               <button type="button" class="cf-fab cf-fab-danger" data-ee="remove-poster" aria-label="Remove the poster" title="Remove">${BIN_ICON}</button>
             </div>
           </div>

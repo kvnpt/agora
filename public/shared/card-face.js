@@ -102,12 +102,13 @@
   /**
    * One part of the card, a button underlined in its state's dots. `text` is
    * plain; `empty` draws it as what to tap to add one ("Add a subtitle"), in
-   * red when it is needed (`state` 'miss').
+   * red when it is needed (`state` 'miss'). `after` is markup inside the
+   * button after the words, a sign that is part of them (a date's ⟳).
    */
-  function part(key, text, state = '', { empty = false, label = '', cls = '' } = {}) {
+  function part(key, text, state = '', { empty = false, label = '', cls = '', after = '' } = {}) {
     const word = WORDS[state] || '';
     const aria = `${label || key}: ${empty ? 'none' : text}${word ? `. ${word}` : ''}. Tap to change.`;
-    return `<button type="button" class="cf-u${state ? ` cf-${state}` : ''}${empty ? ' cf-empty' : ''}${cls ? ` ${cls}` : ''}" data-face="${esc(key)}" data-key="${esc(key)}" aria-label="${esc(aria)}">${esc(text)}</button>`;
+    return `<button type="button" class="cf-u${state ? ` cf-${state}` : ''}${empty ? ' cf-empty' : ''}${cls ? ` ${cls}` : ''}" data-face="${esc(key)}" data-key="${esc(key)}" aria-label="${esc(aria)}">${esc(text)}${after}</button>`;
   }
 
   // The event card's signs (next.js I.cal, I.clock, I.where, I.chat).
@@ -128,8 +129,8 @@
     plus: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     live: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
     repeat: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
-    replace: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M21 11V8a2 2 0 0 0-2-2h-6l3 3m0-6-3 3"/><path d="M3 13v3a2 2 0 0 0 2 2h6l-3-3m0 6 3-3"/></svg>',
-    picture: '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/></svg>',
+    // Add an image, and Replace, which is the same thing (Kevin, 20 Nov 2026).
+    picture: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/></svg>',
     trash: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6m4-6v6"/><path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>',
   };
 
@@ -141,8 +142,9 @@
   //
   // The app's own (next.js openMenu, .popmenu) is the page's; this one is the
   // forms', in both hosts, /admin included. Rows: { label, sub, icon (markup),
-  // on, danger, sep, value, run }. Tapping a row runs it and closes the menu;
-  // a tap anywhere else, Escape or a scroll closes it.
+  // on, danger, sep, value, run }, or { head } for words over the rows.
+  // Tapping a row runs it and closes the menu, in the tap itself, so a row
+  // may open the file picker; a tap anywhere else, Escape or a scroll closes it.
   let openMenuEl = null;
   function closeMenu() {
     if (!openMenuEl) return;
@@ -160,6 +162,7 @@
     el.className = 'cf-menu';
     el.setAttribute('role', 'menu');
     el.innerHTML = rows.map((r, i) => (r.sep ? '<div class="cf-sep" role="separator"></div>'
+      : r.head ? `<div class="cf-mhead">${esc(r.head)}</div>`
       : `<button type="button" class="cf-row${r.danger ? ' cf-danger' : ''}" role="${r.on != null ? 'menuitemradio' : 'menuitem'}"${r.on != null ? ` aria-checked="${!!r.on}"` : ''} data-i="${i}">${r.icon || ''}<span class="cf-row-t"><b>${esc(r.label)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${r.on ? ICON.tick : ''}${r.toggle != null ? `<span class="cf-switch${r.toggle ? ' on' : ''}" aria-hidden="true"></span>` : ''}</button>`)).join('');
     document.body.appendChild(el);
     const r = btn.getBoundingClientRect();

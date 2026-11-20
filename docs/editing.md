@@ -98,7 +98,7 @@ unless its own override says otherwise (`project.mjs`: the date's
 rule's, so saving a date with the inherited text writes nothing, and the
 occurrence's poster control says when what it shows is the rule's and sends
 changes to the series. The rule's poster is set from its form (a date's
-**Edit series**) or "Put it on: every … — the service's own" on any of its dates, via
+**Edit series**) or "Put it on: Every … — the service's own" on any of its dates, via
 `POST|DELETE /api/admin/schedules/:id/poster`, and `releaseUnused` counts it.
 `POST /api/admin/events/:id/poster` takes both id shapes and routes on the
 shape, like every other event route.
@@ -165,7 +165,7 @@ the form, for `parish.delete`.
 
 The TIMETABLE has no mode and, since 19 Nov 2026, no pencils: its lines read the
 same for an editor as for anybody (Kevin asked for them gone). A line
-opens its next date's card; that card's **Edit**, then **Edit series** by its date, opens
+opens its next date's card; that card's **Edit**, then **Edit series** from its date's menu, opens
 the rule's form (`editLine`; a line that is several rules offers all its days
 together first, or one of them), and a line with no date coming up opens the form
 itself for whoever may change it. The dotted **Add +** under the timetable opens **Add
@@ -287,10 +287,11 @@ note says how), **red** needed and not there or doubted by a check (Publish
 waits; no language is "No language"), **violet** different from what is on
 file (a programme's 8:15 against the timetable's 8am, a date's own subtitle,
 an edit not yet saved), and **grey**, faint and thin, as it is. What was read
-off the poster or the WhatsApp words is grey too, with a small **green
-triangle** in its box's top right corner (Kevin, 20 Nov 2026: "Normal dotted
-colour for underline"); a part is its own box (`inline-block`) so the corner
-is the text's however it wraps. Green and amber go grey once the part has
+off the poster or the WhatsApp words is grey too, with a small **green dot**
+to its left (Kevin, 20 Nov 2026: "Normal dotted colour for underline", then
+"Green dot to the left of each item"), hung in the card's margin so the dots
+make one column down its left edge and the words stay in line; a part later
+in its line (the end time) carries its dot in the line. Green and amber go grey once the part has
 been opened: Add event sends the same value back, which drops the read's mark
 and note (`drafts.mjs updateCard`). Nothing over the cards counts the colours
 and there is no key (Kevin, 20 Nov 2026: "get rid of the counts … and the key
@@ -299,16 +300,28 @@ The line under the poster says only what the cards cannot: a plain read has
 none, and a timetable read, a read that found nothing, a new service its dates
 go onto, a date called off, another parish's event or a translation each get a
 short sentence. **Replace** and **Remove** are round buttons floated on the
-poster's top right corner, in both forms (`.cf-fab`).
+poster's top right corner, in both forms (`.cf-fab`), glass in the page's own
+light or dark as the card head's X and Share are over a poster; Replace is
+drawn as Add an image is, being the same thing.
 The form's rows are the same rows as before, hidden until their part opens
 (flex `order` puts each under its part), so every check, save and question
 works as it did. Edit event puts the poster at the top, where the card has it:
-a blank **Add an image** box until there is one, then the poster with its two
-buttons, and which dates it goes on under it. A date of a service says so with
-an **Edit series** pill (⟳) by its date, which opens the service's form, in
-place of the box over the card. The words come before Cancel and Break…,
-its buttons, and Suppress, Include other parishes, No live badge, Delete and
-the service itself are behind **More**. A part closes on the click outside it, never the press, so a
+a low blank **Add an image** box until there is one, then the poster with its
+two buttons. Which dates it goes on is a menu, **Put it on**, out of Add an
+image or Replace (Kevin, 20 Nov 2026: "as a selection after tapping Add Image
+instead of separate dropdown"): this date (or event) only and the file picker
+opens in that same tap; every date of the service as its own; or a range of
+the service's dates or the parish's, whose From and Until open under the
+poster first, then **Choose the image**.
+**What the date is goes in a menu out of the date** (Kevin, 20 Nov 2026:
+"cancel, break, more should all just go into a menu presented when tapping
+the date"): **Edit series** (the service's form), Cancel or Uncancel, Break…,
+Suppress, Include other parishes, No live badge and Delete, whichever this
+person may do; a one-off's starts with **Change the date**, which opens the
+date's fields. A date of a service carries ⟳ after it, part of it (tapping
+either is the same), and is **violet** while something holds it otherwise:
+cancelled, on a break, suppressed, combined, or a live badge other than its
+service's. There is no row of buttons on the card. A part closes on the click outside it, never the press, so a
 button under an open panel has not moved by the time the click lands. Without
 card-face.js loaded the forms are the rows, as they were.
 
@@ -728,7 +741,7 @@ where the pin moves with it.
 The timetable has its own way in: **Add schedule** (the dotted **Add +**
 under the service times) opens a dialog with **Add an image** (a photo of the sign) above
 the fields for typing a service. The fields are `public/shared/rule-form.js`,
-which a date's **Edit series** opens too.
+which a date's **Edit series** (its date's menu) opens too.
 
 A rule is one weekday, but the form's **Days** are ticked, with **Every day**
 and **Mon–Fri** beside them: Compline every night was seven forms until 26 Oct

@@ -934,19 +934,21 @@
     const name = e.title || 'service like this';
     const DF = RF().dateFieldHTML;
     // As the card (Kevin, 20 Nov 2026): at its top where the poster is, a
-    // blank box to add one, or the poster with Replace and Remove floated on
-    // its corner; a poster on several dates asks which to take it off.
+    // low blank box to add one, or the poster with Replace (drawn as Add an
+    // image, which it is) and Remove floated on its corner; a poster on
+    // several dates asks which to take it off. Which dates it goes on is
+    // asked in a menu as Add an image or Replace is tapped (wirePoster).
     const box = face ? (has ? `
       <div class="rf-poster cf-poster">
         <img class="cf-poster-img" alt="The poster" src="${esc(e.poster_path)}" data-evp-view>
         <div class="cf-fabs">
-          <button class="cf-fab" type="button" data-evp-pick aria-label="${ruleOwn ? 'Put a different poster on this date' : 'Replace the poster'}" title="${ruleOwn ? 'A different one here' : 'Replace'}">${face.ICON.replace}</button>
+          <button class="cf-fab" type="button" data-evp-pick aria-haspopup="menu" aria-label="${ruleOwn ? 'Put a different poster on this date' : 'Replace the poster'}" title="${ruleOwn ? 'A different one here' : 'Replace'}">${face.ICON.picture}</button>
           ${!ruleOwn ? `<button class="cf-fab cf-fab-danger" type="button" data-evp-clear="${shared ? 'ask' : ''}" aria-label="Remove the poster" title="Remove">${face.ICON.trash}</button>` : ''}
         </div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
       </div>` : `
       <div class="rf-poster cf-poster">
-        <button class="cf-poster-blank" type="button" data-evp-pick>${face.ICON.picture}<b>Add an image</b><small>A poster or flyer for ${series ? 'this date' : 'this event'}</small></button>
+        <button class="cf-poster-blank" type="button" data-evp-pick aria-haspopup="menu">${face.ICON.picture}<span><b>Add an image</b><small>A poster or flyer for ${series ? 'this date' : 'this event'}</small></span></button>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
       </div>`) : `
       <div class="rf-poster">
@@ -958,9 +960,25 @@
         </div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
       </div>`;
-    return `${box}
-      ${ruleOwn ? `<div class="edit-row-hint">On every ${esc(name)}: the service’s own poster.
-        ${series && host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Change it on the service</button>' : ''}</div>` : ''}
+    const hint = ruleOwn ? `<div class="edit-row-hint">On every ${esc(name)}: the service’s own poster.
+        ${series && host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Change it on the service</button>' : ''}</div>` : '';
+    // A range picked from the menu: its days, then the picture.
+    if (face) {
+      return `${box}${hint}
+      <div class="ev-poster-range cf-poster-range" data-evp-range hidden>
+        <p data-evp-for></p>
+        <div class="edit-pair">
+          <div><label>From</label>${DF('from', `${day.slice(0, 7)}-01`, 'From', { attr: 'data-evp-date', required: true })}</div>
+          <div><label>Until</label>${DF('until', monthEnd, 'Until', { attr: 'data-evp-date', required: true })}</div>
+        </div>
+        <div class="cf-poster-go">
+          <button class="rf-btn" type="button" data-evp-go>${face.ICON.picture}<span>Choose the image</span></button>
+          <button class="ev-link" type="button" data-evp-back>Not now</button>
+        </div>
+      </div>
+      <div class="edit-row-hint" data-evp-status></div>`;
+    }
+    return `${box}${hint}
       <div class="ev-poster-scope"><span>Put ${ruleOwn ? 'a different one' : 'it'} on</span>
         <select data-evp-scope>
           <option value="">${series ? 'this date only' : 'this event only'}</option>
@@ -981,9 +999,12 @@
    * upload, so what it offers (Remove, Remove everywhere) is what is there.
    */
   function wirePoster(box, cur, { onSeries, face = null }) {
+    // Where the card's menu said to put it ('' this one, 'series', 'rule', 'parish').
+    let picked = '';
     const paint = (msg = '', bad = false) => {
       const e = host.event(cur);
       if (!e) return;
+      picked = '';
       const parish = host.parish(e.parish_id);
       box.innerHTML = posterHTML(e, seriesOf(e.id), parish, face);
       RF().wireDates(box, host.today());
@@ -998,7 +1019,7 @@
     };
     /** What the scope asks for: one, the service's own, or a range as a query. */
     const range = () => {
-      const scope = box.querySelector('[data-evp-scope]').value;
+      const scope = face ? picked : box.querySelector('[data-evp-scope]').value;
       if (!scope) return { query: '' };
       if (scope === 'series') return { series: String(cur).split(':')[0] };
       const from = box.querySelector('[data-evp-date="from"]').value;
@@ -1035,7 +1056,9 @@
       const b = ev.target.closest('button');
       if (!b) return;
       if (b.matches('[data-ev-series]')) return onSeries();
-      if (b.matches('[data-evp-pick]')) {
+      if (face && b.matches('[data-evp-pick]')) return putItOn(b);
+      if (b.matches('[data-evp-back]')) { picked = ''; box.querySelector('[data-evp-range]').hidden = true; return say(''); }
+      if (b.matches('[data-evp-pick], [data-evp-go]')) {
         // Said before the file picker opens, not after somebody has gone looking for the file.
         const r = range();
         if (r.error) return say(r.error, true);
@@ -1071,6 +1094,36 @@
         return after('Removed.');
       }
     });
+    // "Put it on", asked as Add an image or Replace is tapped (Kevin, 20 Nov
+    // 2026), in place of a select under the poster: one date (or event), every
+    // date of the service as its own, or a range, whose days come first. The
+    // picker opens in the tap on the menu's row, which a phone requires.
+    function putItOn(btn) {
+      const e = host.event(cur);
+      const series = seriesOf(cur);
+      const parish = host.parish(e.parish_id);
+      const name = e.title || 'service like this';
+      const pickFile = () => { say(''); const input = box.querySelector('[data-evp-input]'); input.value = ''; input.click(); };
+      const go = (v) => {
+        picked = v;
+        const rangeBox = box.querySelector('[data-evp-range]');
+        if (!v || v === 'series') { rangeBox.hidden = true; return pickFile(); }
+        rangeBox.querySelector('[data-evp-for]').textContent = v === 'rule'
+          ? `On every ${name} in these days:` : `On everything at ${parish ? parish.name : 'the parish'} in these days:`;
+        rangeBox.hidden = false;
+        say('');
+        requestAnimationFrame(() => rangeBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+      };
+      face.menu(btn, [
+        { head: e.poster_path && e.rule_poster ? 'Put a different one on' : 'Put it on' },
+        { label: series ? 'This date only' : 'This event only', run: () => go('') },
+        ...(series ? [
+          { label: `Every ${name}`, sub: 'The service’s own: every date shows it', run: () => go('series') },
+          { label: `Every ${name} from…`, sub: 'Between two dates', run: () => go('rule') },
+        ] : []),
+        { label: `Everything at ${parish ? parish.name : 'the parish'} from…`, sub: 'Between two dates', run: () => go('parish') },
+      ]);
+    }
     box.addEventListener('click', (ev) => {
       const img = ev.target.closest('[data-evp-view]');
       if (img && img.src) window.open(img.src, '_blank', 'noopener');
@@ -1407,10 +1460,15 @@
   // Each part opens its field under it, or is typed where it stands (the
   // title, the subtitle, the words); the kind is a menu. What this date
   // changes of its service, and what is changed and not yet saved, is
-  // violet; anything needed and not there, red; the rest grey. What the date
-  // is (Cancel, Break…) are its two buttons, and the rarer things behind
-  // More: Suppress, Include other parishes, No live badge, Delete, the
-  // service itself.
+  // violet; anything needed and not there, red; the rest grey.
+  //
+  // What the date is goes in a menu out of the date (Kevin, 20 Nov 2026:
+  // "cancel, break, more should all just go into a menu presented when
+  // tapping the date"): Edit series, Cancel, Break…, Suppress, Include other
+  // parishes, No live badge, Delete; a one-off's starts with Change the date.
+  // A date of a service carries ⟳ after it, as part of it, and is violet
+  // while one of those holds it (cancelled, on a break, suppressed, no live
+  // badge where its service has one).
 
   const FACE_GROUPS = { title: ['title'], feast: ['feast'], description: ['description'], date: ['date', 'lastday'],
     time: ['time'], where: ['where'], languages: ['languages'] };
@@ -1429,14 +1487,9 @@
     if (kindRow) kindRow.dataset.cfRow = 'kind';
 
     const breakBtn = tool('[data-ev-break]');
-    // The service it is a date of: a pill by the date, in place of the box
-    // over the card (Kevin, 20 Nov 2026), for whoever may edit the service.
+    // The service it is a date of, for whoever may edit the service: the
+    // date menu's Edit series presses the hidden box's own button.
     const seriesBtn = form.querySelector('.ev-series [data-ev-series]');
-    const acts = [
-      `<button type="button" class="cf-act${cancelled ? ' on' : ''}" data-cf-act="cancel">${cancelled ? F.ICON.undo : F.ICON.cancel}<span>${cancelled ? 'Uncancel' : series ? 'Cancel date' : 'Cancel event'}</span></button>`,
-      breakBtn ? `<button type="button" class="cf-act" data-cf-act="break">${F.ICON.pause}<span>${e.status === 'break' ? 'The break' : 'Break…'}</span></button>` : '',
-      `<button type="button" class="cf-act" data-cf-act="more" aria-haspopup="menu">${F.ICON.more}<span>More</span></button>`,
-    ].join('');
     form.insertAdjacentHTML('afterbegin', `
       <div class="cf-kind" data-f="kind">${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}<span class="cf-kslot"></span></div>
       <h2 class="cf-title" data-f="title"></h2>
@@ -1445,7 +1498,6 @@
       <div class="cf-fact" data-f="time">${F.ICON.clock}<span class="cf-fact-t"></span></div>
       <div class="cf-fact" data-f="where">${F.ICON.where}<span class="cf-fact-t"></span></div>
       <div class="cf-fact" data-f="languages">${F.ICON.chat}<span class="cf-fact-t"></span></div>
-      <div class="cf-acts">${acts}</div>
       <div class="cf-desc" data-f="description"></div>`);
     const P = (name) => form.querySelector(`[data-f="${name}"]`);
     const rows = (name) => (FACE_GROUPS[name] || []).map(r => form.querySelector(`[data-cf-row="${r}"]`)).filter(Boolean);
@@ -1475,6 +1527,11 @@
       return false;
     };
     let open = null;
+    // Held otherwise than it would be: what the date menu sets.
+    const altered = () => {
+      const live = q('hide_live') ? q('hide_live').checked : false;
+      return !!state || dirty('hide_live') || (rule ? live !== !!rule.hide_live : live);
+    };
 
     function paintFace() {
       const kind = val('event_type');
@@ -1492,14 +1549,15 @@
       const feast = val('feast');
       F.draw(P('feast'), F.part('feast', feast || 'Add a subtitle', st({ value: !!feast, changed: dirty('feast') || fromRule('feast') }), { empty: !feast, label: 'Subtitle' }));
 
-      // A date of a service is that date; a one-off's is tapped to change.
+      // The date opens its menu (dateMenu). A date of a service is that
+      // date, ⟳ after it; a one-off's is changed from the menu's first row.
       const thisYear = +host.today().slice(0, 4);
       const multi = !!val('multi');
       const date = series ? series.date : val('date');
       const day = F.dayText(date, multi ? val('last') : '', thisYear);
       F.draw(P('date').querySelector('.cf-fact-t'), series
-        ? `<span class="cf-plain">${esc(day)}</span>${seriesBtn ? `<button type="button" class="cf-series" data-cf-act="series" aria-label="Edit series: ${esc(repeatsText(series.rule))}" title="${esc(repeatsText(series.rule))}">${F.ICON.repeat}<span>Edit series</span></button>` : ''}`
-        : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') }), { empty: !day, label: 'Date' }));
+        ? F.part('date', day, st({ changed: altered() }), { label: `Date, one of ${repeatsText(series.rule).replace(/^Repeats /, '')}`, after: `<span class="cf-rep">${F.ICON.repeat}</span>` })
+        : F.part('date', day || 'Add a date', st({ value: !!day, doubt: !day || (multi && !(val('last') > date)), changed: dirty('date', 'last', 'multi') || altered() }), { empty: !day, label: 'Date' }));
 
       const a = val('start_time'), b = val('end_time');
       const usual = rule && (fromRule('start_time') || fromRule('end_time')) && rule.start_time
@@ -1542,8 +1600,9 @@
       for (const name of ['title', 'feast', 'description']) P(name).classList.toggle('cf-off', open === name);
     }
 
-    function openPart(key, btn) {
+    function openPart(key, btn, { fields = false } = {}) {
       if (key === 'event_type') return kindMenu(btn);
+      if (key === 'date' && !fields) return open === 'date' ? closePart() : dateMenu(btn);
       const g = FACE_OF[key];
       if (!g || (g === 'date' && series)) return;
       if (open === g) return closePart();
@@ -1580,8 +1639,24 @@
       ] : []));
     }
 
-    function moreMenu(btn) {
+    // What the date is, in one menu out of it: the service it is a date
+    // of, then what holds this date. Each row presses the hidden form's own
+    // button (.ev-tools), so it asks and does what it always has.
+    function dateMenu(btn) {
       const items = [];
+      if (series) {
+        if (seriesBtn) items.push({ label: 'Edit series', sub: repeatsText(series.rule), icon: F.ICON.repeat, run: () => seriesBtn.click() });
+      } else {
+        items.push({ label: 'Change the date', sub: 'Or make it several days', icon: F.ICON.cal, run: () => openPart('date', btn, { fields: true }) });
+      }
+      if (items.length) items.push({ sep: true });
+      const can = tool('[data-ev-tool="cancel"]');
+      if (can) items.push(cancelled
+        ? { label: 'Uncancel', sub: 'Back on, as usual', icon: F.ICON.undo, run: () => can.click() }
+        : { label: series ? 'Cancel this date' : 'Cancel the event', sub: 'Stays on show, struck through', icon: F.ICON.cancel, run: () => can.click() });
+      if (breakBtn) items.push(e.status === 'break'
+        ? { label: 'The break', sub: 'Change it, or lift it', icon: F.ICON.pause, run: () => breakBtn.click() }
+        : { label: 'Break…', sub: 'Not on for a while', icon: F.ICON.pause, run: () => breakBtn.click() });
       const sup = tool('[data-ev-tool="suppress"]');
       if (sup) items.push(hidden
         ? { label: 'Unsuppress', sub: 'Back in the feed', icon: F.ICON.eye, run: () => sup.click() }
@@ -1590,28 +1665,17 @@
       if (comb) items.push({ label: 'Include other parishes…', icon: F.ICON.plus, run: () => comb.click() });
       const live = q('hide_live');
       if (live) items.push({ label: 'No live badge', icon: F.ICON.live, toggle: live.checked,
-        run: () => { live.checked = !live.checked; f.markDirty(); } });
+        run: () => { live.checked = !live.checked; f.markDirty(); paintFace(); } });
       const del = tool('[data-ev-delete]');
-      if (del) items.push({ label: 'Delete', sub: 'Gone for good', icon: F.ICON.trash, danger: true, run: () => del.click() });
-      const svc = form.querySelector('.ev-series [data-ev-series]');
-      if (svc) {
-        if (items.length) items.push({ sep: true });
-        items.push({ label: `Edit every ${series.day}`, sub: 'The service, not this date', icon: F.ICON.repeat, run: () => svc.click() });
-      }
-      if (!items.length) items.push({ label: 'Nothing else to change here', run: () => {} });
+      if (del) items.push({ sep: true }, { label: 'Delete', sub: 'Gone for good', icon: F.ICON.trash, danger: true, run: () => del.click() });
       F.menu(btn, items);
     }
 
     form.addEventListener('click', (ev) => {
-      const b = ev.target.closest('[data-face], [data-cf-act]');
+      const b = ev.target.closest('[data-face]');
       if (!b || !form.contains(b)) return;
       ev.preventDefault();
-      if (b.dataset.face) return openPart(b.dataset.face, b);
-      const act = b.dataset.cfAct;
-      if (act === 'cancel') tool('[data-ev-tool="cancel"]').click();
-      else if (act === 'break' && breakBtn) breakBtn.click();
-      else if (act === 'series' && seriesBtn) seriesBtn.click();
-      else if (act === 'more') moreMenu(b);
+      openPart(b.dataset.face, b);
     });
     // Anything left open closes when somewhere else on the card is tapped:
     // on the click, so what was pressed under it has not moved by then.
