@@ -393,6 +393,11 @@ export function eventCardHTML(m) {
         <a class="ev-at" href="/${esc(at.slug)}">${avatar(at, '', at.color)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></a>${stamp}</div>`;
   // Said in the band, the kind is not said again over the title.
   const kind = e.poster_path ? kindPill(e.event_type) : '';
+  // A combined date: what replaced it, under the title, and where when that
+  // is another parish's church (parishPage resolves `_into`).
+  const into = e.status === 'combined' && e._into;
+  const intoAt = into && into.at !== e.parish_id ? m.venues[into.at] : null;
+  const replaced = into ? `<p class="ev-replaced">Replaced by <a class="ev-link" href="/${esc(into.id)}">${esc(into.title)}</a>${intoAt ? ` at ${esc(intoAt.name)}` : ''}</p>` : '';
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
       ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : band}
@@ -400,6 +405,7 @@ export function eventCardHTML(m) {
         ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
         <h1>${esc(e.title)}</h1>
         ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
+        ${replaced}
         ${eventFactsHTML(eventWhen(e._local, end ? last : null, overDays, today), where, langs)}
         ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
       </div>

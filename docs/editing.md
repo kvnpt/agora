@@ -296,8 +296,9 @@ out for now, where the app v3 replaced showed a break.
 open their own dialogs in place of the form. The combine is the add-event
 editor's lists (nearest first, "needs an owner"), so a tick that is not the
 person's own becomes an ask, as it does there. A timetable line on a break
-today says when it is back, and a combined date's card names what is in its
-place.
+today says when it is back, and a combined date's card says "Replaced by"
+what is in its place, under its title, and at which parish when that is
+another parish's church (Kevin, 21 Nov 2026).
 
 **Both forms are drawn as the event's card** (Kevin, 19 Nov 2026: "not a
 bunch of fields and buttons. Rather a WYSIWYG event card";

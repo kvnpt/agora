@@ -260,6 +260,16 @@ async function parishPage(env, url, page, now, found = null) {
     const found = await findEvent(db, page.route.eventId);
     if (!found) return missing(url);
     pinnedEvent = found.event;
+    // A date combined into another event, or another date: what replaced it,
+    // and where that is held, for the line under its title.
+    const intoId = pinnedEvent && pinnedEvent.status === 'combined' && pinnedEvent.combined_into_event_id;
+    const host = intoId ? await findEvent(db, String(intoId)) : null;
+    if (host && host.event) {
+      pinnedEvent = { ...pinnedEvent, _into: {
+        id: String(host.event.id), title: host.event.title,
+        at: host.event.location_parish_id || host.event.parish_id,
+      } };
+    }
     parish = await db.prepare(`SELECT ${PARISH_PAGE_COLS} FROM parishes WHERE id = ?`)
       .bind(found.parishId).first();
   }
@@ -299,6 +309,7 @@ async function parishPage(env, url, page, now, found = null) {
     ...(events.results || []).map(e => e.location_parish_id),
     pinnedEvent && pinnedEvent.location_parish_id,
     ...((pinnedEvent && pinnedEvent.combined_parishes) || []),
+    pinnedEvent && pinnedEvent._into && pinnedEvent._into.at,
   ].filter(Boolean))];
   const venueRows = venueIds.length
     ? await db.prepare(`SELECT id, name, full_name, address, acronym, logo_path, jurisdiction FROM parishes

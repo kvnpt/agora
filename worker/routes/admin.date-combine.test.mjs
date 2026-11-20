@@ -19,6 +19,7 @@ import { registerPublicRoutes } from './public.mjs';
 import { expandWindow, expandOne } from '../lib/expand.mjs';
 import { crossRows, hostedDates } from '../lib/taking-part.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
+import { servePage } from './pages.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -135,10 +136,23 @@ test('it stands in for the other parish’s service that day, and letting go bri
   assert.equal(ov.combined_into_date, hdate);
 
   // Their date is a tombstone pointing at the host's date, which the card
-  // opens as it opens an event ("In its place").
+  // opens as it opens an event: "Replaced by" under the title.
   const theirs = await expandOne(f.db, Number(osid), odate);
   assert.equal(theirs.status, 'combined');
   assert.equal(theirs.combined_into_event_id, host.id);
+
+  // The card a link to their date paints names the host's date and, held at
+  // another parish's church, that parish.
+  const env = { DB: f.db, ASSETS: { fetch: async () => new Response(fs.readFileSync('public/index.html', 'utf8')) } };
+  const res = await servePage(new Request(`https://orthodoxy.au/${other.id}`), env, {}, { now: Date.parse(FROM) });
+  const html = await res.text();
+  const hostParish = f.raw.prepare('SELECT name FROM parishes WHERE id = ?').get(host.parish_id).name;
+  const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const line = (/<p class="ev-replaced">[\s\S]*?<\/p>/.exec(html) || [''])[0];
+  assert.ok(line.includes(`href="/${host.id}">${esc(host.title)}</a>`), line || 'no Replaced by line');
+  assert.ok(line.includes(` at ${esc(hostParish)}`), line);
+  // Under the title, before the facts.
+  assert.ok(html.indexOf('ev-replaced') > html.indexOf('<h1>') && html.indexOf('ev-replaced') < html.indexOf('ev-facts'), 'under the title');
 
   const state = await f.call('GET', `/api/admin/events/${host.id}/escalation`);
   assert.deepEqual(state.body.replaced_events.map(x => x.id), [other.id]);
