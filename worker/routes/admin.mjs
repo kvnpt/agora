@@ -13,6 +13,7 @@ import { readSecret } from '../lib/secrets.mjs';
 import { expandWindow, expandOne, parseInstanceId, fetchWindowRows, isValidOccurrence } from '../lib/expand.mjs';
 import { exactLocalToEpoch, localDateOf, localSpanToUtc } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
+import { takingPartIn } from '../lib/taking-part.mjs';
 import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
 import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause, ensureSuggestionsTable,
   formFromRead, suggestionPosterKey, imagesOf, OPEN_LIMIT, POSTER_DAILY_LIMIT, POSTER_SWEEP_MS } from '../lib/suggestions.mjs';
@@ -284,8 +285,137 @@ const combineRefusal = (c, event, split) => json({
   outside: split.outside,
 }, 403);
 
+/**
+ * What a combine hangs on, by its id: a stored event (its row), or a date of a
+ * service ("sid:YYYY-MM-DD", migration 041), which is the rule's parish's and
+ * carries `occurrence`. Null when there is no such event, or the rule does not
+ * run that day.
+ */
+async function combineHost(db, id) {
+  const inst = parseInstanceId(String(id));
+  if (!inst) return db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first();
+  const rule = await db.prepare('SELECT * FROM schedules WHERE id = ?').bind(inst.scheduleId).first();
+  if (!rule || !isValidOccurrence(rule, inst.date)) return null;
+  return {
+    id: `${inst.scheduleId}:${inst.date}`, parish_id: rule.parish_id, title: rule.title,
+    schedule_id: rule.id, date: inst.date, occurrence: true,
+  };
+}
+
+/**
+ * A date of a service as host (migration 041): its parishes are
+ * `occurrence_parishes`, and what it stands in for are other services' dates,
+ * each a 'combined' override naming it by combined_into_schedule_id +
+ * combined_into_date. A stored one-off it cannot stand in for: `event_replaces`
+ * points from an event, and the routes refuse that before this.
+ */
+async function writeDateCombine(db, host, { parishes, synths }) {
+  const [curP, curC] = await Promise.all([
+    db.prepare('SELECT parish_id FROM occurrence_parishes WHERE schedule_id = ? AND occurrence_date = ?')
+      .bind(host.schedule_id, host.date).all(),
+    db.prepare(
+      `SELECT schedule_id, occurrence_date FROM schedule_overrides
+       WHERE combined_into_schedule_id = ? AND combined_into_date = ? AND kind = 'combined'`
+    ).bind(host.schedule_id, host.date).all(),
+  ]);
+  const currentParishes = (curP.results || []).map(r => r.parish_id);
+  const currentCombined = (curC.results || []).map(r => `${r.schedule_id}:${r.occurrence_date}`);
+
+  const stmts = [];
+  for (const pid of parishes) {
+    if (pid === host.parish_id || currentParishes.includes(pid)) continue;
+    stmts.push(db.prepare('INSERT OR IGNORE INTO occurrence_parishes (schedule_id, occurrence_date, parish_id) VALUES (?,?,?)')
+      .bind(host.schedule_id, host.date, pid));
+  }
+  for (const pid of currentParishes) {
+    if (!parishes.has(pid)) {
+      stmts.push(db.prepare('DELETE FROM occurrence_parishes WHERE schedule_id = ? AND occurrence_date = ? AND parish_id = ?')
+        .bind(host.schedule_id, host.date, pid));
+    }
+  }
+  // One batch, so a bad parish id rolls the whole change back.
+  if (stmts.length) await db.batch(stmts);
+
+  for (const sid of synths) {
+    if (sid === host.id || currentCombined.includes(sid)) continue;
+    const p = parseInstanceId(sid);
+    await setCombined(db, p.scheduleId, p.date, host.id);
+  }
+  for (const sid of currentCombined) {
+    if (!synths.has(sid)) {
+      const p = parseInstanceId(sid);
+      await clearCombined(db, p.scheduleId, p.date);
+    }
+  }
+}
+
+/**
+ * What a date of a service cannot be the host of, said before anything is
+ * written: a stored one-off in its place (event_replaces points from an
+ * event, so that one is an event's to hold), and anything at all while the
+ * date is itself held somewhere else — it says where everybody went, and a
+ * second place would contradict it.
+ */
+async function dateHostRefusal(db, host, body) {
+  const ints = (body.replaced_event_ids || []).filter(r => !parseInstanceId(r) && /^\d+$/.test(String(r)));
+  if (ints.length) {
+    return json({ error: 'A date of a service can stand in for other services’ dates, not for an event. Include its parish instead, or combine the event into it from the event.' }, 400);
+  }
+  const own = await db.prepare(
+    "SELECT kind FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ? AND kind = 'combined'"
+  ).bind(host.schedule_id, host.date).first();
+  const asks = (body.additive_parish_ids || []).length || (body.replaced_event_ids || []).length;
+  if (own && asks) {
+    return json({ error: 'This date is held at another event or service that day. Undo that first, or include the parishes there.' }, 409);
+  }
+  return null;
+}
+
+/**
+ * The dates of a rule from `fromDate` on that host a combine (migration 041):
+ * other parishes taking part, or other services' dates held at them. One row
+ * per date, shaped as an override for planCarry (kind 'hosting'), since "this
+ * and every following" has to ask about them as it asks about its overrides.
+ */
+async function dateCombinesFrom(db, ruleId, fromDate) {
+  const r = await db.prepare(
+    `SELECT occurrence_date FROM occurrence_parishes WHERE schedule_id = ? AND occurrence_date >= ?
+     UNION
+     SELECT combined_into_date FROM schedule_overrides
+     WHERE combined_into_schedule_id = ? AND combined_into_date >= ? AND kind = 'combined'`
+  ).bind(ruleId, fromDate, ruleId, fromDate).all().catch(() => ({ results: [] }));
+  return (r.results || []).map(x => ({ occurrence_date: x.occurrence_date, kind: 'hosting' }));
+}
+
+/** The statements that move a date's combine onto the rule that now has the date. */
+function moveDateCombines(db, fromId, toId, dates) {
+  return dates.flatMap(d => [
+    db.prepare('UPDATE occurrence_parishes SET schedule_id = ? WHERE schedule_id = ? AND occurrence_date = ?')
+      .bind(toId, fromId, d),
+    db.prepare("UPDATE schedule_overrides SET combined_into_schedule_id = ? WHERE combined_into_schedule_id = ? AND combined_into_date = ? AND kind = 'combined'")
+      .bind(toId, fromId, d),
+  ]);
+}
+
+/**
+ * A date that has stopped being a date of its rule takes its combine with it:
+ * who took part goes, and every service held at it comes back on its own
+ * parish's card, rather than staying a tombstone pointing at nothing.
+ */
+async function dropDateCombines(db, ruleId, dates) {
+  for (const d of dates) {
+    await db.prepare('DELETE FROM occurrence_parishes WHERE schedule_id = ? AND occurrence_date = ?').bind(ruleId, d).run()
+      .catch(() => null);
+    const held = await db.prepare(
+      "SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_schedule_id = ? AND combined_into_date = ? AND kind = 'combined'"
+    ).bind(ruleId, d).all().catch(() => ({ results: [] }));
+    for (const r of held.results || []) await clearCombined(db, r.schedule_id, r.occurrence_date);
+  }
+}
+
 /** Carry out one combine target state. Idempotent: what is not named is removed. */
 async function writeCombine(db, event, target) {
+  if (event.occurrence) return writeDateCombine(db, event, target);
   const { parishes, ints, synths, approve } = target;
 
   const [curP, curR, curC] = await Promise.all([
@@ -558,6 +688,23 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
 
 /** An event's row plus the two halves of its combine, as both routes answer. */
 async function eventWithEscalation(db, id) {
+  const inst = parseInstanceId(String(id));
+  if (inst) {
+    // A date of a service: the date as projected, its parishes, and the
+    // dates of other services held at it.
+    const [row, combined] = await Promise.all([
+      expandOne(db, inst.scheduleId, inst.date),
+      db.prepare(
+        `SELECT schedule_id, occurrence_date FROM schedule_overrides
+         WHERE combined_into_schedule_id = ? AND combined_into_date = ? AND kind = 'combined'`
+      ).bind(inst.scheduleId, inst.date).all(),
+    ]);
+    return {
+      ...(row || { id: String(id) }),
+      additional_parishes: await takingPartIn(db, id),
+      replaces: (combined.results || []).map(r => `${r.schedule_id}:${r.occurrence_date}`),
+    };
+  }
   const [row, addl, repl] = await Promise.all([
     db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first(),
     db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(id).all(),
@@ -2423,6 +2570,24 @@ export function registerAdminRoutes(router) {
   // ── combine ──
 
   router.get('/api/admin/events/:id/escalation', guarded(async ({ env, params }) => {
+    // A date of a service (migration 041): its parishes, and the other
+    // services' dates held at it, in the same shape.
+    const inst = parseInstanceId(params.id);
+    if (inst) {
+      const replaced = [];
+      const combined = await env.DB.prepare(
+        `SELECT schedule_id, occurrence_date FROM schedule_overrides
+         WHERE combined_into_schedule_id = ? AND combined_into_date = ? AND kind = 'combined'`
+      ).bind(inst.scheduleId, inst.date).all().catch(() => ({ results: [] }));
+      for (const r of combined.results || []) {
+        const one = await expandOne(env.DB, r.schedule_id, r.occurrence_date);
+        if (one) replaced.push({
+          id: one.id, title: one.title, parish_id: one.parish_id,
+          parish_name: one.parish_name, start_utc: one.start_utc, end_utc: one.end_utc,
+        });
+      }
+      return json({ additive_parish_ids: await takingPartIn(env.DB, params.id), replaced_events: replaced });
+    }
     const additive = await env.DB.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?')
       .bind(params.id).all();
     // Stored one-off bases (event_replaces)…
@@ -2452,7 +2617,8 @@ export function registerAdminRoutes(router) {
   // and anything not named is removed.
   router.post('/api/admin/events/:id/escalate', guarded('event.edit', async (c) => {
     const db = c.env.DB;
-    const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(c.params.id).first();
+    // An event, or a date of a service (migration 041), by the shape of its id.
+    const event = await combineHost(db, c.params.id);
     if (!event) return json({ error: 'Event not found' }, 404);
     // The EVENT, before its targets. applyEscalation scopes what a combine
     // reaches; this scopes whose combine it is. Without it the body's own
@@ -2464,7 +2630,12 @@ export function registerAdminRoutes(router) {
     const scoped = outOfScope(c, event.parish_id);
     if (scoped) return scoped;
 
-    const { refused, ask } = await applyEscalation(c, event, await readJson(c.request));
+    const body = await readJson(c.request);
+    if (event.occurrence) {
+      const refusal = await dateHostRefusal(db, event, body);
+      if (refusal) return refusal;
+    }
+    const { refused, ask } = await applyEscalation(c, event, body);
     if (refused) return refused;
     const proposalId = ask ? await insertProposal(c.env, ask, await editor(c)) : null;
 
@@ -2523,6 +2694,28 @@ export function registerAdminRoutes(router) {
        WHERE o.kind = 'combined' AND s.parish_id IN (${marks})`
     ).bind(...parishIds).all().catch(() => ({ results: [] }));
 
+    // The same two, where what does it is a date of another parish's service
+    // (migration 041): listed by occurrence_parishes, absorbed by an override
+    // naming that date.
+    const listedDates = await db.prepare(
+      `SELECT op.parish_id, op.schedule_id, op.occurrence_date, s.title, s.parish_id AS owner_parish,
+              p.name AS owner_name
+       FROM occurrence_parishes op
+       JOIN schedules s ON s.id = op.schedule_id
+       JOIN parishes p ON p.id = s.parish_id
+       WHERE op.parish_id IN (${marks})`
+    ).bind(...parishIds).all().catch(() => ({ results: [] }));
+    const absorbedDates = await db.prepare(
+      `SELECT s.parish_id, o.occurrence_date, s.title AS mine_title,
+              o.combined_into_schedule_id AS host_schedule, o.combined_into_date AS host_date,
+              h.title, h.parish_id AS owner_parish, p.name AS owner_name, o.updated_at
+       FROM schedule_overrides o
+       JOIN schedules s ON s.id = o.schedule_id
+       JOIN schedules h ON h.id = o.combined_into_schedule_id
+       JOIN parishes p ON p.id = h.parish_id
+       WHERE o.kind = 'combined' AND s.parish_id IN (${marks})`
+    ).bind(...parishIds).all().catch(() => ({ results: [] }));
+
     const seen = await db.prepare(
       `SELECT parish_id, event_id FROM parish_notices_seen WHERE seen_by = ? AND parish_id IN (${marks})`
     ).bind(identity || '', ...parishIds).all().catch(() => ({ results: [] }));
@@ -2547,6 +2740,29 @@ export function registerAdminRoutes(router) {
         detail: `Your “${r.mine_title}” on ${readableDate(r.occurrence_date)} is combined into ` +
                 `“${r.title}” at ${r.owner_name}, so it renders as a tombstone pointing there.`,
         seen: seenKeys.has(`${r.parish_id}|${r.event_id}`),
+        updated_at: r.updated_at,
+      });
+    }
+    // A date's are never "new": parish_notices_seen keeps events' ids only, so
+    // a date could not be marked read, and a dot that never clears means nothing.
+    for (const r of (listedDates.results || [])) {
+      rows.push({
+        kind: 'listed', parish_id: r.parish_id, event_id: `${r.schedule_id}:${r.occurrence_date}`,
+        title: r.title, occurrence_date: r.occurrence_date,
+        owner_parish: r.owner_parish, owner_name: r.owner_name,
+        detail: `“${r.title}” at ${r.owner_name} on ${readableDate(r.occurrence_date)} is listed at your parish.`,
+        seen: true,
+        updated_at: null,
+      });
+    }
+    for (const r of (absorbedDates.results || [])) {
+      rows.push({
+        kind: 'absorbed', parish_id: r.parish_id, event_id: `${r.host_schedule}:${r.host_date}`,
+        title: r.title, occurrence_date: r.occurrence_date,
+        owner_parish: r.owner_parish, owner_name: r.owner_name,
+        detail: `Your “${r.mine_title}” on ${readableDate(r.occurrence_date)} is combined into ` +
+                `“${r.title}” at ${r.owner_name}, so it renders as a tombstone pointing there.`,
+        seen: true,
         updated_at: r.updated_at,
       });
     }
@@ -2586,6 +2802,25 @@ export function registerAdminRoutes(router) {
     const scoped = outOfScope(c, params.id);
     if (scoped) return scoped;
     const b = await readJson(c.request);
+    // A date of another parish's service (migration 041): the same veto, on
+    // occurrence_parishes and the overrides naming that date.
+    const date = parseInstanceId(String(b.event_id || ''));
+    if (date) {
+      const host = await env.DB.prepare('SELECT parish_id FROM schedules WHERE id = ?').bind(date.scheduleId).first();
+      if (!host) return json({ error: 'Service not found' }, 404);
+      if (host.parish_id === params.id) {
+        return json({ error: 'That service belongs to this parish. Change its date instead of withdrawing it.' }, 400);
+      }
+      await env.DB.prepare('DELETE FROM occurrence_parishes WHERE schedule_id = ? AND occurrence_date = ? AND parish_id = ?')
+        .bind(date.scheduleId, date.date, params.id).run();
+      const held = await env.DB.prepare(
+        `SELECT o.schedule_id, o.occurrence_date FROM schedule_overrides o
+         JOIN schedules s ON s.id = o.schedule_id
+         WHERE o.kind = 'combined' AND o.combined_into_schedule_id = ? AND o.combined_into_date = ? AND s.parish_id = ?`
+      ).bind(date.scheduleId, date.date, params.id).all().catch(() => ({ results: [] }));
+      for (const r of (held.results || [])) await clearCombined(env.DB, r.schedule_id, r.occurrence_date);
+      return json({ ok: true, parish_id: params.id, event_id: `${date.scheduleId}:${date.date}`, restored: (held.results || []).length });
+    }
     if (!/^\d+$/.test(String(b.event_id))) return json({ error: 'event_id is required' }, 400);
     const eventId = Number(b.event_id);
 
@@ -3461,6 +3696,8 @@ export function registerAdminRoutes(router) {
       const last = dayBefore(inst.date);
       await env.DB.prepare('UPDATE schedules SET effective_to = ?, updated_at = ?, updated_by = ? WHERE id = ?')
         .bind(last, NOW(), who, rule.id).run();
+      // Its dates from here on are gone, and so are their combines.
+      await dropDateCombines(env.DB, rule.id, (await dateCombinesFrom(env.DB, rule.id, inst.date)).map(x => x.occurrence_date));
       await stampTimetable(c, rule.parish_id);
       return json({ ok: true, action: 'end', schedule_id: rule.id, effective_to: last });
     }
@@ -3484,6 +3721,11 @@ export function registerAdminRoutes(router) {
         ).bind(...cols.map(k => changes[k]), NOW(), who, rule.id).run();
       }
       await alignAnchor(env.DB, rule.id, inst.date, b);
+      // A combine on a date the changed rule no longer has goes with the date.
+      const changed = await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(rule.id).first();
+      const lost = (await dateCombinesFrom(env.DB, rule.id, inst.date))
+        .filter(x => !changed || !isValidOccurrence(changed, x.occurrence_date)).map(x => x.occurrence_date);
+      await dropDateCombines(env.DB, rule.id, lost);
       await stampTimetable(c, rule.parish_id);
       return json({ ok: true, action: 'edit', mode: 'whole', schedule_id: rule.id });
     }
@@ -3495,9 +3737,24 @@ export function registerAdminRoutes(router) {
       env.DB.prepare('SELECT * FROM schedule_breaks WHERE schedule_id = ? AND to_date >= ? ORDER BY from_date')
         .bind(rule.id, inst.date).all().catch(() => ({ results: [] })),
     ]);
-    const plan = planCarry(laterOv.results || [], laterBr.results || [], next);
-    const anyLater = plan.movable.length || plan.stranded.length || plan.breaks.length;
-    if (anyLater && !['carry', 'discard'].includes(b.keep)) return json(carryQuestion(plan), 409);
+    const hosting = await dateCombinesFrom(env.DB, rule.id, inst.date);
+    const plan = planCarry([...(laterOv.results || []), ...hosting], laterBr.results || [], next);
+    // A date's combine is asked about with the overrides, and moved or let go
+    // by the same answer, but it is no override row of its own.
+    const isRow = (o) => o.kind !== 'hosting';
+    const hostMove = plan.movable.filter(o => !isRow(o)).map(o => o.occurrence_date);
+    const hostDrop = plan.stranded.filter(o => !isRow(o)).map(o => o.occurrence_date);
+    plan.movable = plan.movable.filter(isRow);
+    plan.stranded = plan.stranded.filter(isRow);
+    const anyHosting = hostMove.length + hostDrop.length;
+    const anyLater = plan.movable.length || plan.stranded.length || plan.breaks.length || anyHosting;
+    if (anyLater && !['carry', 'discard'].includes(b.keep)) {
+      return json(carryQuestion({
+        ...plan,
+        movable: [...plan.movable, ...hostMove.map(d => ({ occurrence_date: d, kind: 'hosting' }))],
+        stranded: [...plan.stranded, ...hostDrop.map(d => ({ occurrence_date: d, kind: 'hosting' }))],
+      }), 409);
+    }
     const carry = b.keep === 'carry';
 
     const created = await env.DB.prepare(
@@ -3535,7 +3792,10 @@ export function registerAdminRoutes(router) {
         ? env.DB.prepare('UPDATE schedule_breaks SET to_date = ? WHERE id = ?').bind(dayBefore(inst.date), br.id)
         : env.DB.prepare('DELETE FROM schedule_breaks WHERE id = ?').bind(br.id));
     }
+    if (carry && hostMove.length) stmts.push(...moveDateCombines(env.DB, rule.id, newId, hostMove));
     await env.DB.batch(stmts);
+    // What did not move went with the old rule's dates.
+    await dropDateCombines(env.DB, rule.id, carry ? hostDrop : [...hostMove, ...hostDrop]);
     // A rule's week exceptions are its pattern, not later decisions: the
     // changed service keeps them ("still English on the last Sunday").
     await env.DB.prepare(
@@ -4173,11 +4433,11 @@ export function registerAdminRoutes(router) {
       let subjectName = parishes.get(row.subject) || row.subject;
       let names = { transferTo: payload ? parishes.get(payload.transferTo) || payload.transferTo : null };
       if (row.capability === 'event.combine') {
-        const ev = await env.DB.prepare('SELECT title FROM events WHERE id = ?')
-          .bind(row.subject).first().catch(() => null);
+        const ev = await combineHost(env.DB, row.subject).catch(() => null);
         // A gone event keeps its id, which is what tells the owner the ask has
-        // gone stale rather than quietly reading as being about nothing.
-        subjectName = ev ? ev.title : `event ${row.subject}`;
+        // gone stale rather than quietly reading as being about nothing. A
+        // date of a service says its day (migration 041).
+        subjectName = ev ? (ev.occurrence ? `${ev.title} on ${readableDate(ev.date)}` : ev.title) : `event ${row.subject}`;
         if (payload) names = { ...names, ...await combineNames(env.DB, payload) };
       }
       rows.push({ row, payload, subjectName, names });
@@ -4232,7 +4492,7 @@ export function registerAdminRoutes(router) {
       // The subject is an event, so the scope question is about the parish the
       // event belongs to: asking to combine somebody else's event is not an
       // ask, it is the thing they were refused wearing a different hat.
-      const ev = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(b.subject).first();
+      const ev = await combineHost(env.DB, b.subject);
       if (!ev) return json({ error: 'That event no longer exists.' }, 404);
       const scoped = outOfScope(c, ev.parish_id);
       if (scoped) return scoped;
@@ -4323,12 +4583,12 @@ export function registerAdminRoutes(router) {
     const now = NOW();
 
     if (row.capability === 'event.combine') {
-      const event = await env.DB.prepare('SELECT * FROM events WHERE id = ?')
-        .bind(row.subject).first();
+      // An event, or a date of a service (migration 041).
+      const event = await combineHost(env.DB, row.subject);
       // A week is long enough for the event to have been deleted, and a
       // combine with nothing to combine into would write rows pointing at a
       // row that is gone.
-      if (!event) return { error: 'The event this was about no longer exists.', status: 410 };
+      if (!event) return { error: parseInstanceId(row.subject) ? 'The service this was about no longer runs that day.' : 'The event this was about no longer exists.', status: 410 };
 
       // Every target re-checked against the database as it is now, for the
       // same reason an acronym's clash is checked here and not when the ask
@@ -4482,7 +4742,9 @@ export function registerAdminRoutes(router) {
           location_override: row.patch_location_override,
           location_parish_id: row.patch_location_parish_id,
         }).filter(([, v]) => v != null && v !== '')),
-        combinedIntoEventId: row.combined_into_event_id || null,
+        // An event's id, or the date of a service it is held at (migration 041).
+        combinedIntoEventId: row.combined_into_event_id
+          || (row.combined_into_schedule_id != null ? `${row.combined_into_schedule_id}:${row.combined_into_date}` : null),
       }));
 
     return json({ from, to, overrides: rows });

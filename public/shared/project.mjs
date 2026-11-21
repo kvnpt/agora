@@ -118,6 +118,18 @@ export function withException(s, x) {
 }
 
 /**
+ * What a 'combined' override's date is held at, as one id: the event's
+ * integer, or the date of another service it is part of ("sid:YYYY-MM-DD",
+ * schedule_overrides.combined_into_schedule_id + combined_into_date).
+ */
+export function combinedInto(o) {
+  if (!o) return null;
+  if (o.combined_into_event_id) return o.combined_into_event_id;
+  if (o.combined_into_schedule_id != null && o.combined_into_date) return `${o.combined_into_schedule_id}:${o.combined_into_date}`;
+  return null;
+}
+
+/**
  * Join each rule to its exceptions, as `exceptions` (the rows, winner first)
  * and `variants` (the rule as each modified one holds it). What reads a rule
  * rather than its dates — the timetable's lines, the language filters — asks
@@ -198,7 +210,9 @@ export function project(s, date, o, cache) {
           : kind === 'break'     ? 'break'
           : 'approved',
     is_tombstone: isTombstone ? 1 : 0,
-    combined_into_event_id: (o && o.combined_into_event_id) || null,
+    // What a combined date is held at: an event's id, or a date of another
+    // service ("sid:YYYY-MM-DD", migration 041). Either opens with findEvent.
+    combined_into_event_id: combinedInto(o),
     // Only set on a break, and carried so the card can say WHY and the
     // timetable can say when the service comes back. A break is a statement
     // about a stretch of dates, and an instance inside it that could not name

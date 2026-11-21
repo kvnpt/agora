@@ -37,6 +37,7 @@ import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-c
 import { sitemapXml } from '../lib/seo.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos } from '../lib/juris-logos.mjs';
+import { crossRows, takingPartIn, hostedDates } from '../lib/taking-part.mjs';
 import collections from '../../public/shared/collections.js';
 import search from '../../public/shared/search-words.js';
 import ruleFilters from '../../public/shared/timetable.js';
@@ -171,11 +172,11 @@ async function collectionFeedOf(env, m, route, now, { parishIds = null, days = C
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?`
     ).bind(fromUtc, toUtc).all(),
-    env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all().catch(() => ({ results: [] })),
+    crossRows(env.DB),
   ]);
   return collectionFeed({
     rows, events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
-    cross: cross.results || [], parishIds, named: (m.named || []).map(p => p.id), route, now, days,
+    cross, parishIds, named: (m.named || []).map(p => p.id), route, now, days,
   });
 }
 
@@ -218,7 +219,9 @@ export async function findEvent(db, id) {
     const rule = ev ? null : await db.prepare('SELECT parish_id FROM schedules WHERE id = ?')
       .bind(inst.scheduleId).first();
     const parishId = ev ? ev.parish_id : rule && rule.parish_id;
-    return parishId ? { event: ev, parishId } : null;
+    // Who takes part in the date, as an event's (migration 041).
+    const event = ev ? { ...ev, combined_parishes: await takingPartIn(db, ev.id) } : ev;
+    return parishId ? { event, parishId } : null;
   }
   const ev = await db.prepare(
     `SELECT e.*, p.timezone FROM events e JOIN parishes p ON e.parish_id = p.id
@@ -257,6 +260,16 @@ async function parishPage(env, url, page, now, found = null) {
     const found = await findEvent(db, page.route.eventId);
     if (!found) return missing(url);
     pinnedEvent = found.event;
+    // A date combined into another event, or another date: what replaced it,
+    // and where that is held, for the line under its title.
+    const intoId = pinnedEvent && pinnedEvent.status === 'combined' && pinnedEvent.combined_into_event_id;
+    const host = intoId ? await findEvent(db, String(intoId)) : null;
+    if (host && host.event) {
+      pinnedEvent = { ...pinnedEvent, _into: {
+        id: String(host.event.id), title: host.event.title,
+        at: host.event.location_parish_id || host.event.parish_id,
+      } };
+    }
     parish = await db.prepare(`SELECT ${PARISH_PAGE_COLS} FROM parishes WHERE id = ?`)
       .bind(found.parishId).first();
   }
@@ -268,7 +281,7 @@ async function parishPage(env, url, page, now, found = null) {
     : namedBy ? urlState.parishNamed(read, namedBy) : read;
   const { fromUtc, toUtc } = liteWindow(liteStartDate(route, zone, now), liteDays(route));
 
-  const [rows, events, cross, links, overrides] = await Promise.all([
+  const [rows, storedEvents, cross, links, overrides, hosted] = await Promise.all([
     fetchWindowRows(db, fromUtc, toUtc, { parishId: parish.id }),
     db.prepare(
       `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, ${PARISH_COLOR_SQL} AS parish_color,
@@ -277,11 +290,15 @@ async function parishPage(env, url, page, now, found = null) {
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?
          AND (e.parish_id = ? OR e.location_parish_id = ? OR e.id IN (SELECT event_id FROM event_parishes WHERE parish_id = ?))`
     ).bind(fromUtc, toUtc, parish.id, parish.id, parish.id).all(),
-    db.prepare('SELECT event_id, parish_id FROM event_parishes WHERE parish_id = ?').bind(parish.id).all(),
+    crossRows(db, { parishId: parish.id }).then(results => ({ results })),
     db.prepare('SELECT slug, label, url FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug')
       .bind(parish.id).all().catch(() => ({ results: [] })),
     jurisdictionColorOverrides(db),
+    // Another parish's service on a date this one takes part in (migration
+    // 041): not among this parish's rules, so read on its own.
+    hostedDates(db, [parish.id], fromUtc.slice(0, 10), toUtc.slice(0, 10)),
   ]);
+  const events = { results: [...(storedEvents.results || []), ...hosted] };
 
   // The parishes this page's events and rules are held at, when not here —
   // named on the card (venueLite) — and those taking part in the pinned
@@ -292,6 +309,7 @@ async function parishPage(env, url, page, now, found = null) {
     ...(events.results || []).map(e => e.location_parish_id),
     pinnedEvent && pinnedEvent.location_parish_id,
     ...((pinnedEvent && pinnedEvent.combined_parishes) || []),
+    pinnedEvent && pinnedEvent._into && pinnedEvent._into.at,
   ].filter(Boolean))];
   const venueRows = venueIds.length
     ? await db.prepare(`SELECT id, name, full_name, address, acronym, logo_path, jurisdiction FROM parishes

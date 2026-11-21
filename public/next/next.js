@@ -4706,8 +4706,11 @@
     const rule = e.schedule_id != null ? S.rules.find(r => String(r.id) === String(e.schedule_id)) : null;
     // What the date is, when it is not on: in its kicker, and the title struck through.
     const off = tombOf(e) || (e.status === 'hidden' ? 'Suppressed' : null);
-    // A date combined into another event points at it.
+    // A date combined into another event, or another date, points at it under
+    // the title, with where it is held when that is another parish's church.
     const into = e.status === 'combined' && e.combined_into_event_id ? findEvent(e.combined_into_event_id) : null;
+    const intoAt = into ? S.byId.get(into.location_parish_id || into.parish_id) : null;
+    const replaced = into ? `<p class="ev-replaced">Replaced by <button class="ev-link" type="button" data-event="${esc(into.id)}">${esc(into.title)}</button>${intoAt && intoAt.id !== e.parish_id ? ` at ${esc(intoAt.name)}` : ''}</p>` : '';
     const edits = p && may('event.edit', p.id);
     // The parish's stream, unless this date hides it (hide_live).
     const live = !e.hide_live && (e.parish_live_url || p?.live_url);
@@ -4730,9 +4733,9 @@
           ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
           <h1>${esc(e.title)}</h1>
           ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
+          ${replaced}
           ${eventFactsHTML(eventWhen(l, end ? last : null, overDays), where, langs)}
           ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
-          ${into ? `<p class="ev-note">In its place: <button class="ev-link" type="button" data-event="${esc(into.id)}">${esc(into.title)}</button></p>` : ''}
         </div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">

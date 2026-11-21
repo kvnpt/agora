@@ -2039,6 +2039,9 @@ body.dialog-open { overflow: hidden; }
 .ev-off { color: var(--danger); }
 .ev-head.break .ev-off, .ev-head.combined .ev-off { color: var(--text-2); }
 .ev-note { margin: 6px 0 0; color: var(--text-2); font-size: 14.5px; }
+/* A combined date's "Replaced by …", under its title: the host is a link, at its own size. */
+.ev-replaced { margin: 7px 0 0; color: var(--text-2); font-size: 16px; line-height: 1.35; }
+.ev-replaced .ev-link { font-size: inherit; }
 /* Off, the poster and the words under a quiet veil that says so, so nobody
    reads the date off a poster that still says it is on. */
 .ev-poster.off, .ev-band.off, .ev-desc.off { position: relative; }

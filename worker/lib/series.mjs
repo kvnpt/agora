@@ -74,6 +74,8 @@ export function describeLater(o) {
   if (o.kind === 'cancelled') return 'cancelled';
   if (o.kind === 'hidden') return 'suppressed';
   if (o.kind === 'combined') return 'combined with another service';
+  // Not an override: other parishes take part in this date (migration 041).
+  if (o.kind === 'hosting') return 'other parishes take part';
   const bits = [];
   if (o.patch_feast) bits.push(o.patch_feast);
   if (o.patch_start_time) bits.push(`at ${o.patch_start_time}`);
