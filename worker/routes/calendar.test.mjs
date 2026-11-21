@@ -134,6 +134,29 @@ test('a parish’s one-offs are in it, Parish only ones too; another parish’s 
   assert.ok(!evs.some(e => e.SUMMARY === 'Youth night'));
 });
 
+test('another parish’s one-off it takes part in, or holds in its church, is in it too, as on its card', async () => {
+  const { raw, get } = fresh();
+  const ev = (parish, title, start, extra = {}) => {
+    const cols = ['parish_id', 'source_adapter', 'title', 'start_utc', 'end_utc', 'event_type', 'status', 'mutation_type', ...Object.keys(extra)];
+    return raw.prepare(`INSERT INTO events (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+      .run(parish, 'manual', title, start, null, 'feast', 'approved', 'headless', ...Object.values(extra)).lastInsertRowid;
+  };
+  // Mascot's Festal Vespers, with St Spyridon taking part: the bug was that
+  // the feed keyed who takes part by the row's number and asked by its text.
+  const vespers = ev(SMG, 'Great Festal Vespers', '2026-10-13T07:30:00Z');
+  raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(vespers, SGR);
+  // Held in St George's church by Ryde, and nobody added as taking part.
+  const held = ev(SMG, 'Deanery Paraklesis', '2026-10-14T08:00:00Z', { location_parish_id: SGR });
+  ev(SMG, 'Youth night', '2026-10-09T08:00:00Z');
+  const evs = eventsOf((await get('/sgr.ics')).text);
+  assert.ok(evs.some(e => e.UID === `${vespers}@orthodoxy.au`), 'taking part');
+  assert.ok(evs.some(e => e.UID === `${held}@orthodoxy.au`), 'held in its church');
+  assert.ok(!evs.some(e => e.SUMMARY === 'Youth night'), 'only those');
+  // Both stay Ryde's too.
+  const ryde = eventsOf((await get('/smg.ics')).text);
+  assert.ok(ryde.some(e => e.UID === `${vespers}@orthodoxy.au`) && ryde.some(e => e.UID === `${held}@orthodoxy.au`));
+});
+
 test('a timetable line’s calendar holds that line only, named for it', async () => {
   const { raw, get } = fresh();
   raw.prepare("INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type) VALUES (?, 6, '18:00', 'Vespers', 'prayer')").run(SGR);
