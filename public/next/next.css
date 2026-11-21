@@ -761,6 +761,9 @@ body.map-full .parish-row {
 }
 .tmore[hidden] { display: none; }
 .tmore svg { transform: rotate(90deg); }
+/* Saved's and Favourites' month (next.js todayHTML `ahead`): each day after
+   the first under a Calendar's header, in the page's flow, not held. */
+.today .tday .dh { position: static; padding: 14px 18px 2px; background: none; }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */
 .ctoday, .ptoday { margin: 14px 18px 0; }
 /* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
