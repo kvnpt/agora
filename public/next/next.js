@@ -1012,22 +1012,30 @@
       el.classList.toggle('fade-left', el.scrollWidth > el.clientWidth + 1);
     }));
   }
+  /**
+   * This view's link, in the Filters at their foot (Kevin, 21 Nov 2026): an
+   * island of the panel (data-keep), so the panel drawn again keeps it and
+   * renderLink says what it now is. Tap to copy.
+   */
+  const pageLinkHTML = () => `<div class="fpanel-link" data-keep="page-link">${linkChip(pageSegs(), 'page-link')}</div>`;
   let lastLink = null;
   function renderLink() {
-    const btn = $('#page-link');
-    if (!btn || btn._copied) return;
     const segs = pageSegs();
     const key = segs.join('/');
+    // Remembered with the Filters shut too, so opening them glows at nothing.
+    const was = lastLink;
+    lastLink = key;
+    const btn = $('#page-link');
+    if (!btn || btn._copied) return;
     btn.dataset.copy = pathOf(segs);
     const el = btn.querySelector('.url-text');
     el.innerHTML = linkText(segs);
     // The whole link glows when it changes, in the colour of its parish if it names one.
-    if (lastLink !== null && key !== lastLink) {
+    if (was !== null && key !== was) {
       const p = segs.map(x => x.split('+').map(parishBySlug).find(Boolean)).filter(Boolean).pop();
       el.style.setProperty('--glow', p ? shown(jColor(p.jurisdiction)) : 'var(--accent)');
       el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
     }
-    lastLink = key;
     fitLinks(btn.parentNode);
   }
   /** Words to the clipboard, the old way where the new one is refused. */
@@ -1886,13 +1894,17 @@
    * any WhatsApp drafts, as they were.
    */
   function placeToday() {
-    const t = $('#today'), chip = $('#inview');
+    const t = $('#today'), chip = $('#inview'), on = $('#shelf-whatson');
     if (WIDE.matches) {
       if (t.parentElement !== $('.col-side')) $('#favs').before(t);
       if (chip.parentElement === $('#viewport')) $('#viewport').after(chip);
+      // What's on heads the right column, beside Today and your own.
+      if (on.parentElement !== $('.col-main')) $('.col-main').prepend(on);
     } else {
       if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
       if (chip.parentElement !== $('#viewport')) $('#viewport').append(chip);
+      // On a phone What's on comes before Favourites and your lists (Kevin, 21 Nov 2026).
+      if (on.nextElementSibling !== $('#favs')) $('#favs').before(on);
     }
   }
   placeToday();
@@ -5191,6 +5203,7 @@
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
     return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('Days', days, spans, parts)
       + group('Jurisdiction', juris) + group('Where', regions) + group('Parishes', parishes)
+      + pageLinkHTML()
       + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
           <span class="fpanel-end">${saveViewHTML()}<button class="fpill on" type="button" data-act="filters-done">Done</button></span></div>`;
   }
@@ -5261,6 +5274,7 @@
     const sc = fpop.scope, el = fpopEl();
     if (sc !== 'page' && !stack.includes(sc)) return closeFilters();
     paint(el, sc === 'page' ? panelHTML() : cardFiltersHTML(sc));
+    if (sc === 'page') fitLinks(el);
     el.querySelectorAll('.fsec').forEach(sec => {
       const on = [...sec.querySelectorAll('.fbody .fpill.on')].map(x => x.textContent.trim());
       sec.querySelector('.fsum').textContent = on.join(', ').replace(/, only\b/g, ' only') || 'Any';
