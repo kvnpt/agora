@@ -431,11 +431,6 @@ export function collectionFeed({ rows, events = [], cross = [], parishIds, named
   const ids = new Set(parishIds), mine = new Set(named);
   const instances = rows.schedules.length ? expandFrom(rows, fromUtc, toUtc) : [];
   const oneOffs = events.filter(e => { const t = Date.parse(e.start_utc); return t >= Date.parse(fromUtc) && t <= Date.parse(toUtc); });
-  const extra = new Map();
-  for (const c of cross) {
-    if (!extra.has(c.event_id)) extra.set(c.event_id, []);
-    extra.get(c.event_id).push(c.parish_id);
-  }
   const lf = ruleFilters.langFilterOf(route);
   const rulesBy = new Map();
   for (const r of rows.schedules) {
@@ -451,7 +446,9 @@ export function collectionFeed({ rows, events = [], cross = [], parishIds, named
     .map(e => ({ ...e, id: String(e.id), _local: localOf(e, e.timezone || zone),
       is_tombstone: e.is_tombstone || TOMB_STATUSES.has(e.status) ? 1 : 0 }))
     .filter(e => {
-      const pids = [e.parish_id, ...(extra.get(e.id) || [])];
+      // Its parish, those taking part and the church it is held in, as
+      // buildFeed attaches them and next.js's eventParishIds reads them.
+      const pids = [e.parish_id, ...(e.extra_parishes || [])];
       if (!pids.some(id => ids.has(id))) return false;
       if (e.parish_scoped && !pids.some(id => mine.has(id))) return false;
       if (e._local.date < start || e._local.date >= end) return false;
