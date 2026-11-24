@@ -2151,13 +2151,13 @@
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
     // The page's (`mode` given, null for the map's) has its buttons on the
-    // right; as yours, Tomorrow goes on in your Favourites' or Saved's own card.
+    // right; as yours, its foot is View Saved or View Favourites, that card (Kevin, 24 Nov 2026).
     // Yours is titled so, its day under it: "Saved", "Today · Sunday 15 Nov".
     const date = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
     const head = mode === 'bm' ? 'Saved' : mode === 'fav' ? 'Favourites' : title;
     return `<header class="card-head"><div><h2>${head}</h2><p>${mode && title ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML(near) : near ? `<div class="tmodes">${nearBtnHTML()}</div>` : ''}</header>
       ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
-      <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : ahead || (!live.length && !later.length) ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
+      <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${mode === 'bm' ? 'View Saved' : mode === 'fav' ? 'View Favourites' : showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
