@@ -498,11 +498,11 @@ export const REPLIES = {
   // "whoever keeps St Nicholas, Punchbowl", or null when no parish is known.
   suggested: (keeper, summary) => keeper
     ? `Thank you. ${summary ? `Got it: ${summary}. ` : ''}It's with ${keeper} now, and nothing on the page changes until one of them has looked.`
-    : `Thank you. ${summary ? `Got it: ${summary}. ` : ''}I couldn't tell which parish it's for, so it's with Agora's editors. If you know, reply with the parish's link, like orthodoxy.au/snp.`,
-  suggestReading: (keeper) => `Thank you. It's still being read, and goes to ${keeper || "Agora's editors"} as soon as it is.`,
-  suggestionAdded: (keeper) => `Added that to your suggestion. It's with ${keeper || "Agora's editors"}.`,
+    : `Thank you. ${summary ? `Got it: ${summary}. ` : ''}I couldn't tell which parish it's for, so it's with orthodoxy.au's editors. If you know, reply with the parish's link, like orthodoxy.au/snp.`,
+  suggestReading: (keeper) => `Thank you. It's still being read, and goes to ${keeper || "orthodoxy.au's editors"} as soon as it is.`,
+  suggestionAdded: (keeper) => `Added that to your suggestion. It's with ${keeper || "orthodoxy.au's editors"}.`,
   suggestionMoved: (keeper) => `Thanks. Your suggestion is with ${keeper} now.`,
-  howToSuggest: (origin) => `This is Agora (${host(origin)}). To tell a parish its page is wrong or something is coming up, send it here with the parish's link (like orthodoxy.au/snp), or forward its poster, and it goes to whoever keeps the parish. If you keep a parish's page, link this phone and your posters become drafts: sign in at ${origin}, open the account menu, choose Link WhatsApp, and send the code it shows.`,
+  howToSuggest: (origin) => `This is ${host(origin)}. To tell a parish its page is wrong or something is coming up, send it here with the parish's link (like orthodoxy.au/snp), or forward its poster, and it goes to whoever keeps the parish. If you keep a parish's page, link this phone and your posters become drafts: sign in at ${origin}, open the account menu, choose Link WhatsApp, and send the code it shows.`,
   suggestLimit: (n) => `That's ${n} suggestions from this phone today, the most I read in a day. Send it again tomorrow.`,
   tooManyOpen: (n) => `You have ${n} suggestions waiting already. Once some have been looked at, send more.`,
   badTicket: () => 'That code didn\'t work. It may have run out: send your suggestion from the parish\'s page again.',

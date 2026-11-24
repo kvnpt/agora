@@ -1549,7 +1549,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .pm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pm-t b { font-size: 15.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-t small { font-size: 12.5px; color: var(--text-2); }
-.pm-t .pm-wait { color: var(--danger); font-weight: 600; }
+/* What waits for the owner, under who they are: the red dot's words. */
+.pm-note .pm-wait { display: block; color: var(--danger); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+/* Favourites and Saved in the account menu, in their own colours, as the
+   home card's toggles and edge have them. */
+.pm-row > svg.pm-fav { color: var(--fav); }
+.pm-row > svg.pm-saved { color: var(--saved); }
 .pm-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .pm-ic img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
 .pm-sep { height: 1px; margin: 4px 8px; background: var(--line); }
@@ -2340,6 +2345,9 @@ body.dialog-open { overflow: hidden; }
 .foot-rule::before, .foot-rule::after { content: ""; width: 44px; height: 1px; background: var(--line-strong); }
 .foot-rule span { width: 5px; height: 5px; background: var(--text-3); opacity: .7; transform: rotate(45deg); }
 .foot .foot-end { margin: 0; }
+/* What waits in the panel, on a line of its own under it. */
+.foot-wait { display: block; color: var(--danger); font-weight: 600; }
+.foot-wait[hidden] { display: none; }
 /* The cities' own pages: what they are on one line, the cities under it. */
 .foot-places span { display: block; }
 .foot-link {

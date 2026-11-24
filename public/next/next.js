@@ -2937,8 +2937,18 @@
     if (w.role !== 'parish') return true;
     return !!parishId && w.parishIds.includes(parishId);
   }
-  /** What is waiting, in words, or ''. */
+  /**
+   * The Admin panel is the owner's alone now, at the foot of the home page
+   * (Kevin, 24 Nov 2026: it is being retired for everybody else). Owner by
+   * the capability only an owner has, as the Worker asks it.
+   */
+  const ownsPanel = () => S.who.signedIn && !!S.who.can['people.manage'];
+  /**
+   * What is waiting in the panel, in words, or ''. Only for whoever has the
+   * panel: a dot with nowhere to go is noise.
+   */
   function waiting() {
+    if (!ownsPanel()) return '';
     const { openAsks: a, parishNotices: n, suggestions: g } = S.who;
     return [a && `${a} ${a === 1 ? 'ask' : 'asks'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
       g && `${g} ${g === 1 ? 'suggestion' : 'suggestions'}`].filter(Boolean).join(', ');
@@ -2961,6 +2971,14 @@
     if (who) {
       who.textContent = S.who.signedIn && S.who.identity ? S.who.identity : 'Eastern Orthodox events & parishes';
       who.classList.toggle('signed-in', !!(S.who.signedIn && S.who.identity));
+    }
+    // The foot's Admin panel, for the owner, with what waits there.
+    const panel = $('#foot-admin');
+    if (panel) {
+      panel.hidden = !ownsPanel();
+      const wait = $('#foot-wait');
+      wait.textContent = w;
+      wait.hidden = !w;
     }
     // A card drawn before the answer said where its list was kept.
     for (const el of $$('[data-kept]')) el.innerHTML = keptHTML();
@@ -2998,14 +3016,25 @@
     return v;
   }
   const takeSignInView = () => readSignInView({ take: true });
+  /**
+   * The account menu: who this is, then Favourites and Saved, a tap from
+   * anywhere (Kevin, 24 Nov 2026), signed in or not, since a visitor's are
+   * kept in this browser. Admin panel is not here: it is the owner's alone
+   * now, at the foot of the home page (syncAccount). What waits for the
+   * owner is said under who they are, the red dot's words.
+   */
   function openAccount(btn) {
     const w = waiting();
+    const nFav = favIds().length, nSaved = bookmarked().dates.length;
+    const mine = `<button class="pm-row" type="button" role="menuitem" data-coll="list-fav">${I.star.replace('<svg', '<svg class="pm-fav"')}<span class="pm-t"><b>Favourites</b>${nFav ? `<small>${nFav} ${nFav === 1 ? 'parish' : 'parishes'}</small>` : ''}</span></button>
+         <button class="pm-row" type="button" role="menuitem" data-act="bookmarks">${I.bookmark.replace('<svg', '<svg class="pm-saved"')}<span class="pm-t"><b>Saved</b>${nSaved ? `<small>${nSaved} to come</small>` : ''}</span></button>`;
     const rows = S.who.signedIn
-      ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
-         ${S.who.role ? `<a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>` : ''}
-         ${S.who.whatsapp.ready && S.who.can['event.edit'] ? `<button class="pm-row" type="button" role="menuitem" data-wa-link>${I.chat}<span class="pm-t"><b>Link WhatsApp</b><small>Forward posters to Agora as drafts</small></span></button>` : ''}
+      ? `${S.who.identity || w ? `<div class="pm-note">${S.who.identity ? esc(S.who.identity) : ''}${w ? `<span class="pm-wait">${esc(w)}</span>` : ''}</div>` : ''}
+         ${mine}
+         ${S.who.whatsapp.ready && S.who.can['event.edit'] ? `<button class="pm-row" type="button" role="menuitem" data-wa-link>${I.chat}<span class="pm-t"><b>Link WhatsApp</b><small>Forward posters as drafts</small></span></button>` : ''}
          <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
-      : `<a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
+      : `${mine}
+         <a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
     openMenu(btn, rows);
   }
 

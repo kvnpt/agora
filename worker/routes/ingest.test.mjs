@@ -752,7 +752,7 @@ test('with no parish named it goes where the read says; with none, to the editor
   const second = f.suggestions()[1];
   assert.equal(second.parish_id, '_unassigned', 'nobody’s yet: owners and editors see it');
   assert.equal(f.graph.texts()[1],
-    'Thank you. Got it: Mums Group, Fri 4 Dec 10am. I couldn\'t tell which parish it\'s for, so it\'s with Agora\'s editors. If you know, reply with the parish\'s link, like orthodoxy.au/snp.');
+    'Thank you. Got it: Mums Group, Fri 4 Dec 10am. I couldn\'t tell which parish it\'s for, so it\'s with orthodoxy.au\'s editors. If you know, reply with the parish\'s link, like orthodoxy.au/snp.');
 
   await withReader(READ, async (calls) => {
     await f.deliver([text('/snp', { at: 1762401030 })]);
@@ -780,7 +780,7 @@ test('words alone: a greeting is told how, once an hour; words naming a parish, 
   });
   assert.equal(f.suggestions().length, 0);
   assert.equal(f.graph.sent.length, 1, 'told once');
-  assert.match(f.graph.texts()[0], /^This is Agora \(orthodoxy\.au\)\. To tell a parish its page is wrong or something is coming up, send it here with the parish's link/);
+  assert.match(f.graph.texts()[0], /^This is orthodoxy\.au\. To tell a parish its page is wrong or something is coming up, send it here with the parish's link/);
   assert.match(f.graph.texts()[0], /link this phone and your posters become drafts: sign in at https:\/\/orthodoxy\.au, open the account menu, choose Link WhatsApp/);
 
   await withReader(READ, async (calls) => {
