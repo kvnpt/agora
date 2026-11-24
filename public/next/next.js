@@ -122,6 +122,7 @@
     loads: 0,                // bumped as the bundle widens
     panel: null,             // the filters open under their button: { pushed }
     todayAll: false,         // the page's Today opened in full with Show all (clipToday)
+    mineAll: false,          // the same of Saved's or Favourites' month, cut off again as each is turned on
     todayMode: null,         // the page's Today as your bookmarks ('bm') or favourites ('fav'), not the map's (todayMine)
   };
 
@@ -1067,17 +1068,20 @@
 
   // ── The feed, from the bundle ─────────────────────────────────────────
 
-  let feedCache = { key: '', list: [] };
+  // One list a length asked for: the page's two days, Saved and Favourites'
+  // month (todayMine) and Saved's sixty days (bookmarked) are each asked on
+  // every draw, and one kept list was each throwing the others' away.
+  const feedCache = new Map();
   function feedFor(days) {
     const t = todayKey();
     const from = new Date(Date.now() - 6 * 3600000).toISOString();
     const to = new Date(Date.parse(addDays(t, days) + 'T14:00:00Z')).toISOString();
     const key = `${from.slice(0, 13)}|${to}|${S.loads}`;
-    if (feedCache.key !== key) {
-      const list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
-      feedCache = { key, list };
-    }
-    return feedCache.list;
+    const had = feedCache.get(days);
+    if (had && had.key === key) return had.list;
+    const list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+    feedCache.set(days, { key, list });
+    return list;
   }
   /** A parish's one-offs ahead: its own, those held in its church and, unless `own`, those it takes part in. */
   function upcomingOneOffs(pid, { own = false } = {}) {
@@ -1914,6 +1918,8 @@
    * The page's Today is all of the day, cut off under a fade where it runs
    * long, and Show all opens the rest in place; Tomorrow is at its foot once
    * it is open (Kevin, 12 Nov 2026). Open stays open while the map moves.
+   * Saved's and Favourites' month is cut off the same, and opened on its own
+   * (S.mineAll), afresh each time one is turned on (Kevin, 21 Nov 2026).
    * The cut is next.css's (.today.clipped .tlist), kept to when it hides
    * more than a row or so.
    */
@@ -1923,7 +1929,7 @@
     if (!list || !more) return;
     // Not drawn (the full-screen map hides it): measured again when it is.
     if (!list.getClientRects().length) return;
-    const clip = !S.todayAll && list.scrollHeight > TODAY_CUT + 100;
+    const clip = !(S.todayMode ? S.mineAll : S.todayAll) && list.scrollHeight > TODAY_CUT + 100;
     box.classList.toggle('clipped', clip);
     more.hidden = !clip;
   }
@@ -1933,7 +1939,8 @@
     if (S.todayMode && !hasMine(S.todayMode)) { setTodayMode(null); return; }
     const mode = S.todayMode;
     let html;
-    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, near: true, empty: mode === 'bm' ? 'Nothing more today that you saved.' : 'Nothing more today at your favourites.' });
+    // Yours goes on for a month, cut off under the same fade (Kevin, 21 Nov 2026).
+    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, near: true, ahead: MINE_DAYS, empty: mode === 'bm' ? 'Nothing you saved in the month ahead.' : 'Nothing at your favourites in the month ahead.' });
     else {
       const on = feedFor(2).filter(e => eventPasses(e));
       // Nothing in view but something elsewhere says so, and the way to it,
@@ -1975,9 +1982,11 @@
    */
   const isMine = (mode, e, m = marks(), fav = new Set(favIds())) =>
     mode === 'bm' ? isBookmarked(e, m) : [e.location_parish_id, ...eventParishIds(e)].some(id => fav.has(id));
+  // Today and the month after it: Saturday 21 November to Monday 21 December.
+  const MINE_DAYS = 30;
   function todayMine(mode) {
     const m = marks(), fav = new Set(favIds());
-    return feedFor(2).filter(e => (visible(e) || tombOf(e)) && isMine(mode, e, m, fav));
+    return feedFor(MINE_DAYS + 1).filter(e => (visible(e) || tombOf(e)) && isMine(mode, e, m, fav));
   }
   /**
    * Yours, read once while nothing changes (a map move asks again; the
@@ -2004,6 +2013,8 @@
   const hasMine = (mode) => mineOf(mode).has;
   const mineIds = (mode) => mineOf(mode).ids;
   function setTodayMode(mode) {
+    // Each month of yours opens cut off; the map's day stays as it was left.
+    if (mode !== S.todayMode) S.mineAll = false;
     S.todayMode = mode;
     renderToday();
     syncMap();
@@ -2041,8 +2052,14 @@
    * `next` is the next that does, lit where it already is and under its own
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
+   *
+   * Yours, Saved's or Favourites' (`ahead`, a number of days), goes on past
+   * the day, up to a month (Kevin, 21 Nov 2026): each day after the first
+   * under its own header, as a Calendar's are, the whole of it cut off under
+   * the page's fade (clipToday). With nothing more today, the first day that
+   * has some is the box's own, as tomorrow is the page's.
    */
-  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false, mode, empty = '', near = false } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false, mode, empty = '', near = false, ahead = 0 } = {}) {
     const now = Date.now();
     const t = todayKey();
     // Those at one time nearest first; under Nearest (`near`, the page's and
@@ -2080,9 +2097,23 @@
       const m = part(es.filter(e => !isEvening(e)), 'day'), ev = part(es.filter(isEvening), 'eve');
       return `${m && ev ? MORNING : ''}${m}${m && ev ? EVENING : ''}${ev}`;
     };
+    // The days after today, each its rows in order, the days in theirs.
+    const last = addDays(t, ahead), days = new Map();
+    if (ahead) {
+      for (const e of all) {
+        const d = local(e).date;
+        if (d <= t || d > last) continue;
+        if (!days.has(d)) days.set(d, []);
+        days.get(d).push(e);
+      }
+    }
+    const daysAhead = [...days.keys()].sort();
+    // A day of its own: its morning and its evening, each in its slots.
+    const dayBody = (es) => { day = false; eve = false; return nearby ? nearRows(es) : rows(es); };
     let title = 'Today', k = t, body = '';
-    const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
-    if (!live.length && !later.length && !showsTomorrow && !next && !clear && !empty) return '';
+    const showsAhead = !live.length && !later.length && daysAhead.length > 0;
+    const showsTomorrow = !ahead && !live.length && !later.length && tomorrow.length > 0;
+    if (!live.length && !later.length && !showsTomorrow && !showsAhead && !next && !clear && !empty) return '';
     // `full`, the page's: the whole day, cut off by clipToday where it runs long.
     const upTo = (es, n) => (full ? es : es.slice(0, n));
     if (nearby && (live.length || later.length)) {
@@ -2095,11 +2126,21 @@
     } else if (later.length) {
       if (later.every(isEvening)) title = 'This evening';
       body += rows(upTo(later, 5));
+    } else if (showsAhead) {
+      // Titled by its day: "Tomorrow · Sunday 22 Nov", or the date alone.
+      k = daysAhead[0];
+      title = k === addDays(t, 1) ? 'Tomorrow' : '';
+      body += dayBody(days.get(k));
     } else if (showsTomorrow) {
       title = 'Tomorrow';
       k = addDays(t, 1);
       body += nearby ? nearRows(tomorrow, undefined, full ? Infinity : 4) : rows(upTo(tomorrow, 4));
     } else body += `<div class="tempty">${esc(empty || 'Nothing more today.')}</div>`;
+    // Each day after the box's own, under its header; a day is named by its date (paint).
+    for (const d of daysAhead) {
+      if (d <= k) continue;
+      body += `<section class="tday" data-date="${d}"><h3 class="dh${weekdayOf(d) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(d, true))}</span></h3>${dayBody(days.get(d))}</section>`;
+    }
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
@@ -2110,13 +2151,13 @@
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
     // The page's (`mode` given, null for the map's) has its buttons on the
-    // right; as yours, Tomorrow goes on in your Favourites' or Saved's own card.
+    // right; as yours, its foot is View Saved or View Favourites, that card (Kevin, 24 Nov 2026).
     // Yours is titled so, its day under it: "Saved", "Today · Sunday 15 Nov".
     const date = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
     const head = mode === 'bm' ? 'Saved' : mode === 'fav' ? 'Favourites' : title;
-    return `<header class="card-head"><div><h2>${head}</h2><p>${mode ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML(near) : near ? `<div class="tmodes">${nearBtnHTML()}</div>` : ''}</header>
+    return `<header class="card-head"><div><h2>${head}</h2><p>${mode && title ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML(near) : near ? `<div class="tmodes">${nearBtnHTML()}</div>` : ''}</header>
       ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
-      <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
+      <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${mode === 'bm' ? 'View Saved' : mode === 'fav' ? 'View Favourites' : showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -5795,7 +5836,7 @@
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else if (S.todayMode) { window.scrollTo({ top: 0, behavior: 'smooth' }); fitTo(mineIds(S.todayMode)); } else showNearest(); return; }
-    if (t.closest('[data-act="today-all"]')) { S.todayAll = true; clipToday(); return; }
+    if (t.closest('[data-act="today-all"]')) { if (S.todayMode) S.mineAll = true; else S.todayAll = true; clipToday(); return; }
     if (t.closest('[data-near-sort]')) { setNear(!nearOn()); return; }
     if ((b = t.closest('[data-today-mode]'))) { const m = b.dataset.todayMode; setTodayMode(S.todayMode === m ? null : m); return; }
     if ((b = t.closest('[data-nearest]'))) {
@@ -6199,6 +6240,9 @@
     step('GET /api/bundle …', 0.15);
     await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(addDays(t, 60) + 'T14:00:00Z')).toISOString() });
     S.loadedTo = addDays(t, 60);
+    // Widened from nothing: a list read before the bundle came (the map's
+    // first move) is not kept (feedFor, feedRange).
+    S.loads++;
     adopt();
     step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
     if (S.loc) document.body.classList.add('located');
