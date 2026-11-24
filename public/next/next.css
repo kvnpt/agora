@@ -541,7 +541,6 @@ body.map-full .parish-row {
    This view's address as it builds (app.css .mode-url, .ps-url): the host
    faint, each segment in full, a parish bold in its colour, a glow when it
    changes. Tap to copy. On the page under the map, and on each card. */
-.page-link { display: flex; padding: 8px var(--pad) 0; }
 .sheet-link { display: flex; padding: 8px 18px 0; }
 .url-chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -643,6 +642,9 @@ body.map-full .parish-row {
 .ftype.match { background: color-mix(in srgb, var(--k-bg) 75%, var(--card)); border-color: color-mix(in srgb, var(--k-fg) 45%, transparent); }
 .fpill.ftype.on { background: var(--k-fg); color: var(--card); border-color: var(--k-fg); font-weight: 700; }
 .fpanel-foot { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
+/* This view's link, over the foot's buttons: the page's, as it builds. */
+.fpanel-link { display: flex; padding: 6px 2px 2px; border-top: 1px solid var(--line); }
+.fpanel-link + .fpanel-foot { border-top: 0; padding-top: 6px; }
 .fpill-ghost { background: transparent; }
 .fpanel-end { display: flex; align-items: center; gap: 8px; }
 .fpill-saved { color: var(--accent); border-color: var(--accent); }
@@ -2249,7 +2251,7 @@ body.dialog-open { overflow: hidden; }
     display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); column-gap: 8px; align-items: start;
     padding: 0 24px 64px;
   }
-  main > :is(.viewport-card, .page-link) { grid-column: 1 / -1; }
+  main > .viewport-card { grid-column: 1 / -1; }
   .col-side { display: block; grid-column: 1; }
   .col-main { display: block; grid-column: 2; min-width: 0; }
   /* The left column rides along under the dock, scrolling on its own if it

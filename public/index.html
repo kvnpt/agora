@@ -178,14 +178,10 @@
       </div>
     </section>
 
-    <!-- The map's filters, the app's pills, opened from its button. -->
+    <!-- The map's filters, the app's pills, opened from its button; at
+         their foot this view's link, building as they change (Kevin,
+         21 Nov 2026: in the Filters, not on the page under Today). -->
     <div class="filter-panel" id="filter-panel" role="group" aria-label="Filters" hidden></div>
-
-    <!-- This view's link, building as the filters change, as the app's does:
-         tap to copy. -->
-    <div class="page-link">
-      <button class="url-chip" type="button" id="page-link" data-copy="/" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
-    </div>
 
     <!-- Wide, the page under the map is two columns (next.css, the wide
          layout): Today and your own lists at the left, everything else at
@@ -197,6 +193,12 @@
          comes back in here, under them. -->
     <section class="wa-drafts" id="wa-drafts" hidden></section>
 
+    <!-- What's on: the one-offs, poster first. It follows the map, as Today
+         does, so it comes before what does not (Kevin, 6 Nov 2026), and
+         before your own Favourites and lists (Kevin, 21 Nov 2026). Wide, it
+         heads the right column instead (next.js, placeToday). -->
+    <section class="shelf" id="shelf-whatson"></section>
+
     <!-- Favourites, open on the page: each starred parish and what is next
          there. Then the other lists, bookmarks and saved views, small. -->
     <section class="favs" id="favs"></section>
@@ -204,10 +206,6 @@
 
     </div>
     <div class="col-main">
-    <!-- What's on: the one-offs, poster first. It follows the map, as Today
-         does, so it comes before what does not (Kevin, 6 Nov 2026). -->
-    <section class="shelf" id="shelf-whatson"></section>
-
     <!-- Curated: the slices of the data, as collections of parishes. -->
     <section class="shelf" id="shelf-collections"></section>
 
