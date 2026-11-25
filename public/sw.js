@@ -9,7 +9,8 @@
 //
 // Not kept: map tiles (the browser's own cache keeps them), posters, /admin,
 // a calendar file (a link + .ics, for the phone's calendar, never the page),
-// and every /api/ path but the bundle. They still go out through here, not
+// pdf.js (2 MB, for an editor opening a PDF, never needed offline), and every
+// /api/ path but the bundle. They still go out through here, not
 // around it: Safari sends a request this file lets fall through past its own
 // HTTP cache, so a tile or a poster came down again on every visit (measured
 // in the iOS Simulator, 30 Oct 2026). To retire this file, deploy one that
@@ -17,7 +18,7 @@
 const CACHE = 'agora-offline-v1';
 const SHELL = '/';
 const BUNDLE = '/api/bundle';
-const NEVER = /^\/(api|admin|tiles|posters|cdn-cgi)(\/|$)/;
+const NEVER = /^\/(api|admin|tiles|posters|cdn-cgi|lib\/pdfjs)(\/|$)/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.add(SHELL)).then(() => self.skipWaiting()));

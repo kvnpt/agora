@@ -449,11 +449,13 @@
     try {
       const imgs = [];
       for (const src of sources) {
+        // A PDF's page, drawn already (pdfPages).
+        if (root.HTMLCanvasElement && src instanceof root.HTMLCanvasElement) { imgs.push(src); continue; }
         const url = typeof src === 'string' ? src : URL.createObjectURL(src);
         if (typeof src !== 'string') urls.push(url);
         imgs.push(await loadImage(url));
       }
-      const plan = pictureLayout(imgs.map(img => ({ w: img.naturalWidth, h: img.naturalHeight })));
+      const plan = pictureLayout(imgs.map(img => ({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height })));
       const canvas = document.createElement('canvas');
       canvas.width = plan.width;
       canvas.height = plan.height;
@@ -474,6 +476,83 @@
     } finally {
       urls.forEach(u => URL.revokeObjectURL(u));
     }
+  }
+
+  // ── a PDF ──
+  //
+  // A parish's programme or bulletin is often a PDF. It is read as the PDF
+  // itself, every page (worker/lib/poster-read.mjs); what is shown, and what
+  // its events carry, is a picture of it: its first pages side by side, the
+  // way a forward's pictures are put together (joinPictures). pdf.js draws
+  // them — Mozilla's, vendored under /lib/pdfjs like MapLibre, and loaded the
+  // first time a PDF is opened here, never before.
+
+  const PDF_TYPE = 'application/pdf';
+  /** The most a PDF may be: the reader's (worker/lib/whatsapp.mjs MAX_PDF_BYTES). */
+  const MAX_PDF_BYTES = 15 * 1024 * 1024;
+  /** A poster path, or a File, that is a PDF. */
+  const isPdf = (src) => (typeof src === 'string'
+    ? /\.pdf$/i.test(src.split('?')[0])
+    : !!src && (src.type === PDF_TYPE || /\.pdf$/i.test(src.name || '')));
+  /** What stands for a PDF until its picture is made: a page, marked PDF. */
+  const PDF_THUMB = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 160"><rect x="4" y="4" width="112" height="152" rx="8" fill="#fff" stroke="#b9b9c3" stroke-width="3"/><path d="M24 40h72M24 56h72M24 72h48" stroke="#d6d6de" stroke-width="6" stroke-linecap="round"/><rect x="24" y="100" width="72" height="34" rx="6" fill="#d93025"/><text x="60" y="124" font-family="system-ui,sans-serif" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">PDF</text></svg>')}`;
+  /** A poster's thumbnail: itself, or the PDF mark. */
+  const thumbOf = (path) => (isPdf(path) ? PDF_THUMB : path);
+
+  let pdfjs = null;
+  function loadPdfjs() {
+    if (!pdfjs) {
+      pdfjs = import('/lib/pdfjs/pdf.min.mjs').then((lib) => {
+        lib.GlobalWorkerOptions.workerSrc = '/lib/pdfjs/pdf.worker.min.mjs';
+        return lib;
+      });
+      pdfjs.catch(() => { pdfjs = null; });   // offline, say: the next PDF tries again
+    }
+    return pdfjs;
+  }
+
+  /**
+   * A PDF's first MAX_PICTURES pages, each drawn on white at about the size it
+   * has in the poster: a page alone at MAX_EDGE, several smaller, since
+   * pictureLayout scales the row down to MAX_EDGE anyway — and an iPhone
+   * holds only so many large canvases at once. `src` is a File or this
+   * site's URL.
+   */
+  async function pdfPages(src) {
+    const lib = await loadPdfjs();
+    const data = new Uint8Array(typeof src === 'string'
+      ? await (await fetch(src)).arrayBuffer()
+      : await src.arrayBuffer());
+    const doc = await lib.getDocument({ data, wasmUrl: '/lib/pdfjs/wasm/', isEvalSupported: false }).promise;
+    try {
+      const n = Math.min(doc.numPages, MAX_PICTURES);
+      const edge = n === 1 ? MAX_EDGE : Math.round(MAX_EDGE * 0.7);
+      const pages = [];
+      for (let i = 1; i <= n; i++) {
+        const page = await doc.getPage(i);
+        const one = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: edge / Math.max(one.width, one.height) });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+        page.cleanup();
+        pages.push(canvas);
+      }
+      return { pages, total: doc.numPages };
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  /** A PDF as one picture: its first pages side by side, as a poster is shown. */
+  async function pdfPicture(src) {
+    const { pages } = await pdfPages(src);
+    if (!pages.length) throw new Error('That PDF has no pages');
+    return joinPictures(pages);
   }
 
   /**
@@ -655,7 +734,9 @@
       // is, and the picker moves the draft there — so this is state, not a given.
       parish: opts.parish || null,
       draft: null,            // {id, poster_path, read_status, read_kind, read_notes, read_parish}
-      joined: null,           // {from, to}: a WhatsApp forward's pictures, joined into one poster here
+      joined: null,           // {from, to}: a WhatsApp forward's pictures (or a PDF's pages), joined into one poster here
+      picturing: null,        // that join, while it runs: Publish waits for it
+      pdfPicture: null,       // {file, blob}: a dropped PDF's picture, made here, for the poster once the PDF is stored
       creating: null,         // the POST that makes the draft, while it is in flight
       cards: [],
       nextKey: 1,
@@ -704,11 +785,11 @@
       <div class="ee-suggest ee-intent" data-ee="intent" aria-live="polite" hidden></div>
       <div class="ee-strip" data-ee="strip" hidden></div>
       <div class="ee-poster">
-        <input type="file" accept="image/*" multiple data-ee="poster-input" hidden>
+        <input type="file" accept="image/*,application/pdf" multiple data-ee="poster-input" hidden>
         <div class="drop-box${canReadClipboard() ? ' can-paste' : ''}" data-ee="drop-box">
           <button type="button" class="ee-drop" data-ee="drop">
             <span class="ee-drop-title">Add an image</span>
-            <span class="ee-drop-sub">A poster, flyer or programme: tap to choose one, drop it here, or paste it. Several pictures of one announcement are put side by side as one poster. The details are read into the form for you to check — nothing is published until you say so.</span>
+            <span class="ee-drop-sub">A poster, flyer or programme, as a picture or a PDF: tap to choose one, drop it here, or paste it. Several pictures of one announcement are put side by side as one poster. The details are read into the form for you to check — nothing is published until you say so.</span>
           </button>
           ${canReadClipboard() ? pastePillHTML('data-ee="paste"') : ''}
         </div>
@@ -776,12 +857,13 @@
     const showError = (text) => showMessage(text, 'error');
 
     // ── the poster panel ──
-    function showPoster(url) {
+    function showPoster(url, pdf = isPdf(url || '')) {
       state.posterUrl = url;
       $('drop-box').hidden = !!url;
       $('poster').hidden = !url;
       el.classList.toggle('has-poster', !!url);
-      if (url) el.querySelector('.ee-thumb').src = url;
+      // A PDF shows as a page marked PDF until its picture is made.
+      if (url) el.querySelector('.ee-thumb').src = pdf ? PDF_THUMB : url;
     }
 
     $('drop').addEventListener('click', () => fileInput.click());
@@ -803,7 +885,7 @@
     $('thumb').addEventListener('click', () => {
       const url = (state.draft && state.draft.poster_path) || state.posterUrl;
       if (!url) return;
-      if (opts.openPoster) opts.openPoster(url);
+      if (opts.openPoster && !isPdf(url)) opts.openPoster(url);
       else window.open(url, '_blank', 'noopener');
     });
     fileInput.addEventListener('change', () => {
@@ -2617,9 +2699,13 @@
       // there is nowhere to put it (the poster panel is not shown either).
       if (state.publishing || !state.parish) return;
       const all = (Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]).filter(Boolean);
+      // A PDF is a poster of its own, every page of it: read as the PDF.
+      const pdf = all.find(f => isPdf(f));
+      if (pdf) return dropPdf(pdf, all.length > 1);
       const files = all.filter(f => /^image\//.test(f.type || ''));
-      if (!files.length) return showError('That is not an image — a poster has to be a photo or a picture file.');
+      if (!files.length) return showError('That is not an image — a poster has to be a photo, a picture file or a PDF.');
       const some = files.slice(0, MAX_PICTURES);
+      state.pdfPicture = null;
       showError(files.length > some.length ? `That is ${files.length} pictures; the first ${MAX_PICTURES} are put together, the most for one poster.` : '');
       showPasteNote('');
       if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
@@ -2643,6 +2729,35 @@
       startRead(blob);
     }
 
+    /**
+     * A PDF, chosen or dropped: its picture made here, to show, and the PDF
+     * itself sent to be read; the picture takes the PDF's place as the
+     * draft's poster once the PDF is stored (onFrame 'poster', joinForward).
+     */
+    async function dropPdf(file, others) {
+      showError(others ? 'A PDF is a poster of its own: only the PDF is read. Add the pictures on a draft of their own.' : '');
+      showPasteNote('');
+      if (file.size > MAX_PDF_BYTES) {
+        return showError(`That PDF is over ${MAX_PDF_BYTES / 1024 / 1024} MB, the most the reader takes. Try a smaller copy, or pictures of its pages.`);
+      }
+      if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+      state.objectUrl = URL.createObjectURL(file);
+      showPoster(state.objectUrl, true);
+      setStatus('Getting the PDF ready…', 'busy');
+      let picture = null;
+      try { picture = await pdfPicture(file); } catch { /* read all the same; the draft keeps the PDF */ }
+      if (state.closed) return;
+      if (picture) {
+        URL.revokeObjectURL(state.objectUrl);
+        state.objectUrl = URL.createObjectURL(picture);
+        showPoster(state.objectUrl);
+      }
+      await flushAll();
+      if (!(await ensureDraft())) return setStatus('The PDF could not be saved — check the connection.', 'error', { retry: false });
+      state.pdfPicture = picture ? { file, blob: picture } : null;
+      startRead(file);
+    }
+
     async function startRead(blob) {
       abortRead();
       const ctrl = new AbortController();
@@ -2659,7 +2774,7 @@
         res = await fetch(url, {
           method: 'POST',
           body: blob || undefined,
-          headers: blob ? { 'Content-Type': blob.type || 'image/jpeg' } : {},
+          headers: blob ? { 'Content-Type': isPdf(blob) ? PDF_TYPE : blob.type || 'image/jpeg' } : {},
           signal: ctrl.signal,
         });
       } catch {
@@ -2702,6 +2817,12 @@
       if (state.closed) return;
       if (event === 'poster') {
         if (state.draft) state.draft.poster_path = d.poster_path;
+        // A PDF, stored (dropped here, or read again): a picture of it takes
+        // its place — the one made when it was dropped, if this is that PDF.
+        if (state.draft && isPdf(d.poster_path)) {
+          const made = state.pdfPicture && state.read && state.read.blob === state.pdfPicture.file ? state.pdfPicture.blob : null;
+          joinForward({ id: state.draft.id, poster_path: d.poster_path, images: [] }, made);
+        }
       } else if (event === 'kind') {
         state.read.kind = d.kind;
         if (d.kind === 'timetable') setStatus('Reading the sign…', 'busy', { stop: true });
@@ -3411,7 +3532,7 @@
         const dates = d.cards.map(c => c.date).filter(Boolean).sort();
         const when = dates.length ? ` · ${dateLabel(dates[0])}${dates.length > 1 ? ` – ${dateLabel(dates[dates.length - 1])}` : ''}` : '';
         return `<div class="ee-strip-row" data-draft="${d.id}"${i >= SHOWN ? ' hidden' : ''}>`
-          + (d.poster_path ? `<img class="ee-strip-thumb" src="${esc(d.poster_path)}" alt="">` : '<span class="ee-strip-thumb ee-strip-nothumb"></span>')
+          + (d.poster_path ? `<img class="ee-strip-thumb" src="${esc(thumbOf(d.poster_path))}" alt="">` : '<span class="ee-strip-thumb ee-strip-nothumb"></span>')
           + `<span class="ee-strip-text"><b>${esc(draftTitle(d))}</b>${esc(when)}<small>${esc(savedAgo(d))}</small></span>`
           + '<button type="button" class="ee-link" data-act="continue">Continue</button>'
           + '<button type="button" class="ee-link ee-link-danger" data-act="discard">Discard</button></div>';
@@ -3446,23 +3567,36 @@
     }
 
     /**
-     * The pictures of a WhatsApp forward, joined into the draft's one poster
-     * (PUT …/poster?from=, worker/routes/admin.mjs). The read stands: it was
-     * of the same pictures. Two tabs joining at once is one join; the other
-     * is told so and shows it.
+     * The draft's poster made one picture (PUT …/poster?from=,
+     * worker/routes/admin.mjs): a WhatsApp forward's pictures side by side, or
+     * a PDF's pages — `made` when that picture is made already (dropPdf). The
+     * read stands: it was of the same pictures, or of the PDF itself. Two tabs
+     * joining at once is one join; the other is told so and shows it.
+     * Publishing waits for it: a PDF is never an event's poster.
      */
-    async function joinForward(d) {
+    function joinForward(d, made = null) {
+      const run = joinNow(d, made);
+      state.picturing = run;
+      run.finally(() => { if (state.picturing === run) state.picturing = null; });
+      return run;
+    }
+    async function joinNow(d, made) {
       const from = d.poster_path;
-      const n = 1 + d.images.length;
+      const pdf = isPdf(from);
+      const n = 1 + (d.images || []).length;
       const prev = state.status || {};
-      const busy = `Putting the ${n} pictures together…`;
-      setStatus(busy, 'busy');
+      const busy = pdf ? 'Making a picture of the PDF…' : `Putting the ${n} pictures together…`;
+      if (!made) setStatus(busy, 'busy');
       const settle = (text, tone, o) => { if (state.status && state.status.text === busy) setStatus(text, tone, o); };
-      let blob;
-      try {
-        blob = await joinPictures([from, ...d.images]);
-      } catch {
-        return settle('The pictures could not be put together here; the first is shown. Open the draft again to try again.', 'note');
+      let blob = made;
+      if (!blob) {
+        try {
+          blob = pdf ? await pdfPicture(from) : await joinPictures([from, ...d.images]);
+        } catch {
+          return settle(pdf
+            ? 'A picture of this PDF could not be made here, so its events would go up without the poster. It was read all the same. Open the draft again to try again.'
+            : 'The pictures could not be put together here; the first is shown. Open the draft again to try again.', 'note');
+        }
       }
       if (state.closed || !state.draft || state.draft.id !== d.id) return;
       let res = null;
@@ -3474,7 +3608,7 @@
       const body = res ? await res.json().catch(() => null) : null;
       if (state.closed || !state.draft || state.draft.id !== d.id) return;
       const now = res && res.ok ? body : res && res.status === 409 && body && body.draft;
-      if (!now) return settle('The pictures could not be put together — check the connection, then open the draft again.', 'note');
+      if (!now) return settle(`The ${pdf ? 'picture of the PDF could not be saved' : 'pictures could not be put together'} — check the connection, then open the draft again.`, 'note');
       state.joined = { from, to: now.poster_path };
       state.draft.poster_path = now.poster_path;
       state.draft.images = [];
@@ -3520,8 +3654,9 @@
       } else setStatus('');
       state.readFinished = r.body.read_status === 'read';
       // A WhatsApp forward of several pictures: read together already, and
-      // put side by side into its one poster now.
-      if ((r.body.images || []).length && r.body.poster_path) joinForward(r.body);
+      // put side by side into its one poster now. A PDF: read as the PDF,
+      // and a picture of its pages made now.
+      if (r.body.poster_path && ((r.body.images || []).length || isPdf(r.body.poster_path))) joinForward(r.body);
       state.cards.forEach(refreshCard);
       renderSign();
       renderIntent();
@@ -3722,6 +3857,8 @@
         return showError('Some changes have not been saved yet — fix what is marked, then publish.');
       }
       if (!(await ensureDraft())) return;
+      // The poster being made one picture (a PDF's, a forward's) goes on first.
+      if (state.picturing) await state.picturing.catch(() => {});
       state.publishing = true;
       sync();
       const events = [], proposals = [];
@@ -3890,7 +4027,7 @@
   // (editing.js addService) has the same Paste pill.
   const api = { open, summaryLine, summaryParts, serviceLine, serviceWhen, dateChanges, draftTitle, timeRange, dateLabel, askNeeded,
     textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, joinPictures, pictureLayout, senderOf,
-    MAX_PICTURES, cardWeekday, serviceFromCard,
+    MAX_PICTURES, cardWeekday, serviceFromCard, isPdf, pdfPicture, PDF_THUMB, MAX_PDF_BYTES,
     occDate, occOf, isNewOcc, serviceRunsOn,
     canReadClipboard, readClipboardImage, pasteNote, pastePillHTML };
   if (typeof module === 'object' && module.exports) module.exports = api;

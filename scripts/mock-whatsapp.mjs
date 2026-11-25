@@ -12,6 +12,8 @@
 //
 //   # A forwarded poster and its caption, from +61 412 345 678:
 //   node scripts/mock-whatsapp.mjs send --image poster.png --caption "Mums Group…"
+//   # A PDF (a programme, a bulletin), forwarded as a document:
+//   node scripts/mock-whatsapp.mjs send --pdf december.pdf --caption "Our December programme"
 //   # Words alone (forwarded from a group), or a link code:
 //   node scripts/mock-whatsapp.mjs send --forwarded --text "Youth night…"
 //   node scripts/mock-whatsapp.mjs send --text "LINK 123456"
@@ -77,7 +79,14 @@ if (cmd === 'serve') {
   const id = `wamid.${crypto.randomUUID()}`;
   let message;
   const image = arg('image');
-  if (image) {
+  const pdf = arg('pdf');
+  if (pdf) {
+    const up = await fetch(`${graph}/__media`, { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: fs.readFileSync(pdf) });
+    const { id: mediaId } = await up.json();
+    const caption = arg('caption');
+    message = { type: 'document', document: { id: mediaId, mime_type: 'application/pdf', filename: pdf.split('/').pop(), ...(caption ? { caption } : {}) },
+      context: { forwarded: true } };
+  } else if (image) {
     const mime = /\.png$/i.test(image) ? 'image/png' : 'image/jpeg';
     const up = await fetch(`${graph}/__media`, { method: 'POST', headers: { 'content-type': mime }, body: fs.readFileSync(image) });
     const { id: mediaId } = await up.json();
@@ -97,6 +106,6 @@ if (cmd === 'serve') {
   const res = await fetch(`${worker}/api/ingest/whatsapp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig }, body });
   console.log(res.status, await res.text());
 } else {
-  console.error('usage: mock-whatsapp.mjs serve [port] | send [--image f --caption t | --text t]');
+  console.error('usage: mock-whatsapp.mjs serve [port] | send [--image f --caption t | --pdf f --caption t | --text t]');
   process.exit(2);
 }

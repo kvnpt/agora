@@ -53,6 +53,11 @@
 // is the first picture, the rest waiting in drafts.images until the editor
 // joins them, side by side, into the one poster (docs/editing.md).
 //
+// A PDF IS A POSTER (Kevin, 26 Nov 2026). A document WhatsApp sends as a PDF,
+// once Gorgon has declined it (toGorgon), is a poster like a picture: a draft
+// of its own (never joined to a forward's pictures), stored as the .pdf, read
+// whole, every page. The editor makes the picture that shows (docs/editing.md).
+//
 // lib/whatsapp.mjs has the API; lib/draft-read.mjs the read.
 
 import { json, readJson } from '../lib/router.mjs';
@@ -64,7 +69,7 @@ import { ensureSuggestionsTable, suggestionPosterKey, fillFromRead, OPEN_LIMIT, 
 import {
   whatsappConfig, ensureWhatsappTables, verifySignature, messagesOf, kindOf, fetchMedia, sendText,
   codeIn, groupOf, picturesFor, inSentOrder, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
-  IMAGE_TYPES, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES, MAX_IMAGE_BYTES, TICKET_MINUTES, TICKETS_PER_HOUR,
+  IMAGE_TYPES, PDF_TYPE, MAX_PDF_BYTES, posterExt, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES, MAX_IMAGE_BYTES, TICKET_MINUTES, TICKETS_PER_HOUR,
   phoneIdentity, ticketIn, ticketText, ticketUrl, newCode, newSecret, ticketsPastKeeping, keeperOf,
   gorgonCodeIn, GORGON_MAX_BYTES,
 } from '../lib/whatsapp.mjs';
@@ -296,7 +301,6 @@ async function handle(env, io, m) {
       make: (o) => makeSuggestion(env, io, m, { mark, reply, ...o }),
     };
   }
-  if (kind === 'pdf') { await mark('refused'); return reply(REPLIES.pdf()); }
   if (kind === 'other') { await mark('refused'); return reply(REPLIES.other()); }
 
   // The rest of the announcement: a forward's other pictures, and its
@@ -309,6 +313,9 @@ async function handle(env, io, m) {
      WHERE phone = ? AND sent_at >= ? ORDER BY sent_at, rowid`
   ).bind(m.from, since(LATE_TEXT_S)).all()).results || []);
   const isImageRow = (r) => r.type === 'image';
+  // A PDF is a poster too, but one of its own: its pages are the poster, so
+  // it is never joined with the pictures beside it (see below).
+  const isPosterRow = (r) => r.type === 'image' || r.type === 'pdf';
   const made = (r) => r[door.column];
 
   if (kind === 'text') {
@@ -317,7 +324,7 @@ async function handle(env, io, m) {
       const me = rows.find(r => r.id === m.id);
       if (!me || me.outcome) return;                     // a picture took it
       const group = groupOf(rows, m.id);
-      const pictures = group.filter(isImageRow);
+      const pictures = group.filter(isPosterRow);
       if (pictures.some(r => !r.outcome) && tries < 2) { await io.sleep(2500); continue; }   // one will take it
       // Here after its picture's draft (or suggestion) was made: the nearest
       // such picture before it, or after it when the words came first.
@@ -335,7 +342,7 @@ async function handle(env, io, m) {
     // the run; a text whose poster never came to anything goes on its own.
     const rows = await recent();
     const group = groupOf(rows, m.id);
-    const ids = group.some(isImageRow) ? [m.id] : group.filter(r => r.type === 'text' && !r.outcome).map(r => r.id);
+    const ids = group.some(isPosterRow) ? [m.id] : group.filter(r => r.type === 'text' && !r.outcome).map(r => r.id);
     const claimed = await claim(db, ids, 'joined');
     if (!claimed.includes(m.id)) return;
     const text = group.filter(r => claimed.includes(r.id)).map(r => r.body).filter(Boolean).join('\n\n');
@@ -343,10 +350,12 @@ async function handle(env, io, m) {
   }
 
   // A picture: with the forward's other pictures and its words, one draft —
-  // unless another of its pictures has taken it.
+  // unless another of its pictures has taken it. A PDF is one draft alone,
+  // with the words: a programme's pages are in it already, and a picture
+  // sent beside it is a poster of its own.
   const rows = await recent();
   const group = groupOf(rows, m.id);
-  const pictures = picturesFor(group, m.id, isImageRow);
+  const pictures = kind === 'pdf' ? group.filter(r => r.id === m.id && !r.outcome) : picturesFor(group, m.id, isImageRow);
   if (!pictures.length) return;
   const texts = group.filter(r => r.type === 'text' && !r.outcome);
   const claimed = await claim(db, [...pictures, ...texts].map(r => r.id), 'joined');
@@ -355,8 +364,8 @@ async function handle(env, io, m) {
   const text = mine.map(r => r.body).filter(Boolean).join('\n\n');
   return door.make({
     text,
-    claimed: mine.filter(r => !isImageRow(r)).map(r => r.id),
-    pictures: mine.filter(isImageRow).map(r => ({ id: r.id, mediaId: r.media_id, mediaType: r.media_type })),
+    claimed: mine.filter(r => !isPosterRow(r)).map(r => r.id),
+    pictures: mine.filter(isPosterRow).map(r => ({ id: r.id, mediaId: r.media_id, mediaType: r.media_type })),
   });
 }
 
@@ -400,6 +409,30 @@ async function toGorgon(env, io, m, kind, { mark, reply }) {
   await mark('gorgon');
   if (got && got.reply) await reply(got.reply);
   return true;
+}
+
+/**
+ * Every picture of a forward — or its PDF — or as many as WhatsApp gives:
+ * one it will not is left out. A PDF may be larger than a picture.
+ */
+async function fetchPictures(io, pictures) {
+  const { cfg } = io;
+  return Promise.all(pictures.map(async (p) => {
+    const pdf = p.mediaType === PDF_TYPE;
+    const media = await fetchMedia({ token: cfg.token, mediaId: p.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl,
+      maxBytes: pdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES });
+    if (!media.ok) { console.error(`[whatsapp] ${p.id}: ${media.error}`); return { ...p, media }; }
+    // What the message said it is, when the download says something vaguer.
+    if (pdf || !IMAGE_TYPES[media.mediaType]) media.mediaType = p.mediaType;
+    return { ...p, media };
+  }));
+}
+
+/** Why nothing of a forward could be read: too large, or not to be had. */
+function notFetched(failed) {
+  const big = failed.some(p => p.media.tooLarge);
+  if (failed.some(p => p.mediaType === PDF_TYPE)) return big ? REPLIES.pdfTooLarge() : REPLIES.pdfFailed();
+  return big ? REPLIES.tooLarge() : REPLIES.mediaFailed();
 }
 
 /** Take these messages for one draft, if nobody has: the ids this call got. */
@@ -486,7 +519,7 @@ async function parishRow(db, id) {
  */
 async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], mark, reply }) {
   const db = env.DB;
-  const { cfg, origin } = io;
+  const { origin } = io;
   const others = pictures.map(p => p.id).filter(id => id !== m.id);
   const markAll = (outcome) => Promise.all([mark(outcome), others.length ? db.prepare(
     `UPDATE whatsapp_messages SET outcome = ? WHERE id IN (${others.map(() => '?').join(',')})`
@@ -499,20 +532,14 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
     return reply(REPLIES.limit(origin));
   }
 
-  // Every picture, or as many as WhatsApp gives: one it will not is left out.
-  const fetched = await Promise.all(pictures.map(async (p) => {
-    const media = await fetchMedia({ token: cfg.token, mediaId: p.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl });
-    if (!media.ok) { console.error(`[whatsapp] ${p.id}: ${media.error}`); return { ...p, media }; }
-    if (!IMAGE_TYPES[media.mediaType]) media.mediaType = p.mediaType;
-    return { ...p, media };
-  }));
+  const fetched = await fetchPictures(io, pictures);
   const got = fetched.filter(p => p.media.ok);
   const failed = fetched.filter(p => !p.media.ok);
   if (pictures.length && !got.length) {
     await markAll('media-failed');
     // What it took goes back, to be read on its own.
     await release(db, claimed);
-    return reply(failed.some(p => p.media.tooLarge) ? REPLIES.tooLarge() : REPLIES.mediaFailed());
+    return reply(notFetched(failed));
   }
   if (failed.length) {
     await db.prepare(`UPDATE whatsapp_messages SET outcome = 'media-failed' WHERE id IN (${failed.map(() => '?').join(',')})`)
@@ -523,7 +550,7 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
   if (!place) { await markAll('refused'); return reply(REPLIES.noRole(link.email, origin)); }
   const paths = [];
   for (const p of got) {
-    const key = draftPosterKey(place.parishId, IMAGE_TYPES[p.media.mediaType] || 'jpg');
+    const key = draftPosterKey(place.parishId, posterExt(p.media.mediaType) || 'jpg');
     await env.ASSETS_BUCKET.put(key, p.media.bytes, {
       httpMetadata: { contentType: p.media.mediaType, cacheControl: 'public, max-age=86400' },
     });
@@ -746,7 +773,6 @@ async function notASuggestion(db, io, m, { read, mark, reply }) {
  */
 async function makeSuggestion(env, io, m, { text, claimed, pictures = [], mark, reply }) {
   const db = env.DB;
-  const { cfg } = io;
   const identity = phoneIdentity(m.from);
   const others = pictures.map(p => p.id).filter(id => id !== m.id);
   const markAll = (outcome) => Promise.all([mark(outcome), others.length ? db.prepare(
@@ -785,19 +811,13 @@ async function makeSuggestion(env, io, m, { text, claimed, pictures = [], mark, 
     return reply(REPLIES.suggested(await keeper(parishId), summaryOf(read)));
   }
 
-  // Every picture, or as many as WhatsApp gives: one it will not is left out.
-  const fetched = await Promise.all(pictures.map(async (p) => {
-    const media = await fetchMedia({ token: cfg.token, mediaId: p.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl });
-    if (!media.ok) { console.error(`[whatsapp] ${p.id}: ${media.error}`); return { ...p, media }; }
-    if (!IMAGE_TYPES[media.mediaType]) media.mediaType = p.mediaType;
-    return { ...p, media };
-  }));
+  const fetched = await fetchPictures(io, pictures);
   const got = fetched.filter(p => p.media.ok);
   const failed = fetched.filter(p => !p.media.ok);
   if (!got.length) {
     await markAll('media-failed');
     await release(db, claimed);
-    return reply(failed.some(p => p.media.tooLarge) ? REPLIES.tooLarge() : REPLIES.mediaFailed());
+    return reply(notFetched(failed));
   }
   if (failed.length) {
     await db.prepare(`UPDATE whatsapp_messages SET outcome = 'media-failed' WHERE id IN (${failed.map(() => '?').join(',')})`)
@@ -805,7 +825,7 @@ async function makeSuggestion(env, io, m, { text, claimed, pictures = [], mark, 
   }
   const paths = [];
   for (const p of got) {
-    const key = suggestionPosterKey(start, IMAGE_TYPES[p.media.mediaType] || 'jpg');
+    const key = suggestionPosterKey(start, posterExt(p.media.mediaType) || 'jpg');
     await env.ASSETS_BUCKET.put(key, p.media.bytes, {
       httpMetadata: { contentType: p.media.mediaType, cacheControl: 'public, max-age=86400' },
     });
