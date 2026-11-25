@@ -595,6 +595,26 @@ then reads as if the event were somewhere else. In the editor, "replaces" starts
 again for the new parish, and a tick on a service the list no longer shows is
 dropped rather than left to combine invisibly on Publish.
 
+**Then the cards are squared with the parish they moved to** (`squareMoved` in
+`worker/lib/draft-read.mjs`), as a read there would have squared them, without
+reading the poster again. Kevin, 25 Nov 2026: a WhatsApp forward from somebody
+who may edit every parish starts at `_unassigned`, and stays there when the
+poster does not say whose it is; read against no timetable and no events,
+nothing on it was matched, and choosing the parish by hand matched nothing
+either. Now the cards the read filled go through the read's own steps at the
+new parish (`matchAt`, the one list of them both share): a date of one of its
+services, or of a service the same read proposes (`new:<key>:date`); its event
+already on file; another parish's event, with this parish's own service at that
+time ticked under **Check replaced services** (the old parish's tick goes); a
+time after a service, from this parish's timetable; an end and languages guessed
+again here. It is written back as a read is merged — it fills, never overwrites
+(`cardsAsRead`, `writeSquared` in `drafts.mjs`): a link only where the card has
+none, "replaces" only while nobody has answered it, and any other field only
+while it is still as read, empty, or an untouched guess. A card added by hand,
+or one in the bin, is left as it is, and so is a draft whose poster was taken
+off. What an event follows ("after the Liturgy") is kept on its card for this
+(`draft_events.follows`, migration 042): it is never that service's date.
+
 **A programme's Sundays are the Sundays on file.** A month's programme — St
 Athanasios, Rookwood prints one in Greek, every Saturday and Sunday of October
 with that day's saint — is not nine events: each line is a service the
@@ -630,8 +650,8 @@ its row in the feed will be, with what it changes on that date highlighted
 name or place) — Kevin's markup of the sentences it had (5 Nov 2026). The
 link is a button: tapped, the card is an event of its own and the link shows
 broken, to tap back (it was **Make it a separate event instead**). Changing
-its date unlinks it for good, and so does moving the draft, since the rule
-was the old parish's. Publish checks the link again — the date is still the occurrence's
+its date unlinks it for good; moving the draft unlinks it from the old
+parish's rule and matches it again at the new one. Publish checks the link again — the date is still the occurrence's
 and the rule still the parish's — and refuses otherwise. A card matched only
 by its time and sort, under a name that is no kin to the rule's, keeps the
 rule's title and gives its own to the subtitle when that is empty: "Games
@@ -738,7 +758,8 @@ stay as they are on file; a poster with another time says so on the card.
 A venue naming the parish's own church ("St Nectarios Church, Burwood" on
 Burwood's poster) is home, as its address already was. Moving the draft drops
 a match at the old parish; one at the new parish (a card that joined its
-event) becomes that parish's own on file.
+event) becomes that parish's own on file, and the new parish's own events are
+looked through for it (`squareMoved`).
 
 **A subtitle is the line under the title** — the field is `feast` everywhere,
 for history, and the forms call it Subtitle. It is the saint or feast of the

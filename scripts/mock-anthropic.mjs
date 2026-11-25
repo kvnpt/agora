@@ -49,6 +49,11 @@
 //                  programme_called_off: a December programme at Sts Peter & Paul,
 //                    Doonside — a Sunday's saint, and two dates called off, which
 //                    nothing publishes until each is confirmed on its card
+//                  unplaced_doonside: Sts Peter & Paul, Doonside's December, on a poster
+//                    that never names the parish (a WhatsApp forward that stays at no
+//                    parish): a Sunday's saint, carols after the Liturgy, a Sunday
+//                    at St Nicholas, Punchbowl's church, and a Sunday called off —
+//                    nothing is matched until the parish is chosen by hand
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
@@ -274,6 +279,23 @@ const DOCS = {
       { title: 'Sunday Divine Liturgy', date: '2026-12-27', weekday_printed: 'Sunday', year_printed: true,
         cancelled: true, start_time: '10:00', end_time: null, event_type: 'liturgy',
         languages: [], venue: null, description: null, notes: [] },
+    ],
+  },
+  unplaced_doonside: {
+    kind: 'poster', other_parish: null, notes: [],
+    events: [
+      { title: 'Divine Liturgy', feast: 'Nicholas the Wonderworker', date: '2026-12-06', weekday_printed: 'Sunday',
+        year_printed: true, after: '', start_time: '10:00', end_time: null, event_type: 'liturgy',
+        languages: [], venue: null, description: null, notes: [] },
+      { title: 'Hierarchical Divine Liturgy', feast: 'Spyridon the Wonderworker', date: '2026-12-13', weekday_printed: 'Sunday',
+        year_printed: true, after: '', start_time: '09:30', end_time: '12:00', event_type: 'liturgy',
+        languages: [], venue: 'St Nicholas Church, Punchbowl', description: 'With Metropolitan Basilios. One Liturgy for both parishes.', notes: [] },
+      { title: 'Christmas Carols', date: '2026-12-20', weekday_printed: 'Sunday', year_printed: true,
+        after: 'the Liturgy', start_time: null, end_time: null, event_type: 'social',
+        languages: [], venue: null, description: 'Carols in the hall after the Liturgy, with supper.', notes: [] },
+      { title: 'Divine Liturgy', date: '2026-12-27', weekday_printed: 'Sunday', year_printed: true,
+        cancelled: true, start_time: null, end_time: null, event_type: 'liturgy',
+        languages: [], venue: null, description: 'No Liturgy: the priest is away.', notes: [] },
     ],
   },
   forward_smmh: {

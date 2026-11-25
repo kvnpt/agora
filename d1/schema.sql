@@ -1292,7 +1292,14 @@ CREATE TABLE draft_events (
   -- publishes; 2 once a person has confirmed it, when Publish writes the
   -- tombstone on the occurrence; 0 when they say it is on after all. NULL is
   -- the usual: nothing is called off.
-  cancelled         INTEGER
+  cancelled         INTEGER,
+  -- Migration 042: the service it follows, as the poster prints it ("English
+  -- Liturgy at 6pm"), when it starts once that ends (drafts.mjs
+  -- afterServices). Not a field of the card: it keeps the card from ever
+  -- being that service's date, and lets a draft moved to another parish by
+  -- hand work its time out from that parish's timetable (draft-read.mjs
+  -- squareMoved) without reading the poster again.
+  follows           TEXT
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
 
