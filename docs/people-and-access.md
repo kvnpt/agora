@@ -150,10 +150,9 @@ hand for want of a confirmed email.
 `parish_suggestions` (migration 024; `worker/lib/suggestions.mjs`) and nothing
 reads it into the feed. It shows under **Asks** for everybody who may edit that
 parish — its contacts, and every editor and owner, by the same `mayTouchParish`
-line the edit routes draw. It counts towards the red dot for the owner only
-since 24 Nov 2026, when the panel became the owner's (below); the owner may
-edit every parish, so every suggestion still reaches somebody who can act.
-Whoever reads it makes the change with the usual tools and presses **Done**, or **Dismiss**es it with a word; a
+line the edit routes draw — and counts towards the red dot for them, since
+unlike an ask a contact can act on it. Whoever reads it makes the change with
+the usual tools and presses **Done**, or **Dismiss**es it with a word; a
 suggested event can **Start a draft**, which is an ordinary draft from then on,
 holding the parish's local wall clock until somebody publishes it. The sender
 sees each one back on the same page with what became of it and any note. One
@@ -200,16 +199,27 @@ hands it one private link, `/saved/<token>.ics` (and `/saved/<token>/<list>.ics`
 for Favourites or a list), made the first time it asks (docs/architecture.md,
 "Saved is the home for subscriptions").
 
-**The account menu** is who you are, then **Favourites** and **Saved** (the
-Favourites list card and the Saved card, a tap from anywhere; a visitor has
-them too, kept in the browser), **Link WhatsApp** for whoever may add events,
-and Sign out (Kevin, 24 Nov 2026). **Admin panel is not in it.** The panel is
-being retired for everybody but the owner, so its link is at the foot of the
-home page, after Disclaimer, shown only to whoever holds `people.manage` (the
-owner's alone). The red dot and its words ("2 asks waiting") are the owner's
-too, since the panel is where they are dealt with: the words sit under who you
-are in the menu, and beside the foot's link. `/admin` itself still lets in
-every role; only the way to it went.
+**The account menu** is who you are, then **Notifications** for anybody with
+a role, then **Favourites** and **Saved** (the Favourites list card and the
+Saved card, a tap from anywhere; a visitor has them too, kept in the browser),
+**Link WhatsApp** for whoever may add events, and Sign out (Kevin, 24–25 Nov
+2026). **Admin panel is not in it.** The panel is being retired for everybody
+but the owner, so its link is at the foot of the home page, after Disclaimer,
+shown only to whoever holds `people.manage` (the owner's alone). `/admin`
+itself still lets in every role; only the way to it went.
+
+**Notifications** is what the panel's Asks held, brought into the app so it
+stays in reach once the panel is gone (Kevin, 25 Nov 2026). The menu's row
+says what waits in the red dot's words ("2 asks waiting, 1 suggestion"), and
+opens a card of its own (`openNotes` in next.js) reading the panel's own
+routes: people asking to keep a parish (the owner's, Approve or Decline),
+suggestions at the parishes you may edit (Start a draft, Done, Dismiss, Open
+the parish), asks (every open one for the owner to decide, your own to
+withdraw for anybody else), what another parish's event is doing at yours (a
+contact's: Take my parish out, Mark read), and Lately, what was decided. A
+decline, a dismiss and an approve ask in the row itself, never in a dialog,
+with a box for the word the other person reads. Each route re-checks what the
+account may do, so the card shows only what the panel would have.
 
 ## A phone on WhatsApp
 
@@ -307,7 +317,7 @@ then:
    send yet might refuse the binding at deploy, and every merge deploys.
 
 Suggestions do not email anybody yet: their sender sees what became of each one
-on the Suggest edits page, and the owner sees the red dot.
+on the Suggest edits page, and the people who keep the parish see the red dot.
 
 ## Setting up Cloudflare Access so People is the only list
 

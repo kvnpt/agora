@@ -1549,12 +1549,41 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .pm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pm-t b { font-size: 15.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-t small { font-size: 12.5px; color: var(--text-2); }
-/* What waits for the owner, under who they are: the red dot's words. */
-.pm-note .pm-wait { display: block; color: var(--danger); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+/* Notifications' line in the account menu: the red dot's words. */
+.pm-t .pm-wait { color: var(--danger); font-weight: 600; }
 /* Favourites and Saved in the account menu, in their own colours, as the
    home card's toggles and edge have them. */
 .pm-row > svg.pm-fav { color: var(--fav); }
 .pm-row > svg.pm-saved { color: var(--saved); }
+
+/* Notifications (next.js openNotes): what the admin panel's Asks held, a row
+   each, its buttons the card's pills. A decline or a dismiss asks in the row,
+   with a box for the word the other person reads. */
+.nts { display: flex; flex-direction: column; gap: 10px; padding: 0 18px; }
+.nt { padding: 14px 16px; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.nt-what { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 1.4; }
+.nt-what .av { flex: none; margin-top: 1px; }
+.nt-what b { font-weight: 600; }
+.nt-said { margin: 8px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; }
+.nt-said a, .nt-meta a { color: var(--accent); }
+.nt-meta { margin: 8px 0 0; font-size: 12.5px; color: var(--text-3); }
+.nt-new { color: var(--danger); }
+.nt-pics { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.nt-pics img { display: block; width: 84px; max-height: 120px; object-fit: cover; object-position: top; border-radius: 8px; box-shadow: 0 0 0 1px var(--line); }
+.nt-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.nt-ask { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.nt-ask p { margin: 0; font-size: 14px; line-height: 1.45; }
+.nt-word {
+  display: block; width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); font: inherit; font-size: 16px; resize: vertical;
+}
+.nt-word:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.nt .abtn.warn { background: var(--danger); }
+.nt-done { background: transparent; }
+.nt-done .nt-what { color: var(--text-2); }
+.nt-done .nt-what b { font-weight: 500; }
+.nt-status b { color: var(--text-2); font-weight: 600; }
+.nt-none { margin-top: 18px; }
 .pm-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .pm-ic img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
 .pm-sep { height: 1px; margin: 4px 8px; background: var(--line); }
@@ -2345,9 +2374,6 @@ body.dialog-open { overflow: hidden; }
 .foot-rule::before, .foot-rule::after { content: ""; width: 44px; height: 1px; background: var(--line-strong); }
 .foot-rule span { width: 5px; height: 5px; background: var(--text-3); opacity: .7; transform: rotate(45deg); }
 .foot .foot-end { margin: 0; }
-/* What waits in the panel, on a line of its own under it. */
-.foot-wait { display: block; color: var(--danger); font-weight: 600; }
-.foot-wait[hidden] { display: none; }
 /* The cities' own pages: what they are on one line, the cities under it. */
 .foot-places span { display: block; }
 .foot-link {

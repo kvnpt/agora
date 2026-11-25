@@ -1194,6 +1194,8 @@
     bookmarkOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9z"/></svg>',
     live: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"/><path d="M8.3 8.3a5.2 5.2 0 0 0 0 7.4M15.7 8.3a5.2 5.2 0 0 1 0 7.4M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/></svg>',
     heart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>',
+    // Notifications (the account menu's, and its card).
+    bell: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></svg>',
     link: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
   };
 
@@ -2916,6 +2918,8 @@
       // (worker/routes/ingest.mjs): the badge on a parish's +, and the
       // sender's own line on the home page.
       whatsapp: who.whatsapp && Array.isArray(who.whatsapp.drafts) ? who.whatsapp : NOBODY.whatsapp,
+      // Whether deciding a claim emails the claimant (Notifications says so).
+      mail: !!who.mail,
     } : NOBODY;
     syncAccount();
     paintWhatsapp();
@@ -2944,11 +2948,10 @@
    */
   const ownsPanel = () => S.who.signedIn && !!S.who.can['people.manage'];
   /**
-   * What is waiting in the panel, in words, or ''. Only for whoever has the
-   * panel: a dot with nowhere to go is noise.
+   * What is waiting, in words, or '': the red dot's, and the account menu's
+   * Notifications line. Its card (openNotes) is where each is dealt with.
    */
   function waiting() {
-    if (!ownsPanel()) return '';
     const { openAsks: a, parishNotices: n, suggestions: g } = S.who;
     return [a && `${a} ${a === 1 ? 'ask' : 'asks'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
       g && `${g} ${g === 1 ? 'suggestion' : 'suggestions'}`].filter(Boolean).join(', ');
@@ -2972,14 +2975,9 @@
       who.textContent = S.who.signedIn && S.who.identity ? S.who.identity : 'Eastern Orthodox events & parishes';
       who.classList.toggle('signed-in', !!(S.who.signedIn && S.who.identity));
     }
-    // The foot's Admin panel, for the owner, with what waits there.
+    // The foot's Admin panel, for the owner.
     const panel = $('#foot-admin');
-    if (panel) {
-      panel.hidden = !ownsPanel();
-      const wait = $('#foot-wait');
-      wait.textContent = w;
-      wait.hidden = !w;
-    }
+    if (panel) panel.hidden = !ownsPanel();
     // A card drawn before the answer said where its list was kept.
     for (const el of $$('[data-kept]')) el.innerHTML = keptHTML();
   }
@@ -3017,19 +3015,21 @@
   }
   const takeSignInView = () => readSignInView({ take: true });
   /**
-   * The account menu: who this is, then Favourites and Saved, a tap from
-   * anywhere (Kevin, 24 Nov 2026), signed in or not, since a visitor's are
-   * kept in this browser. Admin panel is not here: it is the owner's alone
-   * now, at the foot of the home page (syncAccount). What waits for the
-   * owner is said under who they are, the red dot's words.
+   * The account menu: who this is; Notifications, for anybody with a role,
+   * saying what waits (the red dot's words); then Favourites and Saved, a tap
+   * from anywhere (Kevin, 24 Nov 2026), signed in or not, since a visitor's
+   * are kept in this browser. Admin panel is not here: it is the owner's
+   * alone now, at the foot of the home page (syncAccount).
    */
   function openAccount(btn) {
     const w = waiting();
     const nFav = favIds().length, nSaved = bookmarked().dates.length;
+    const bell = S.who.role ? `<button class="pm-row" type="button" role="menuitem" data-notes>${I.bell}<span class="pm-t"><b>Notifications</b><small${w ? ' class="pm-wait"' : ''}>${w ? esc(w) : 'Nothing new'}</small></span></button>` : '';
     const mine = `<button class="pm-row" type="button" role="menuitem" data-coll="list-fav">${I.star.replace('<svg', '<svg class="pm-fav"')}<span class="pm-t"><b>Favourites</b>${nFav ? `<small>${nFav} ${nFav === 1 ? 'parish' : 'parishes'}</small>` : ''}</span></button>
          <button class="pm-row" type="button" role="menuitem" data-act="bookmarks">${I.bookmark.replace('<svg', '<svg class="pm-saved"')}<span class="pm-t"><b>Saved</b>${nSaved ? `<small>${nSaved} to come</small>` : ''}</span></button>`;
     const rows = S.who.signedIn
-      ? `${S.who.identity || w ? `<div class="pm-note">${S.who.identity ? esc(S.who.identity) : ''}${w ? `<span class="pm-wait">${esc(w)}</span>` : ''}</div>` : ''}
+      ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
+         ${bell}
          ${mine}
          ${S.who.whatsapp.ready && S.who.can['event.edit'] ? `<button class="pm-row" type="button" role="menuitem" data-wa-link>${I.chat}<span class="pm-t"><b>Link WhatsApp</b><small>Forward posters as drafts</small></span></button>` : ''}
          <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
@@ -4965,6 +4965,248 @@
     return el;
   }
 
+  // ── Notifications: what the admin panel's Asks held, as a card ────────
+  //
+  // Kevin, 25 Nov 2026: the panel is being retired for everybody but the
+  // owner, so what waits on a person comes out of it into the app, a row in
+  // the account menu and a card of its own. The same routes the panel's Asks
+  // read and write (worker/routes/admin.mjs), each re-checking what this
+  // account may do; the card asks only for what the account may see:
+  //   People asking to keep a parish (claims), for the owner.
+  //   Suggestions at the parishes this account may edit.
+  //   Asks: every open one for the owner, who decides; your own for anybody else.
+  //   At your parishes: another parish's event listed at yours, or holding
+  //     one of your services (a contact's).
+  //   Lately: what was decided, so a decision is not just a row vanishing.
+  // A decline, a dismiss and an approve ask in the row itself, never in a
+  // dialog (the form cards' rule): the row's buttons give way to the
+  // question, with a box for the word the other person will read.
+
+  const NOTES_LOOK = { tint: '#475569', glyph: I.bell };
+  let notes = null;      // the last read: { claims, suggestions, asks, mine, notices }
+  let noteAsk = null;    // the row asking: { key: 'claim:3', act: 'decline' }
+
+  async function readNotes() {
+    const get = (url) => fetch(url, { cache: 'no-store' }).then(r => (r.ok ? r.json() : [])).catch(() => []);
+    const can = S.who.can;
+    const [claims, suggestions, asks, mine, notices] = await Promise.all([
+      can['people.manage'] ? get('/api/admin/claims') : [],
+      can['parish.edit'] ? get('/api/admin/suggestions') : [],
+      get('/api/admin/proposals'),
+      get('/api/admin/proposals?mine=1'),
+      get('/api/admin/parish-notices'),
+    ]);
+    const arr = (x) => (Array.isArray(x) ? x : []);
+    notes = { claims: arr(claims), suggestions: arr(suggestions), asks: arr(asks), mine: arr(mine), notices: arr(notices) };
+  }
+
+  /** "3 hours ago", "yesterday", "12 Nov": when, for a row. SQLite's own times are UTC without a zone. */
+  function agoWords(when) {
+    if (!when) return '';
+    const s = String(when);
+    const ms = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z');
+    if (!Number.isFinite(ms)) return '';
+    const min = Math.round((Date.now() - ms) / 60e3);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
+    const d = Math.round(h / 24);
+    if (d === 1) return 'yesterday';
+    if (d < 7) return `${d} days ago`;
+    const at = new Date(ms);
+    return `${at.getDate()} ${MON[at.getMonth()]}`;
+  }
+
+  // What each act asks first, in the row: a question, and whether it takes a
+  // word for the other person. Anything not here happens at the tap.
+  const NOTE_ASKS = {
+    claim: {
+      approve: (k) => ({ q: `Approve? ${k.email} will be able to edit ${k.parish_name || 'the parish'} (its details, service times and events) next time they sign in.${S.who.mail ? ' They will get an email saying so.' : ''}`, go: 'Approve' }),
+      decline: () => ({ q: S.who.mail ? 'Why not? It goes to them in the email saying so.' : 'Why not? It is kept with their request.', go: 'Decline', word: true }),
+    },
+    sugg: {
+      dismiss: (x) => ({ q: x.whatsapp ? 'Why not? It is kept with the suggestion. They sent it on WhatsApp, so write back there if they should know.' : 'Why not? They will see this.', go: 'Dismiss', word: true }),
+    },
+    ask: {
+      approve: (p) => ({ q: `Approve? ${p.summary}`, go: 'Approve' }),
+      decline: () => ({ q: 'Why not? The person who asked will see this.', go: 'Decline', word: true }),
+    },
+    notice: {
+      out: () => ({ q: 'Take your parish out of their event? Their event stays as it is, and any service of yours it held comes back.', go: 'Take it out' }),
+    },
+  };
+
+  /** One row: what it is, what was said, who and when, then what can be done, or the question an act asks. */
+  function noteRow(kind, id, { what, said = [], meta = '', acts = [], done = '', item = null, parish = null, pics = [] }) {
+    const key = `${kind}:${id}`;
+    const asking = !done && noteAsk && noteAsk.key === key ? noteAsk : null;
+    const ask = asking && NOTE_ASKS[kind] && NOTE_ASKS[kind][asking.act] ? NOTE_ASKS[kind][asking.act](item) : null;
+    const p = parish && S.byId.get(parish);
+    const btn = (a) => (a.parish
+      ? `<button class="abtn" type="button" data-parish="${esc(a.parish)}">${esc(a.label)}</button>`
+      : `<button class="abtn${a.primary ? ' primary' : ''}" type="button" data-nt-do="${a.act}">${esc(a.label)}</button>`);
+    return `<div class="nt${done ? ' nt-done' : ''}" data-nt="${kind}" data-nt-id="${esc(String(id))}">
+        <div class="nt-what">${p ? avatar(p, 'xs') : ''}<b>${esc(what)}</b></div>
+        ${said.filter(Boolean).map(x => `<p class="nt-said">${x}</p>`).join('')}
+        ${pics.length ? `<div class="nt-pics">${pics.map((src, i) => `<a href="${esc(src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="${i ? 'Another of their pictures' : 'Their poster'}" loading="lazy"></a>`).join('')}</div>` : ''}
+        ${meta ? `<p class="nt-meta">${meta}</p>` : ''}
+        ${done ? `<p class="nt-meta nt-status">${done}</p>`
+          : ask ? `<div class="nt-ask"><p>${esc(ask.q)}</p>
+              ${ask.word ? '<textarea class="nt-word" rows="2" maxlength="1000" aria-label="Your word to them"></textarea>' : ''}
+              <div class="nt-acts"><button class="abtn primary${ask.word ? ' warn' : ''}" type="button" data-nt-do="${asking.act}" data-nt-sure>${esc(ask.go)}</button><button class="abtn" type="button" data-nt-do="cancel">Cancel</button></div></div>`
+          : acts.length ? `<div class="nt-acts">${acts.map(btn).join('')}</div>` : ''}
+      </div>`;
+  }
+  const quoted = (t) => `“${esc(t)}”`;
+  const decidedWords = (status, by, note) => `<b>${esc(status[0].toUpperCase() + status.slice(1))}</b>${by ? ` by ${esc(by)}` : ''}${note ? ` · ${quoted(note)}` : ''}`;
+
+  function notesBodyHTML() {
+    const head = `<div ${lookAttrs(NOTES_LOOK, 'chero')}>
+          <span class="ckicker">Your account</span>
+          <h1>Notifications</h1>
+          <p>What is waiting for you at the parishes you keep.</p>
+        </div>`;
+    if (!notes) return `${head}<div class="tt-none nt-none">Looking…</div>`;
+    const { claims, suggestions, asks, mine, notices } = notes;
+    const decider = !!S.who.can['people.manage'];
+    const secs = [];
+
+    const openClaims = claims.filter(k => k.status === 'open');
+    if (openClaims.length) secs.push(['People asking to keep a parish', openClaims.map(k => noteRow('claim', k.id, {
+      item: k, parish: k.parish_id, what: k.summary, said: [k.note && quoted(k.note)],
+      meta: `${esc(k.email)}${k.phone ? ` · ${esc(k.phone)}` : ''} · ${agoWords(k.created_at)}`,
+      acts: [{ act: 'approve', label: 'Approve', primary: true }, { act: 'decline', label: 'Decline' }],
+    }))]);
+
+    const openSugg = suggestions.filter(x => x.status === 'open');
+    const whenOf = (x) => [x.date ? dayLabel(x.date, true) : '', [x.start_time, x.end_time].filter(Boolean).map(clock).join('–'), x.place || ''].filter(Boolean).join(' · ');
+    // A suggested event's own words, its day and time on the line under them
+    // as the page says them, rather than the panel's "2026-12-18 19:00".
+    const suggWhat = (x) => (x.kind === 'event'
+      ? `${x.name || (x.whatsapp ? 'Somebody on WhatsApp' : 'Somebody')} suggests an event at ${x.parish_name || x.parish_id}: ${x.title || 'see their poster'}.`
+      : x.summary);
+    if (openSugg.length) secs.push(['Suggestions', openSugg.map(x => noteRow('sugg', x.id, {
+      item: x, parish: x.parish_id, what: suggWhat(x),
+      said: [x.kind === 'event' && whenOf(x) && esc(whenOf(x)), x.body && quoted(x.body),
+        x.link && `<a href="${esc(x.link)}" target="_blank" rel="noopener nofollow">${esc(x.link)}</a>`],
+      pics: x.poster_path ? [x.poster_path, ...(x.images || [])] : [],
+      meta: `${x.whatsapp ? `On WhatsApp, <a href="${esc(x.whatsapp.url)}" target="_blank" rel="noopener">${esc(x.whatsapp.phone)}</a>` : esc(x.email || '')} · ${agoWords(x.created_at)}`,
+      acts: [
+        ...(x.kind === 'event' && may('event.edit', x.parish_id) ? [{ act: 'draft', label: 'Start a draft', primary: true }] : []),
+        { act: 'done', label: 'Done', primary: x.kind !== 'event' },
+        { act: 'dismiss', label: 'Dismiss' },
+        ...(S.byId.has(x.parish_id) ? [{ parish: x.parish_id, label: 'Open the parish' }] : []),
+      ],
+    }))]);
+
+    // An owner decides every open ask; anybody else sees their own waiting.
+    const openAsks = decider ? asks.filter(a => a.status === 'open') : mine.filter(a => a.status === 'open');
+    if (openAsks.length) secs.push([decider ? 'Asks' : 'Your asks', openAsks.map(a => noteRow('ask', a.id, {
+      item: a, parish: S.byId.has(a.subject) ? a.subject : null, what: a.summary || 'This ask cannot be read, so it cannot be approved.',
+      said: [a.reason && quoted(a.reason)],
+      meta: `${a.mine ? 'You asked' : `Asked by ${esc(a.proposedBy || 'somebody')}`} · ${agoWords(a.createdAt)}`,
+      acts: [
+        ...(decider && a.summary ? [{ act: 'approve', label: 'Approve', primary: true }, { act: 'decline', label: 'Decline' }] : []),
+        ...(a.mine ? [{ act: 'withdraw', label: 'Withdraw' }] : []),
+      ],
+    }))]);
+
+    if (notices.length) secs.push(['At your parishes', notices.map(n => noteRow('notice', `${n.parish_id}|${n.event_id}`, {
+      item: n, parish: n.parish_id, what: n.detail,
+      meta: n.seen ? '' : '<b class="nt-new">New</b>',
+      acts: [{ act: 'out', label: 'Take my parish out' }, ...(n.seen ? [] : [{ act: 'read', label: 'Mark read' }])],
+    }))]);
+
+    // Lately: what was decided, newest first, a few of each.
+    const lately = [
+      ...suggestions.filter(x => x.status !== 'open' && x.status !== 'withdrawn').slice(0, 5)
+        .map(x => ({ at: x.decided_at, html: noteRow('sugg', x.id, { parish: x.parish_id, what: suggWhat(x), done: decidedWords(x.status, x.decided_by, x.decision_note) }) })),
+      ...claims.filter(k => k.status !== 'open').slice(0, 5)
+        .map(k => ({ at: k.decided_at, html: noteRow('claim', k.id, { parish: k.parish_id, what: k.summary, done: decidedWords(k.status, k.decided_by, k.decision_note) }) })),
+      ...mine.filter(a => a.status !== 'open').slice(0, 5)
+        .map(a => ({ at: a.decidedAt, html: noteRow('ask', a.id, { what: a.summary || a.capability, done: decidedWords(a.status, a.decidedBy, a.decisionNote) }) })),
+    ].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    if (lately.length) secs.push(['Lately', lately.map(l => l.html)]);
+
+    if (!secs.length) return `${head}<div class="tt-none nt-none">Nothing is waiting for you.</div><div class="toolbar-space sm"></div>`;
+    return `${head}${secs.map(([t, rows]) => `<h2 class="sec">${esc(t)}</h2><div class="nts">${rows.join('')}</div>`).join('')}<div class="toolbar-space sm"></div>`;
+  }
+  function paintNotes() {
+    for (const el of stack) if (el.classList.contains('notes')) paint(el.querySelector('.sheet-scroll'), notesBodyHTML());
+  }
+  /** The account menu's Notifications: the card at once, its rows once they are read. */
+  function openNotes() {
+    noteAsk = null;
+    const el = pushSheet(`${glassBar('Notifications', null, { share: false })}<div class="sheet-scroll">${notesBodyHTML()}</div>`, 'notes');
+    readNotes().then(paintNotes);
+    return el;
+  }
+
+  /** A row's button: ask first where NOTE_ASKS says to, then do it, and read everything again. */
+  async function noteAct(b) {
+    const row = b.closest('[data-nt]');
+    if (!row || !notes) return;
+    const kind = row.dataset.nt, id = row.dataset.ntId, act = b.dataset.ntDo;
+    if (act === 'cancel') { noteAsk = null; paintNotes(); return; }
+    if (NOTE_ASKS[kind] && NOTE_ASKS[kind][act] && !('ntSure' in b.dataset)) {
+      noteAsk = { key: `${kind}:${id}`, act };
+      paintNotes();
+      const box = row.isConnected && row.querySelector('.nt-word');
+      if (box) box.focus();
+      return;
+    }
+    const wordBox = row.querySelector('.nt-word');
+    const word = wordBox ? wordBox.value.trim() || null : null;
+    for (const x of row.querySelectorAll('button')) x.disabled = true;
+    const post = (url, body) => fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
+    }).then(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) })).catch(() => ({ ok: false, body: {} }));
+    let r, said = '', changed = false, then = null;
+    if (kind === 'claim') {
+      r = await post(`/api/admin/claims/${id}/decide`, { decision: act, note: word });
+      const told = r.body.mailed ? ', and emailed them' : '';
+      said = act === 'approve' ? (r.body.grant === 'none' ? `Approved: they could already edit it${told}` : `Approved: added to People${told}`) : `Declined${told}`;
+    } else if (kind === 'sugg' && act === 'draft') {
+      r = await post(`/api/admin/suggestions/${id}/draft`);
+      if (r.ok) then = () => openDraft(r.body.id, r.body.parish_id);
+      said = 'A draft, for you to check and publish';
+    } else if (kind === 'sugg') {
+      r = await post(`/api/admin/suggestions/${id}/decide`, { decision: act, note: word });
+      said = act === 'done' ? 'Marked done' : 'Dismissed';
+    } else if (kind === 'ask' && act === 'withdraw') {
+      r = await post(`/api/admin/proposals/${id}/withdraw`);
+      said = 'Withdrawn';
+    } else if (kind === 'ask') {
+      r = await post(`/api/admin/proposals/${id}/decide`, { decision: act, note: word });
+      said = act === 'approve' ? 'Approved and done' : 'Declined';
+      changed = act === 'approve';
+    } else if (kind === 'notice') {
+      const [pid, ev] = id.split('|');
+      const eventId = /^\d+$/.test(ev) ? Number(ev) : ev;
+      if (act === 'out') {
+        r = await post(`/api/admin/parishes/${encodeURIComponent(pid)}/withdraw`, { event_id: eventId });
+        said = r.body.restored ? `Taken out: ${r.body.restored} of your services back` : 'Taken out';
+        changed = true;
+      } else {
+        r = await post('/api/admin/parish-notices/seen', { parish_id: pid, event_id: eventId });
+        said = '';
+      }
+    }
+    if (!r || !r.ok) {
+      toast((r && r.body && r.body.error) || 'That did not go through. Try again.');
+      for (const x of row.querySelectorAll('button')) x.disabled = false;
+      return;
+    }
+    noteAsk = null;
+    if (said) toast(said);
+    // The dot and the menu's words, and the rows, as they are now.
+    await Promise.all([readNotes(), checkSignIn()]);
+    paintNotes();
+    if (changed) reload().catch(() => {});
+    if (then) then();
+  }
+
   // ── Add to calendar ───────────────────────────────────────────────────
   //
   // Saved is the home for subscriptions (Kevin, 19 Nov 2026): one calendar a
@@ -5838,6 +6080,9 @@
     if (t.closest('[data-wa-link]')) { openWhatsappLink(fromMenu || $('[data-account]')); return; }
     if ((b = t.closest('[data-wa-unlink]'))) { unlinkWhatsapp(b.dataset.waUnlink); return; }
     if ((b = t.closest('[data-wa-draft]'))) { openDraft(b.dataset.waDraft, b.dataset.pid); return; }
+    // Notifications: the account menu's row, and its card's buttons.
+    if (t.closest('[data-notes]')) { openNotes(); return; }
+    if ((b = t.closest('[data-nt-do]'))) { noteAct(b); return; }
     if ((b = t.closest('[data-q]'))) {
       setSearch(b.dataset.q);
       if (/near me/i.test(b.dataset.q) && !S.loc) locate();

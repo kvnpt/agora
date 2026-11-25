@@ -145,6 +145,29 @@ test('home → the parishes in view → a parish: its card opens', async (t) => 
   assert.match(await parishCard(page).innerText(), /Sts Michael & Gabriel/);
 });
 
+// ── the account menu ──
+
+test('the account menu: Notifications, Favourites and Saved open their cards', async (t) => {
+  const page = await open(t, '/');
+  const menu = page.locator('.popmenu');
+  const row = async (sel) => {
+    await page.locator('#btn-account').click();
+    await menu.locator(sel).click();
+  };
+  // Notifications, for anybody with a role (the dev bypass is an owner):
+  // read once it opens, never left at "Looking…".
+  await row('[data-notes]');
+  const notes = page.locator('.sheet.notes.open');
+  await notes.locator('h1', { hasText: 'Notifications' }).waitFor();
+  await page.waitForFunction(() => !/Looking…/.test(document.querySelector('.sheet.notes .sheet-scroll')?.textContent || ''));
+  await notes.locator('[data-act="close"]').click();
+  await row('[data-coll="list-fav"]');
+  await page.locator('.sheet.collection.open h1', { hasText: 'Favourites' }).waitFor();
+  await page.locator('.sheet.collection.open [data-act="close"]').first().click();
+  await row('[data-act="bookmarks"]');
+  await page.locator('.sheet.bookmarks.open h1', { hasText: 'Saved' }).waitFor();
+});
+
 // ── a parish's card, and its Calendar ──
 
 test('a parish link opens its card: timetable and Calendar', async (t) => {
