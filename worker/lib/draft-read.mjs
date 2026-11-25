@@ -10,7 +10,7 @@
 
 import { readPoster, posterContext, noteParts } from './poster-read.mjs';
 import { placeRead, afterServices, placeHosts, matchOccurrences, matchOnFile, suggestEnds, suggestLanguages,
-  mergeRead, setReadStatus, splitDraft } from './drafts.mjs';
+  mergeRead, setReadStatus, splitDraft, cardsAsRead, writeSquared, getDraft } from './drafts.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import timezones from '../../public/shared/timezones.js';
 import whatsappWords from '../../public/shared/whatsapp-words.js';
@@ -151,27 +151,7 @@ async function squareRead(env, draft, read, { choose = null, context, words = nu
     await placeRead(db, read, { id: parishId, ...(parish || {}) });
     moved = true;
   }
-  // Something held after a service starts when it ends, not at the time
-  // printed for the service — and is never that service's date.
-  afterServices(read, rules);
-  // An event at another parish's church is that parish's, with this one
-  // taking part: the one of theirs on file, or one to add there.
-  await placeHosts(db, read, { id: parishId, ...(parish || {}) }, rules);
-  // A dated regular service — a programme's Sunday and its saint — is a
-  // change to that Sunday, not an event beside it.
-  matchOccurrences(read, rules);
-  // A one-off this parish already has on file is that one, filled in
-  // rather than made twice.
-  await matchOnFile(db, read, { id: parishId, ...(parish || {}), timezone: zone });
-  // No end printed: how long such a thing usually runs (a Liturgy 1½
-  // hours, a fair 4), as a suggestion to check.
-  suggestEnds(read);
-  // A one-off service the poster gives no language for: the parish's
-  // usual, as a suggestion to check (publishing needs one).
-  const past = (await db.prepare(
-    `SELECT event_type, languages FROM events WHERE parish_id = ? AND languages IS NOT NULL
-     ORDER BY start_utc DESC LIMIT 40`).bind(parishId).all()).results || [];
-  suggestLanguages(read, rules, past);
+  await matchAt(db, read, { id: parishId, ...(parish || {}), timezone: zone }, rules);
   // One event, and words sent with it: they are its description (Kevin,
   // 19 Nov 2026), in place of the reader's. Several events share the words
   // between them, so each keeps its own, and Fill from WhatsApp is there.
@@ -184,6 +164,75 @@ async function squareRead(env, draft, read, { choose = null, context, words = nu
     only.suggested = [...(only.suggested || []), 'description'];
   }
   return { draft: await mergeRead(db, draft.id, read), moved };
+}
+
+/**
+ * A read squared with the parish whose timetable and events it is matched to
+ * — every step that asks the parish anything, in its order. A read does this
+ * once it is placed (squareRead); a draft moved by hand does it again at the
+ * parish it moved to (squareMoved), so the two cannot drift apart.
+ *
+ * @param {object} read   normalizeRead()'s answer (or cardsAsRead()'s), changed in place
+ * @param {{id, name, timezone}} here  the parish
+ * @param {Array} rules   its active rules (readContext)
+ */
+async function matchAt(db, read, here, rules) {
+  // Something held after a service starts when it ends, not at the time
+  // printed for the service — and is never that service's date.
+  afterServices(read, rules);
+  // An event at another parish's church is that parish's, with this one
+  // taking part: the one of theirs on file, or one to add there.
+  await placeHosts(db, read, here, rules);
+  // A dated regular service — a programme's Sunday and its saint — is a
+  // change to that Sunday, not an event beside it.
+  matchOccurrences(read, rules);
+  // A one-off this parish already has on file is that one, filled in
+  // rather than made twice.
+  await matchOnFile(db, read, here);
+  // No end printed: how long such a thing usually runs (a Liturgy 1½
+  // hours, a fair 4), as a suggestion to check.
+  suggestEnds(read);
+  // A one-off service the poster gives no language for: the parish's
+  // usual, as a suggestion to check (publishing needs one).
+  const past = (await db.prepare(
+    `SELECT event_type, languages FROM events WHERE parish_id = ? AND languages IS NOT NULL
+     ORDER BY start_utc DESC LIMIT 40`).bind(here.id).all()).results || [];
+  suggestLanguages(read, rules, past);
+  return read;
+}
+
+/**
+ * A draft moved to another parish by hand, squared with that parish as a read
+ * there would have been — without reading the poster again.
+ *
+ * A WhatsApp forward from somebody who may edit every parish starts at no
+ * parish, and stays there when the poster does not say whose it is: read
+ * against no timetable and no events, nothing on it was matched to
+ * anything. Kevin (25 Nov 2026): choosing the parish by hand then missed
+ * what the reader gives — a date of a regular service, the event already on
+ * file, another parish's feast with "Check replaced services" asked of this
+ * one's own. A poster dropped at the wrong parish was the same: the move
+ * unlinked its cards from the old parish's services (moveDraft) and matched
+ * them to nothing at the new one.
+ *
+ * So the cards the read filled go through the read's steps again at the new
+ * parish (matchAt), as they stand now, and what is found is written back as
+ * a read is merged: filling, never overwriting what somebody typed
+ * (drafts.mjs cardsAsRead, writeSquared). After moveDraft, which takes off
+ * what only made sense at the old parish. Only a read draft: one whose
+ * poster was taken off is the person's own.
+ *
+ * @param {object} draft  getDraft()'s answer, at the parish it moved to
+ * @returns {Promise<object>} the draft as it now stands
+ */
+export async function squareMoved(db, draft) {
+  if (draft.read_status !== 'read') return draft;
+  const { read, cards } = cardsAsRead(draft);
+  if (!cards.length) return draft;
+  const { parish, zone, rules } = await readContext(db, draft.parish_id);
+  await matchAt(db, read, { id: draft.parish_id, ...(parish || {}), timezone: zone }, rules);
+  await writeSquared(db, cards, read, draft.parish_id);
+  return getDraft(db, draft.id);
 }
 
 /**

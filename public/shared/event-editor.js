@@ -3632,11 +3632,16 @@
         }
         setParish(next);
         setDraft(r.body);
+        // Squared with the new parish on the Worker (draft-read.mjs
+        // squareMoved): its services' dates, its events on file, what an
+        // event elsewhere replaces here. The cards show it.
         for (const row of r.body.cards || []) {
           const card = state.cards.find(c => c.id === row.id);
           if (card) cardFromServer(card, row, { keepLocal: true });
         }
         state.cards.forEach(refreshCard);
+        // And the read's summary says it of this parish, not the last.
+        if (r.body.poster_path && r.body.read_status === 'read') setStatus(readSummary(r.body), 'done');
       } else {
         state.moving = false;
         setParish(next);

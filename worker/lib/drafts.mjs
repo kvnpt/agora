@@ -80,7 +80,8 @@ export const DRAFTS_DDL = [
   discard           INTEGER,
   host_parish_id    TEXT,
   host_event_id     INTEGER,
-  cancelled         INTEGER
+  cancelled         INTEGER,
+  follows           TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -97,7 +98,7 @@ const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details', 'source', 'message_text', 'seen_at',
     'images', 'sender_name'],
   draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
-    'host_parish_id', 'host_event_id', 'cancelled'],
+    'host_parish_id', 'host_event_id', 'cancelled', 'follows'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -276,6 +277,7 @@ export function cardOut(r) {
     host_parish_id: r.host_parish_id || null,
     host_event_id: r.host_event_id != null ? Number(r.host_event_id) : null,
     cancelled: r.cancelled == null ? null : Number(r.cancelled),
+    follows: r.follows || null,
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -471,10 +473,14 @@ export async function mergeRead(db, draftId, read) {
       set.printed_weekday = ev.printed_weekday;
       set.year_printed = ev.year_printed;
     }
+    // The service it follows, as printed (afterServices): kept, so a draft
+    // moved to another parish by hand can be squared with that parish's
+    // timetable (squareMoved), and is never made that service's date.
+    if (ev.after && (!card || isEmpty(card.follows))) set.follows = ev.after;
     // A suggestion (suggestLanguages) is not "from poster": the poster did not say it.
     const read = filled.filter(f => !(ev.suggested || []).includes(f));
     if (card) {
-      if (!filled.length) return;
+      if (!filled.length && !set.follows) return;
       const marks = [...new Set([...parseList(card.read_fields), ...read])];
       const allNotes = [...parseList(card.read_notes), ...notes];
       set.read_fields = JSON.stringify(marks);
@@ -1027,7 +1033,7 @@ export function venueParish(venue, parishes) {
  */
 export async function placeHosts(db, read, parish, ownRules = []) {
   const at = read.events.filter(ev => ev.location_override);
-  if (!at.length) return read;
+  if (!at.length && !read.events.some(ev => ev.host_parish_id)) return read;
   const list = (await db.prepare(
     "SELECT id, name, address, timezone FROM parishes WHERE id != '_unassigned'").all()).results || [];
   const byId = new Map(list.map(p => [p.id, p]));
@@ -1043,7 +1049,8 @@ export async function placeHosts(db, read, parish, ownRules = []) {
       { field: 'host_parish_id', text: `Printed as at “${ev.location_override}”.` }];
     ev.location_override = null;
   }
-  const hosted = read.events.filter(ev => ev.host_parish_id);
+  // Its own, on file here (matchOnFile, before a move), is not one it takes part in.
+  const hosted = read.events.filter(ev => ev.host_parish_id && ev.host_parish_id !== parish.id);
   if (!hosted.length) return read;
 
   const hosts = [...new Set(hosted.map(ev => ev.host_parish_id))];
@@ -1078,7 +1085,11 @@ export async function placeHosts(db, read, parish, ownRules = []) {
         const p = localPartsOf(zone, Date.parse(e.start_utc));
         return { ...e, date: p.date, time: p.time };
       }).filter(e => e.date === ev.date);
-      const hit = checks.sameEventOnFile(ev, onFile);
+      // A card already that parish's, squared again at the parish its draft
+      // moved to (squareMoved): which of theirs it is was settled at the
+      // read, or by the person since ("Not that one"); only this parish's
+      // side of it is asked again.
+      const hit = ev.settled ? ev.host_event_id : checks.sameEventOnFile(ev, onFile);
       if (hit != null) ev.host_event_id = Number(hit);
       else {
         const theirs = occurrenceOf(ev, theirRules.filter(r => r.parish_id === host.id));
@@ -1217,7 +1228,7 @@ export function suggestLanguages(read, rules = [], past = []) {
  *   * the new parish in "also appears at": an event is not also at its own;
  *   * the service a card was matched to (`occurrence`): that rule is the old
  *     parish's, so the card is an event of its own again until it is matched
- *     at the new one (a read again does that);
+ *     at the new one (draft-read.mjs squareMoved, right after);
  *   * whose event it is (`host_parish_id`), when that is the new parish: it
  *     is the new parish's own event now, not one it takes part in — and,
  *     when it was one on file there, that one on file (matchOnFile). When it
@@ -1266,6 +1277,164 @@ export async function moveDraft(db, draft, parish) {
   ).bind(parish.id, hint, draft.id));
   await db.batch(stmts);
   return getDraft(db, draft.id);
+}
+
+// ── a draft moved by hand, squared with the parish it is at now ──
+
+/** Nothing in it: no value, or an empty list. */
+const isBlank = (v) => v == null || v === '' || (Array.isArray(v) && !v.length);
+const noteOn = (card, f) => card.read_notes.some(n => n.field === f);
+/**
+ * Is a card's field still the read's to change? Empty, as the poster was read
+ * ("from poster"), or a guess nobody has touched (filled, with the note that
+ * says so, never marked). A person's edit takes the mark and the note off
+ * (updateCard), so what somebody typed is never in either.
+ */
+const readOwns = (card, f) => isBlank(card[f]) || card.read_fields.includes(f) || noteOn(card, f);
+/** Filled by a guess where the draft was (suggestEnds, suggestLanguages) and untouched since. */
+const guessed = (card, f) => !isBlank(card[f]) && !card.read_fields.includes(f) && noteOn(card, f);
+const sameList = (a, b) => JSON.stringify([...(a || [])].map(String).sort()) === JSON.stringify([...(b || [])].map(String).sort());
+const sameValue = (a, b) => (isBlank(a) ? null : a) === (isBlank(b) ? null : b);
+
+/**
+ * A moved draft's cards as a read's events, for squaring them with the parish
+ * the draft is at now (draft-read.mjs squareMoved): the cards the read
+ * filled, as they stand. A card added by hand since, or one in the bin, is
+ * left out — nothing read it, so nothing matched it anywhere.
+ *
+ * Each is what the card says, less
+ *   * its venue unless the read gave it: one somebody typed is theirs, and
+ *     never makes the card another parish's event;
+ *   * a guess made at the old parish — an end, the languages, a start worked
+ *     out from what it follows — which is made again here, or not: a date of
+ *     a service has its service's;
+ * and with what it follows (`follows`, as `after`), so that it is never that
+ * service's date. A card already another parish's is `settled`: which event
+ * of theirs it is, or none, stays as it is (placeHosts).
+ *
+ * @param {object} draft  getDraft()'s answer
+ * @returns {{read: object, cards: object[]}}  read.events[i] is cards[i]'s
+ */
+export function cardsAsRead(draft) {
+  const cards = draft.cards.filter(c => (c.read_fields.length || c.read_notes.length || c.follows) && c.discard !== 1);
+  const events = cards.map(c => {
+    const ev = {
+      title: c.title, feast: c.feast, date: c.date, end_date: c.end_date,
+      start_time: c.start_time, end_time: c.end_time, event_type: c.event_type,
+      languages: c.languages.length ? c.languages : null,
+      location_override: c.read_fields.includes('location_override') ? c.location_override : null,
+      // 1 as read, 2 confirmed. 0 is somebody saying it is on after all: a date like any other.
+      cancelled: c.cancelled || null,
+      after: c.follows,
+      occurrence: c.occurrence,
+      host_parish_id: c.host_parish_id, host_event_id: c.host_event_id,
+      settled: !!c.host_parish_id,
+      // Worked out again at this parish, for a card that is another parish's.
+      replaces: [],
+      read_notes: [], suggested: [],
+    };
+    for (const f of ['end_time', 'languages']) if (guessed(c, f)) ev[f] = null;
+    if (c.follows && readOwns(c, 'start_time') && noteOn(c, 'start_time')) ev.start_time = null;
+    return ev;
+  });
+  return { read: { events, services: draft.read_services || [], parish: draft.read_parish }, cards };
+}
+
+/**
+ * What squaring a moved draft's cards found (cardsAsRead, then the read's own
+ * steps at the new parish), written onto them as a read is: it fills, and
+ * never overwrites what a person typed.
+ *
+ *   * a link — a date of a service (`occurrence`), whose event it is
+ *     (`host_parish_id`, `host_event_id`) — only where the card has none;
+ *   * "Check replaced services" on a card that is another parish's event,
+ *     asked again here unless somebody has answered it: this parish's own
+ *     service that day ticked, the old parish's gone;
+ *   * any other field only while the read still owns it (readOwns). A
+ *     title and its subtitle go together, since a match can move one into
+ *     the other.
+ * Each field written takes its notes from this squaring, and loses those of
+ * the guess it replaces.
+ *
+ * @param {object[]} cards   cardsAsRead()'s
+ * @param {object} read      its read, squared
+ * @param {string} parishId  where the draft is now
+ */
+export async function writeSquared(db, cards, read, parishId) {
+  const stmts = [];
+  cards.forEach((card, i) => {
+    const ev = read.events[i];
+    const set = {};
+    let marks = [...card.read_fields];
+    let notes = [...card.read_notes];
+    const fresh = (f) => (ev.read_notes || []).filter(n => n.field === f);
+    const addNotes = (f) => {
+      for (const n of fresh(f)) if (!notes.some(m => m.field === f && m.text === n.text)) notes.push(n);
+    };
+    const write = (f, value, column = value, { drop = false } = {}) => {
+      set[f] = isBlank(column) ? null : column;
+      // Only ever a field the read owns: marked as a read marks it, unless it is a guess.
+      const mark = !(ev.suggested || []).includes(f);
+      marks = marks.filter(x => x !== f);
+      if (mark && !isBlank(value)) marks.push(f);
+      if (drop || fresh(f).length || guessed(card, f)) notes = notes.filter(n => n.field !== f);
+      addNotes(f);
+    };
+
+    if (!card.occurrence && ev.occurrence) {
+      write('occurrence', ev.occurrence);
+      addNotes('cancelled');
+    }
+    const newHost = !card.host_parish_id && ev.host_parish_id;
+    if (newHost) {
+      write('host_parish_id', ev.host_parish_id);
+      write('host_event_id', ev.host_event_id ?? null);
+    }
+    const host = newHost ? ev.host_parish_id : card.host_parish_id;
+    // The venue was the other parish's church: it is said by whose event it
+    // is now. One that names this parish stays as moveDraft left it — its
+    // address went, and "Parish hall, 86 Kenny St" is a room to find.
+    if (newHost && host !== parishId && card.location_override && ev.location_override == null) {
+      write('location_override', null, null, { drop: true });
+    }
+    if (host && host !== parishId && (newHost || card.read_fields.includes('replaces') || noteOn(card, 'replaces'))) {
+      const v = ev.replaces || [];
+      const now = fresh('replaces');
+      const was = card.read_notes.filter(n => n.field === 'replaces');
+      if (!sameList(v, card.replaces) || JSON.stringify(now) !== JSON.stringify(was)) {
+        write('replaces', v, v.length ? JSON.stringify(v.map(String)) : null, { drop: true });
+      }
+    }
+    if ((!sameValue(ev.title, card.title) || !sameValue(ev.feast, card.feast))
+        && readOwns(card, 'title') && readOwns(card, 'feast')) {
+      if (!sameValue(ev.title, card.title)) write('title', ev.title);
+      if (!sameValue(ev.feast, card.feast)) write('feast', ev.feast);
+    }
+    for (const f of ['event_type', 'start_time', 'end_time']) {
+      if (!readOwns(card, f)) continue;
+      if (!sameValue(ev[f], card[f])) write(f, ev[f], ev[f], { drop: f === 'start_time' && !!card.follows });
+      else addNotes(f);
+    }
+    if (isBlank(card.languages) || guessed(card, 'languages')) {
+      const v = ev.languages || [];
+      if (!sameList(v, card.languages)) write('languages', v, v.length ? JSON.stringify(v) : null);
+      else addNotes('languages');
+    }
+    // An event that follows the one service its day has on the poster, said
+    // only by having no time (afterServices): kept, as a read keeps it.
+    if (ev.after && !card.follows) set.follows = ev.after;
+
+    const marked = JSON.stringify(marks) !== JSON.stringify(card.read_fields);
+    const noted = JSON.stringify(notes) !== JSON.stringify(card.read_notes);
+    if (!Object.keys(set).length && !marked && !noted) return;
+    set.read_fields = marks.length ? JSON.stringify(marks) : null;
+    set.read_notes = notes.length ? JSON.stringify(notes) : null;
+    const cols = Object.keys(set);
+    stmts.push(db.prepare(
+      `UPDATE draft_events SET ${cols.map(c => `${c} = ?`).join(', ')}, updated_at = ${NOW} WHERE id = ?`
+    ).bind(...Object.values(set), card.id));
+  });
+  if (stmts.length) await db.batch(stmts);
 }
 
 /** Where reading got to, when it did not finish with a read to merge. */

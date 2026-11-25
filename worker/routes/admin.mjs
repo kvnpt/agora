@@ -52,7 +52,7 @@ import signs from '../../public/shared/signs.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
-import { readContext, readIntoDraft } from '../lib/draft-read.mjs';
+import { readContext, readIntoDraft, squareMoved } from '../lib/draft-read.mjs';
 import { whatsappConfig, ensureWhatsappTables, newCode, maskPhone, linkUrl, CODE_MINUTES, phoneOfIdentity, chatUrl }
   from '../lib/whatsapp.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
@@ -2082,7 +2082,8 @@ export function registerAdminRoutes(router) {
   // Move a draft to another parish: the poster was dropped at the wrong one.
   // Scoped on BOTH parishes — the one it is at (draftInScope) and the one it
   // goes to — so a parish contact moves drafts between their own parishes and
-  // nowhere else. lib/drafts.mjs moveDraft says what the cards lose on the way.
+  // nowhere else. lib/drafts.mjs moveDraft says what the cards lose on the way,
+  // and lib/draft-read.mjs squareMoved what they are matched to at the new one.
   router.patch('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
     const r = await draftInScope(c, c.params.id);
     if (r.response) return r.response;
@@ -2100,7 +2101,9 @@ export function registerAdminRoutes(router) {
     const parish = await c.env.DB.prepare('SELECT id, name, address FROM parishes WHERE id = ?')
       .bind(parishId).first();
     if (!parish || parish.id === '_unassigned') return json({ error: 'Invalid parish_id' }, 400);
-    return json(await moveDraft(c.env.DB, r.draft, parish));
+    // And squared with the parish it is at now, as a read there would have
+    // been: its services' dates, its events on file, what it replaces here.
+    return json(await squareMoved(c.env.DB, await moveDraft(c.env.DB, r.draft, parish)));
   }));
 
   // Discard. The poster goes too unless something still shows it — an event

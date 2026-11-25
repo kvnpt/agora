@@ -800,12 +800,16 @@ test('a matched card whose date moved, or whose service is gone, is not written 
   assert.match(theirs.body.error, /not on this parish/);
 });
 
-test('moving a programme’s draft unlinks its cards from the old parish’s services', async () => {
+test('moving a programme’s draft unlinks its cards from the old parish’s services, and matches them at the new one', async () => {
   const f = fresh({ role: 'editor' });
-  addRookwood(f.raw);
+  const { sat } = addRookwood(f.raw);
   const draft = await readAt(f, ROOKWOOD, PROGRAMME);
+  assert.equal(draft.cards[0].occurrence, `${sat}:2030-11-02`);
   const moved = (await f.call('PATCH', `/api/admin/drafts/${draft.id}`, { parish_id: DOONSIDE })).body;
-  assert.deepEqual(moved.cards.map(c => c.occurrence), [null, null, null, null]);
+  // Doonside has one rule, its 10:00–12:00 Sunday Divine Liturgy: the two
+  // Sundays fall in it, as a read at Doonside would have had them.
+  const [doonside] = f.raw.prepare('SELECT id FROM schedules WHERE parish_id = ?').all(DOONSIDE).map(r => r.id);
+  assert.deepEqual(moved.cards.map(c => c.occurrence), [null, `${doonside}:2030-11-03`, `${doonside}:2030-11-10`, null]);
   assert.deepEqual(moved.cards.map(c => c.feast).slice(0, 1), ['Dionysios the Areopagite'], 'what it says stays');
 });
 
@@ -1169,11 +1173,11 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-9), ['read_parish', 'read_language', 'read_services', 'read_details',
     'source', 'message_text', 'seen_at', 'images', 'sender_name']);
-  assert.deepEqual(cols('draft_events').slice(-11), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
-    'host_parish_id', 'host_event_id', 'cancelled']);
+  assert.deepEqual(cols('draft_events').slice(-12), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
+    'host_parish_id', 'host_event_id', 'cancelled', 'follows']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
-  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard, types.host_parish_id, types.host_event_id, types.cancelled],
-    ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER', 'INTEGER'],
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard, types.host_parish_id, types.host_event_id, types.cancelled, types.follows],
+    ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT'],
     'a pin is a number, and so are the pill, the bin and an event on file');
 });
 
@@ -1658,4 +1662,150 @@ test('a card’s link to a service still to be added is a link the autosave take
   // Saving the services back keeps each one's key, which its cards point at.
   const put = await f.call('PUT', `/api/admin/drafts/${draft.id}/services`, { services: draft.read_services });
   assert.equal(put.body.read_services[0].key, 's1');
+});
+
+// ── a parish chosen by hand: matched there, as a read there would be ──
+//
+// A WhatsApp forward from somebody who may edit every parish starts at no
+// parish, and stays there when the poster does not say whose it is. Read
+// against no timetable, nothing on it was matched to anything, and choosing
+// the parish by hand matched nothing either (Kevin, 25 Nov 2026). Moving the
+// draft now squares its cards with the parish chosen (draft-read.mjs
+// squareMoved), without reading the poster again.
+
+const NOWHERE = '_unassigned';
+/** What a card is, for comparing a read at a parish with one moved there. */
+const squared = (c) => ({
+  occurrence: c.occurrence, title: c.title, feast: c.feast, event_type: c.event_type,
+  start_time: c.start_time, end_time: c.end_time, languages: c.languages, location_override: c.location_override,
+  host_parish_id: c.host_parish_id, host_event_id: c.host_event_id, replaces: c.replaces,
+  read_fields: [...c.read_fields].sort(), read_notes: [...c.read_notes].sort((a, b) => `${a.field}${a.text}`.localeCompare(`${b.field}${b.text}`)),
+});
+const move = async (f, draft, parishId) => {
+  const r = await f.call('PATCH', `/api/admin/drafts/${draft.id}`, { parish_id: parishId });
+  assert.equal(r.status, 200);
+  return r.body;
+};
+
+test('a programme read at no parish is matched to the timetable of the parish chosen, as a read there is', async () => {
+  const f = fresh({ role: 'owner' });
+  const { sat, sun } = addRookwood(f.raw);
+  const there = await readAt(f, ROOKWOOD, PROGRAMME);
+  const nowhere = await readAt(f, NOWHERE, PROGRAMME);
+  assert.deepEqual(nowhere.cards.map(c => c.occurrence), [null, null, null, null], 'no timetable to match');
+
+  const moved = await move(f, nowhere, ROOKWOOD);
+  assert.deepEqual(moved.cards.map(c => c.occurrence),
+    [`${sat}:2030-11-02`, `${sun}:2030-11-03`, `${sun}:2030-11-10`, null]);
+  assert.deepEqual(moved.cards.map(squared), there.cards.map(squared), 'card for card what the read at Rookwood gave');
+  // A date of a service has its service's end: not the guess made with no timetable to go by.
+  assert.ok(nowhere.cards[2].read_notes.some(n => n.field === 'end_time') || nowhere.cards[2].end_time === '11:00');
+  assert.ok(!moved.cards.slice(0, 3).some(c => c.read_notes.some(n => /usually runs/.test(n.text))));
+});
+
+test('what somebody typed before choosing the parish stays; a card added by hand, or a draft with no read, is not matched', async () => {
+  const f = fresh({ role: 'owner' });
+  const { sat, sun } = addRookwood(f.raw);
+  const nowhere = await readAt(f, NOWHERE, PROGRAMME);
+  await f.call('PATCH', `/api/admin/draft-events/${nowhere.cards[0].id}`, { title: 'Saturday Liturgy', event_type: 'feast' });
+  await f.call('PATCH', `/api/admin/draft-events/${nowhere.cards[1].id}`, { end_time: '10:45' });
+  const added = (await f.call('POST', `/api/admin/drafts/${nowhere.id}/events`,
+    { title: 'Orthros & Divine Liturgy', date: '2030-11-17', start_time: '08:00', event_type: 'liturgy' })).body;
+
+  const moved = await move(f, nowhere, ROOKWOOD);
+  const [first, second] = moved.cards;
+  assert.equal(first.occurrence, `${sat}:2030-11-02`, 'linked all the same');
+  assert.deepEqual([first.title, first.feast, first.event_type], ['Saturday Liturgy', 'Dionysios the Areopagite', 'feast'],
+    'their name and kind, not the rule’s');
+  assert.deepEqual([second.occurrence, second.end_time], [`${sun}:2030-11-03`, '10:45'], 'their end');
+  assert.equal(moved.cards.find(c => c.id === added.id).occurrence, null, 'nothing read it, so nothing matches it');
+
+  const typed = (await f.call('POST', '/api/admin/drafts', { parish_id: NOWHERE,
+    card: { title: 'Orthros & Divine Liturgy', date: '2030-11-03', start_time: '08:00', event_type: 'liturgy' } })).body;
+  assert.equal((await move(f, typed, ROOKWOOD)).cards[0].occurrence, null, 'a hand-typed draft is the person’s');
+});
+
+test('another parish’s feast asks what it replaces at the parish chosen: its own service ticked, unless somebody answered', async () => {
+  const f = fresh({ role: 'owner' });
+  const { sagSunday } = addGladesvilleBurwood(f.raw);
+  const sbuSunday = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+    VALUES (?, 0, '07:30', '11:00', 'Matins and Divine Liturgy', 'liturgy') RETURNING id`).get(SBU).id;
+  const poster = GLADESVILLE_NOV([{ title: 'Matins and Divine Liturgy', feast: 'Sunday after St Nectarios',
+    date: '2030-11-10', weekday_printed: 'Sunday', start_time: '07:30', end_time: '11:00', event_type: 'liturgy',
+    languages: ['Greek', 'English'], venue: 'St Nectarios, Burwood' }]);
+  const there = await readAt(f, SAG, poster);
+  const nowhere = await readAt(f, NOWHERE, poster);
+  assert.deepEqual([nowhere.cards[0].host_parish_id, nowhere.cards[0].replaces], [SBU, [`${sbuSunday}:2030-11-10`]],
+    'Burwood’s, with nobody’s own service to tick');
+
+  const moved = (await move(f, nowhere, SAG)).cards[0];
+  assert.deepEqual(moved.replaces, [`${sbuSunday}:2030-11-10`, `${sagSunday}:2030-11-10`]);
+  assert.ok(moved.read_notes.some(n => /Gladesville’s own 7:30am Matins and Liturgy/.test(n.text)));
+  assert.deepEqual(squared(moved), squared(there.cards[0]), 'as the read at Gladesville had it');
+
+  // Said to replace nothing before the parish was chosen: that is an answer.
+  const answered = await readAt(f, NOWHERE, poster);
+  await f.call('PATCH', `/api/admin/draft-events/${answered.cards[0].id}`, { replaces: null });
+  assert.deepEqual((await move(f, answered, SAG)).cards[0].replaces, []);
+
+  // Moved on from a parish chosen wrongly: that parish's tick goes, and the
+  // next one's own Sunday Liturgy, 9:00–11:30, is ticked in its place.
+  const rydeSunday = f.raw.prepare('SELECT id FROM schedules WHERE parish_id = ? AND day_of_week = 0').get(RYDE).id;
+  const wrong = await readAt(f, SAG, poster);
+  const ryde = (await move(f, wrong, RYDE)).cards[0];
+  assert.deepEqual(ryde.replaces, [`${sbuSunday}:2030-11-10`, `${rydeSunday}:2030-11-10`]);
+  assert.ok(!ryde.read_notes.some(n => /Gladesville’s own/.test(n.text)), 'Gladesville’s Sunday is not Ryde’s');
+  assert.ok(ryde.read_notes.some(n => /Ryde’s own 9:00am Sunday Divine Liturgy/.test(n.text)));
+});
+
+test('an event the parish chosen has on file is that one', async () => {
+  const f = fresh({ role: 'owner' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  const there = await readAt(f, SBU, BURWOOD_NOV([FEAST_AT_BURWOOD]));
+  const moved = (await move(f, await readAt(f, NOWHERE, BURWOOD_NOV([FEAST_AT_BURWOOD])), SBU)).cards[0];
+  assert.deepEqual([moved.host_parish_id, moved.host_event_id], [SBU, feast]);
+  assert.deepEqual(squared(moved), squared(there.cards[0]));
+});
+
+test('an event after a service, read at no parish, starts when the chosen parish’s service ends, and is never its date', async () => {
+  const f = fresh({ role: 'owner' });
+  addEnglishLiturgy(f.raw);
+  // As it came back on 3 Nov 2026: the Liturgy's kind, at the Liturgy's 6pm.
+  const there = (await readAt(f, DOONSIDE, MOVIE_NIGHT({ event_type: 'liturgy' }))).cards[0];
+  const nowhere = (await readAt(f, NOWHERE, MOVIE_NIGHT({ event_type: 'liturgy' })));
+  assert.equal(nowhere.cards[0].follows, 'English Liturgy', 'what it follows is kept');
+  assert.equal(nowhere.cards[0].start_time, '18:00', 'nothing to say when that ends');
+
+  const moved = (await move(f, nowhere, DOONSIDE)).cards[0];
+  assert.equal(moved.occurrence, null, 'not that Sunday’s Liturgy');
+  assert.equal(moved.start_time, '19:30');
+  assert.deepEqual(squared(moved), squared(there));
+
+  // Worked out at one parish, worked out again at the next: "after the
+  // evening Liturgy" is Doonside's 6pm, or Ryde's 5pm.
+  const g = fresh({ role: 'owner' });
+  addEnglishLiturgy(g.raw);
+  g.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+    VALUES (?, 0, '17:00', '18:00', 'English Liturgy', 'liturgy')`).run(RYDE);
+  const evening = MOVIE_NIGHT({ after: 'evening Liturgy', start_time: null });
+  const atDoonside = await readAt(g, DOONSIDE, evening);
+  assert.equal(atDoonside.cards[0].start_time, '19:30');
+  const atRyde = (await move(g, atDoonside, RYDE)).cards[0];
+  assert.equal(atRyde.start_time, '18:00', 'when Ryde’s English Liturgy ends');
+  assert.deepEqual(squared(atRyde), squared((await readAt(g, RYDE, evening)).cards[0]), 'as a read at Ryde has it');
+});
+
+test('a dated meeting of a service the poster proposes is linked to it at the parish chosen — or to its rule, once on file', async () => {
+  const f = fresh({ role: 'owner' });
+  const there = await readAt(f, PUNCHBOWL, MUMS_GROUP());
+  const moved = await move(f, await readAt(f, NOWHERE, MUMS_GROUP()), PUNCHBOWL);
+  assert.equal(moved.cards[0].occurrence, 'new:s1:2030-11-01');
+  assert.deepEqual([moved.cards[0].title, moved.cards[0].feast], ['St Emilia’s Mums Group', 'Coaster-making Workshop']);
+  assert.deepEqual(squared(moved.cards[0]), squared(there.cards[0]));
+
+  const rid = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, week_of_month)
+    VALUES (?, 5, '10:00', 'St Emilia’s Mums Group', 'social', 'first') RETURNING id`).get(PUNCHBOWL).id;
+  const later = await move(f, await readAt(f, NOWHERE, MUMS_GROUP()), PUNCHBOWL);
+  assert.equal(later.cards[0].occurrence, `${rid}:2030-11-01`);
 });
