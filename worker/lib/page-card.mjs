@@ -30,6 +30,7 @@ import collections from '../../public/shared/collections.js';
 import languages from '../../public/shared/languages.js';
 import ruleFilters from '../../public/shared/timetable.js';
 import linkify from '../../public/shared/linkify.js';
+import posters from '../../public/shared/posters.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { mapsHref } from './lite-page.mjs';
 
@@ -130,8 +131,23 @@ function avatar(p, cls, color) {
  * 404 and the whole poster stands in, as on the page.
  */
 export const ROW_THUMB = 'width=160,quality=78,format=auto,fit=scale-down';
-function thumbHTML(path) {
-  const p = String(path);
+
+/**
+ * An event card's poster: the picture, a link to itself, or several pictures
+ * as the gallery the page draws (public/shared/posters.js), the same markup
+ * to the letter, so the page finds it again and leaves it as it is (an
+ * island: which picture is showing is the gallery's own).
+ */
+export function posterHTML(value, offCls = '', stamp = '') {
+  if (posters.isGallery(value)) {
+    return `<div class="ev-poster ev-gallery${offCls}">${posters.galleryHTML(value)}${stamp}</div>`;
+  }
+  const p = posters.first(value);
+  return `<a class="ev-poster${offCls}" href="${esc(p)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(p)}" alt="">${stamp}</a>`;
+}
+function thumbHTML(value) {
+  // A gallery's cover: its first picture (public/shared/posters.js).
+  const p = String(posters.first(value) || '');
   if (!p.startsWith('/posters/')) return `<img class="ethumb" src="${esc(p)}" alt="" loading="lazy">`;
   return `<img class="ethumb" src="/cdn-cgi/image/${ROW_THUMB}${esc(p)}" data-full="${esc(p)}" alt="" loading="lazy" onerror="if(this.dataset.full){this.src=this.dataset.full;this.removeAttribute('data-full')}">`;
 }
@@ -400,7 +416,7 @@ export function eventCardHTML(m) {
   const replaced = into ? `<p class="ev-replaced">Replaced by <a class="ev-link" href="/${esc(into.id)}">${esc(into.title)}</a>${intoAt ? ` at ${esc(intoAt.name)}` : ''}</p>` : '';
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
-      ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : band}
+      ${e.poster_path ? posterHTML(e.poster_path, offCls, stamp) : band}
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
         ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
         <h1>${esc(e.title)}</h1>

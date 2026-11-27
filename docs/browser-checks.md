@@ -358,16 +358,32 @@ curl -s localhost:8789/__replies
 `send --pdf programme.pdf --caption …` forwards a PDF as WhatsApp sends one (a
 document): it should make one draft whose poster is the `.pdf`, and the reader
 stand-in's `/__calls` count it under `pdfs`. Opening the draft's link should
-load pdf.js, `PUT …/poster?from=…pdf` with an `image/webp` of its pages side by
-side, and turn the "PDF" thumbnail into that picture; dropping the same PDF on
-Add an image should `POST` it as `application/pdf`, then make the same `PUT`.
+load pdf.js, `PUT …/poster?from=…pdf` with a form of its pages, a `picture`
+each, and turn the "PDF" thumbnail into a gallery of them; dropping the same
+PDF on Add an image should `POST` it as `application/pdf`, show its pages at
+once, then make the same `PUT`.
 
 A forward of several pictures is several `send --image`s at the same
 `--at` second, the caption on the first. One poster over several pictures
-should make one draft, its pictures joined side by side when the editor opens
-it (watch for the `PUT …/poster?from=` and the thumbnail changing); several
+should make one draft whose poster is a gallery of them (a JSON list in
+`drafts.poster_path`), shown so in the editor with no `PUT`; several
 posters should make a draft each, with its own picture and its own part of
 the caption, and one reply listing them.
+
+## A poster of several pictures
+
+A gallery (`public/shared/posters.js`, `.css`) is checked on a phone and a
+desktop, light and dark: on the event card it swipes a picture at a time (a
+`touchscreen` swipe in Playwright's iPhone profile, or `scrollLeft` on its
+`.pg-track` and a `scroll` event), its dots follow, and the card under it
+does not move down with the swipe (iOS). On a desktop the arrows come with
+the pointer and go at either end; ← → move it when it has the focus. A tap on
+a picture opens the full-size viewer at that picture. A link's card painted
+by the Worker (`curl` an event's link and look for `class="pg"`) swipes before
+next.js has run, and stays on the picture it was on when the page takes it
+over and draws the card again. Put a gallery on an event in the local
+database by hand: `UPDATE events SET poster_path = '["/posters/a.jpg","/posters/b.jpg"]'`,
+with both objects put in local R2 (`npx wrangler r2 object put agora-assets/posters/a.jpg --local --file …`).
 
 Apply `d1/migrations/036-whatsapp.sql` and `037-whatsapp-pictures.sql` to the local database first, and give
 the parish an acronym so the reply's link has one. The home page should show

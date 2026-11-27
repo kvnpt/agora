@@ -968,6 +968,8 @@ body.map-full .parish-row {
 .pimg { position: relative; aspect-ratio: 4 / 5; background: var(--card-2); overflow: hidden; }
 .pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pimg.noimg img { display: none; }
+.pimg .pg-mark { top: 8px; right: 8px; }
+.pimg .pg-mark svg { width: 18px; height: 18px; }
 .ptext { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px 11px; min-width: 0; }
 .pkicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
 .ptitle {
@@ -1445,6 +1447,26 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
 .ev-poster img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
+/* Several pictures: the gallery (shared/posters.css), black behind them as
+   one poster has it, and its dots under them on the card's own colour. As
+   tall as its tallest, so nothing under it moves as it is swiped. */
+.ev-poster.ev-gallery { background: none; cursor: auto; }
+.ev-gallery .pg-track { background: #000; }
+.ev-gallery .pg-pic { cursor: zoom-in; }
+.ev-gallery .pg-dots { padding-top: 8px; }
+/* Full size (openPoster): the pictures across the whole screen, the dots
+   under them, above Copy and Share, never over a picture (a light one hid
+   them), and on a mouse its arrows always there. */
+.poster-view.is-gallery { display: flex; align-items: stretch; }
+.pg-view { flex: 1; min-width: 0; display: flex; flex-direction: column; --pg-dot: rgba(255, 255, 255, .38); }
+.pg-view .pg-track { flex: 1; min-height: 0; }
+.pg-view .pg-dots { flex: none; padding: 12px 0 70px; }
+.poster-view:has(.poster-acts:empty) .pg-view .pg-dots { padding-bottom: 18px; }
+@media (hover: hover) and (pointer: fine) {
+  .pg-view .pg-arrow { opacity: 1; width: 44px; height: 44px; margin-top: -22px; }
+  .pg-view .pg-prev { left: 18px; }
+  .pg-view .pg-next { right: 18px; }
+}
 /* No poster: a band in the colour of the jurisdiction it is held in, its
    kind said in full at the head and the church it is held in at the foot. */
 .ev-band {

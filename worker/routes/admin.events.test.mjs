@@ -78,7 +78,7 @@ function fresh(roleRow) {
     return { status: res.status, body: parsed };
   };
 
-  return { raw, db, call, callRaw, env };
+  return { raw, db, call, callRaw, env, router };
 }
 
 const FROM = '2026-09-01T00:00:00.000Z';
@@ -1191,6 +1191,91 @@ test('a bulletin is released only when nothing shows it, and comes down in one g
   assert.equal((await expandOne(f.db, sid, dates[1])).feast, 'Exaltation of the Cross');
   assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 1);
   assert.ok(!b.store.has(key2));
+});
+
+// ── a poster of several pictures: a gallery (public/shared/posters.js) ──
+
+/** Several pictures at once, as the page sends them: a form, one `picture` each. */
+const pictures = (n, type = 'image/jpeg') => {
+  const form = new FormData();
+  for (let i = 0; i < n; i++) form.append('picture', new Blob([new Uint8Array([0xff, 0xd8, 0xff, i])], { type }), `p${i}.jpg`);
+  return form;
+};
+const callForm = (f, method, url, form) => f.router.handle(new Request(`https://orthodoxy.au${url}`, { method, body: form }), f.env, {})
+  .then(async (res) => ({ status: res.status, body: await res.clone().json().catch(() => null) }));
+
+test('several pictures on an event are its gallery, each its own; one picture replacing them lets them go', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'The Bay Run', start_utc: '2026-11-27T19:30:00.000Z' });
+  const r = await callForm(f, 'POST', `/api/admin/events/${made.body.id}/poster`, pictures(2));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const two = JSON.parse(r.body.poster_path);
+  assert.equal(two.length, 2);
+  // Its own, as a single picture's is: under the event's id, so the card
+  // knows it is not a bulletin shared with other dates.
+  assert.ok(two.every(p => p.startsWith(`/posters/${made.body.id}.`)), two.join(','));
+  assert.deepEqual([...b.store.keys()].sort(), two.map(p => p.slice(1)).sort());
+  assert.equal(f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(made.body.id).poster_path, r.body.poster_path);
+
+  const one = await f.callRaw('POST', `/api/admin/events/${made.body.id}/poster`, png(), 'image/png');
+  assert.equal(one.status, 200);
+  assert.match(one.body.poster_path, /^\/posters\/\d+\.png\?v=\d+$/, 'one picture is a path, as ever');
+  for (const p of two) assert.ok(b.deleted.includes(p.slice(1)), p);
+
+  // A picture is a picture: a PDF in the form is refused, and nothing stored.
+  const before = b.store.size;
+  assert.equal((await callForm(f, 'POST', `/api/admin/events/${made.body.id}/poster`, pictures(2, 'application/pdf'))).status, 415);
+  assert.equal(b.store.size, before);
+});
+
+test('a bulletin of several pages is one gallery on every date, and comes down everywhere in one go', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+  const dates = (await septemberOf(f.db, sid)).map(e => e.id.split(':')[1]);
+  const r = await callForm(f, 'POST', `/api/admin/events/${inst.id}/poster?${SEPT}`, pictures(3));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.count, dates.length);
+  const pages = JSON.parse(r.body.poster_path);
+  assert.equal(pages.length, 3);
+  assert.equal(b.store.size, 3, 'three pictures, not three per service');
+  for (const d of dates) assert.equal((await expandOne(f.db, sid, d)).poster_path, r.body.poster_path, d);
+
+  // Off one date: the others still show every page.
+  assert.equal((await f.call('DELETE', `/api/admin/events/${sid}:${dates[0]}/poster`)).status, 200);
+  assert.equal(b.store.size, 3);
+  const del = await f.call('DELETE', `/api/admin/events/${sid}:${dates[1]}/poster?everywhere`);
+  assert.equal(del.status, 200);
+  assert.equal(del.body.count, dates.length - 1);
+  for (const d of dates) assert.equal((await expandOne(f.db, sid, d)).poster_path, null, d);
+  assert.equal(b.store.size, 0, 'every page goes once nothing shows it');
+});
+
+test('a rule’s poster may be a gallery of pictures on file, and nothing else shaped like one', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  b.store.set('posters/a.jpg', { size: 1 });
+  b.store.set('posters/b.jpg', { size: 1 });
+  const gallery = '["/posters/a.jpg","/posters/b.jpg"]';
+  const made = await f.call('POST', '/api/admin/schedules', {
+    parish_id: parishId, title: 'Church Choir Practice', day_of_week: 2, start_time: '19:00', poster_path: gallery });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal(made.body.poster_path, gallery);
+  for (const bad of ['["/posters/a.jpg"]', '["/posters/a.jpg","https://example.com/x.jpg"]',
+    '["/posters/a.jpg","/posters/b.pdf"]', '["/posters/a.jpg", "/posters/b.jpg"]', '[1,2]']) {
+    assert.equal((await f.call('PATCH', `/api/admin/schedules/${made.body.id}`, { poster_path: bad })).status, 400, bad);
+  }
+  // Its own upload of several, and the old pictures released.
+  const up = await callForm(f, 'POST', `/api/admin/schedules/${made.body.id}/poster`, pictures(2));
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  assert.equal(JSON.parse(up.body.poster_path).length, 2);
+  assert.ok(b.deleted.includes('posters/a.jpg') && b.deleted.includes('posters/b.jpg'), b.deleted.join(','));
 });
 
 test('a range is refused before anything is stored when it cannot mean anything', async () => {

@@ -186,6 +186,13 @@
 /* Replace and Remove, floated on the poster's top right corner (Kevin, 20
    Nov 2026; .cf-fab, below, as Edit event's poster has them). */
 .ee-thumb-wrap { position: relative; flex: 0 0 auto; }
+/* Several pictures (or a PDF's pages): a gallery to swipe in the thumb's
+   place (shared/posters.css), as wide as the thumb, each picture the thumb. */
+.ee-gallery { width: 84px; }
+.ee-gallery .pg-pic { cursor: zoom-in; }
+.ee-gallery .pg-dots { padding-top: 4px; }
+.ee-strip-pic .pg-mark, .ee-feed-pic .pg-mark { top: 3px; right: 3px; }
+.ee-strip-pic .pg-mark svg, .ee-feed-pic .pg-mark svg { width: 11px; height: 11px; }
 /* On a thumbnail (no card face), smaller and tucked in. */
 .ee:not(.has-face) .cf-fabs { top: 4px; right: 4px; gap: 4px; }
 .ee:not(.has-face) .cf-fab { width: 28px; height: 28px; }
@@ -215,6 +222,7 @@
   .ee.has-poster .ee-poster-card { flex-direction: column; }
   .ee.has-poster .ee-thumb-wrap, .ee.has-poster .ee-thumb-btn { width: 100%; }
   .ee.has-poster .ee-thumb { width: 100%; max-height: 64vh; object-fit: contain; }
+  .ee.has-poster .ee-gallery { width: 100%; }
 }
 .ee-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
@@ -1204,6 +1212,7 @@ input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
   .ee.has-face .ee-poster-card { flex-direction: column; gap: 8px; }
   .ee.has-face .ee-thumb-wrap, .ee.has-face .ee-thumb-btn { width: 100%; }
   .ee.has-face .ee-thumb { width: 100%; max-height: 340px; object-fit: contain; object-position: center; }
+  .ee.has-face .ee-gallery { width: 100%; }
 }
 
 /* A date of a regular service: the timetable's line it is published onto,

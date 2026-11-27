@@ -30,6 +30,7 @@ import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
+import posters from '../../public/shared/posters.js';
 
 const DAY_MS = 86400000;
 /** How far a link's card looks ahead. The page's own stream is where the rest of the year lives. */
@@ -369,7 +370,8 @@ export function liteMeta(m) {
 
 /** The preview image: the pinned event's poster, the parish logo, or the jurisdiction's card. */
 export function liteImage(m) {
-  const path = (m.pinned && (m.pinned.poster_path)) || m.parish.logo_path
+  // A poster of several pictures previews with its first (public/shared/posters.js).
+  const path = (m.pinned && posters.first(m.pinned.poster_path)) || m.parish.logo_path
     || `/og/${JURIS_LABEL[m.parish.jurisdiction] ? m.parish.jurisdiction : 'default'}.jpg`;
   return /^https?:/.test(path) ? path : `${m.origin}${path}`;
 }

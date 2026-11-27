@@ -18,6 +18,7 @@ import { isValidOccurrence } from '../../public/shared/project.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
 import { endOf, lengthText, toMinutes, fromMinutes, servicesNamed } from './durations.mjs';
 import signs from '../../public/shared/signs.js';
+import posters from '../../public/shared/posters.js';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -311,8 +312,8 @@ export function draftOut(d, cards = []) {
     source: d.source || null,
     message_text: d.message_text || null,
     seen_at: d.seen_at || null,
-    // The other pictures sent with it, until the editor joins them into the
-    // poster (migration 037), and the name WhatsApp has for its sender.
+    // The other pictures of a forward from before galleries (migration 037),
+    // until it is opened (foldPictures), and the name WhatsApp has for its sender.
     images: parseList(d.images),
     sender_name: d.sender_name || null,
     created_by: d.created_by,
@@ -1293,26 +1294,43 @@ export const setReadStatus = (db, draftId, status) => db.prepare(
 export async function splitDraft(db, draftId, parts) {
   const d = await db.prepare('SELECT * FROM drafts WHERE id = ?').bind(draftId).first();
   if (!d) return [];
-  const all = [d.poster_path, ...parseList(d.images)];
+  const all = [...posters.list(d.poster_path), ...parseList(d.images)];
   const seen = new Set(parts.flatMap(p => p.pictures));
   const pathsOf = (p, i) => [
     ...p.pictures.map(n => all[n - 1]),
     ...(i === 0 ? all.filter((x, n) => !seen.has(n + 1)) : []),
   ].filter(Boolean);
   const [first, ...rest] = parts.map((p, i) => ({ ...p, paths: pathsOf(p, i) }));
-  const imagesOf = (paths) => (paths.length > 1 ? JSON.stringify(paths.slice(1)) : null);
+  // Each poster's pictures are its gallery (public/shared/posters.js).
   await db.prepare(
-    `UPDATE drafts SET poster_path = ?, images = ?, message_text = ?, updated_at = ${NOW} WHERE id = ?`
-  ).bind(first.paths[0] || null, imagesOf(first.paths), first.text, d.id).run();
+    `UPDATE drafts SET poster_path = ?, images = NULL, message_text = ?, updated_at = ${NOW} WHERE id = ?`
+  ).bind(posters.valueOf(first.paths), first.text, d.id).run();
   const ids = [d.id];
   for (const p of rest) {
     const row = await db.prepare(
-      `INSERT INTO drafts (parish_id, created_by, poster_path, images, read_status, source, message_text, sender_name)
-       VALUES (?, ?, ?, ?, 'reading', ?, ?, ?) RETURNING id`
-    ).bind(d.parish_id, d.created_by, p.paths[0] || null, imagesOf(p.paths), d.source, p.text, d.sender_name).first();
+      `INSERT INTO drafts (parish_id, created_by, poster_path, read_status, source, message_text, sender_name)
+       VALUES (?, ?, ?, 'reading', ?, ?, ?) RETURNING id`
+    ).bind(d.parish_id, d.created_by, posters.valueOf(p.paths), d.source, p.text, d.sender_name).first();
     ids.push(row.id);
   }
   return ids;
+}
+
+/**
+ * A draft from before galleries, opened: a WhatsApp forward's poster and the
+ * pictures that waited in `images` (migration 037) for the editor to join
+ * them side by side, made the gallery they are now instead (Kevin, 27 Nov
+ * 2026, public/shared/posters.js). The read stands: it was of the same
+ * pictures. A draft with nothing waiting is returned as it is.
+ */
+export async function foldPictures(db, draft) {
+  if (!draft || !draft.images || !draft.images.length || !draft.poster_path) return draft;
+  if (/\.pdf$/i.test(String(draft.poster_path).split('?')[0])) return draft;
+  const value = posters.valueOf([...posters.list(draft.poster_path), ...draft.images]);
+  await db.prepare(
+    `UPDATE drafts SET poster_path = ?, images = NULL WHERE id = ? AND poster_path = ? AND images IS NOT NULL`
+  ).bind(value, draft.id, draft.poster_path).run();
+  return getDraft(db, draft.id);
 }
 
 /**

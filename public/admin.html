@@ -8,6 +8,7 @@
   <meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
   <title>Admin — Orthodox Services &amp; Events</title>
   <!-- The add-event editor, shared with the app. -->
+  <link rel="stylesheet" href="/shared/posters.css">
   <link rel="stylesheet" href="/shared/event-editor.css">
   <link rel="stylesheet" href="/shared/parish-picker.css">
   <style>
@@ -1289,6 +1290,7 @@
   <script src="/shared/parish-picker.js"></script>
   <script src="/shared/venue-picker.js"></script>
   <script src="/shared/morph.js"></script>
+  <script src="/shared/posters.js"></script>
   <script src="/shared/card-face.js"></script>
   <script src="/shared/event-editor.js"></script>
   <!-- The parish timezone table. Shared for the same reason the colours are:
@@ -1547,7 +1549,7 @@
         const who = String(d.created_by || '').split('@')[0];
         return `
           <div class="card draft-row">
-            ${d.poster_path ? `<img class="draft-thumb" src="${attr(AgoraEventEditor.isPdf(d.poster_path) ? AgoraEventEditor.PDF_THUMB : d.poster_path)}" alt="">` : '<span class="draft-thumb"></span>'}
+            ${d.poster_path ? `<span class="pg-thumb"><img class="draft-thumb" src="${attr(AgoraEventEditor.thumbOf(d.poster_path))}" alt="">${AgoraPosters.markHTML(d.poster_path)}</span>` : '<span class="draft-thumb"></span>'}
             <span class="draft-what">
               <div class="draft-title">${esc(title)}</div>
               <div class="draft-meta">${esc(d.parish_name || d.parish_id)} · ${esc(span)}${flag}</div>

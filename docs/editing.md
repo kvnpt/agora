@@ -452,14 +452,46 @@ takes 32) and read whole, as a `document` block, every page;
 `posterContext`'s `pdf` line says a PDF of several pages is one programme or
 newsletter, each event once however many pages show it. Nothing shows a
 PDF, though, and a rule's poster is never one, so the editor makes **a
-picture of it**: pdf.js (`public/lib/pdfjs/`, vendored, imported only for a
-PDF) draws its first six pages, `joinPictures` joins them side by side as it
-joins a forward's pictures, and `PUT …/drafts/:id/poster?from=` swaps the
-picture in for the PDF, the read standing. A dropped PDF is pictured at once;
-a forwarded one when the editor opens its draft, and until then its
-thumbnail is a page marked PDF. Publish waits for the picture. A card
+picture of each page**: pdf.js (`public/lib/pdfjs/`, vendored, imported only
+for a PDF) draws its first ten (`pdfPictures`), and `PUT
+…/drafts/:id/poster?from=` swaps them in for the PDF as a gallery (below),
+the read standing (Kevin, 27 Nov 2026: "it should convert into images and
+let users swipe like a gallery with the dots"). A dropped PDF is pictured at
+once; a forwarded one when the editor opens its draft, and until then its
+thumbnail is a page marked PDF. Publish waits for the pictures. A card
 published with the PDF still there (a page that could not draw it) gets no
 poster rather than the PDF (`isPdfPoster`), and the PDF goes with the draft.
+
+**Several pictures are a gallery, never joined** (Kevin, 27 Nov 2026: "I want
+posters to follow the insta-style multi-pic format when there's multiple ones
+instead of the combining we've been doing"). A WhatsApp forward of one poster
+over several pictures, several chosen at once under **Add an image** (on the
+editor, an event's or date's own poster, a rule's), and a PDF's pages each
+stay a picture of their own, in order, up to ten (Instagram's ten), and the
+card shows one at a time to swipe through, a dot for each under it, the one
+showing in the user's blue, an arrow at each side for a mouse. Until then they
+were joined side by side into one picture, a row of three or two rows past
+that, each part too small to read on a phone. **It is kept in the columns a
+poster always was** (`events.poster_path`, `schedules.poster_path`,
+`schedule_overrides.patch_poster_path`, `drafts.poster_path`): one picture is
+its path, exactly as before, and several are a JSON list of those paths
+(`public/shared/posters.js`; the value starts with `[`, which no path does).
+So a gallery goes wherever a poster goes — published from a draft, put on a
+range of dates, made a rule's own — with nothing else to carry, and nothing
+needed a migration. Several pictures are sent as a form, a `picture` each
+(`readGallery` in `worker/routes/admin.mjs`, 5 MB each, 30 MB in all); one
+still goes as itself. What only a picture can be — an og:image, a row's
+thumbnail, a sign's source line — is the first picture, the cover, as it is
+on Instagram; a small picture of a gallery wears Instagram's mark for a post
+of several (`markHTML`). A gallery's pictures are counted as used, and let go
+from R2, one by one (`namesPicture` in `worker/lib/poster-range.mjs`: the
+quoted path inside the list, since D1 refuses a LIKE pattern over 50 bytes).
+The swipe is the browser's (CSS scroll snap, `public/shared/posters.css`), so
+a link's painted card swipes before any script has come; the Worker paints it
+with the page's own markup (`posterHTML` in `worker/lib/page-card.mjs`), an
+island (`data-keep`) named by its pictures, so the page leaves it scrolled
+where it was. The full-size viewer opens at the picture tapped, and Copy and
+Share are of the one showing.
 
 The same reader fills in **Suggest edits** for somebody with no role who adds a
 suggested event's poster (docs/people-and-access.md). That is a message, not a
@@ -536,15 +568,15 @@ published: the draft waits for a person, like any other. What is worth knowing:
   one poster over several pictures (a programme's pages, a poster and its
   translation). The editor's own Read again of a draft's pictures reads them
   as one announcement (`posterContext`'s `pictures`: "read them as one
-  image"), never split. The draft's poster is the first picture; the rest wait in
-  `drafts.images` (migration 037) until the editor opens it and **joins them
-  side by side into one poster** (`joinPictures`: one row up to three, two
-  rows past that, each row at its shortest picture's height, 2048px on the
-  long side), which `PUT …/drafts/:id/poster?from=` swaps in — the read
-  stands, since it was of the same pictures, and the pictures go. Kevin's
-  first forward, the Ocean Run Club's two Cronulla pictures, made two drafts,
-  one per picture; for Crows Nest he had joined two screenshots by hand. **Add
-  an image** takes several at once the same way, joined before the read.
+  image"), never split. The draft's poster is **its pictures as a gallery**, in the order they
+were sent (above). Until 27 Nov 2026 the rest waited in `drafts.images`
+(migration 037) until the editor opened the draft and joined them side by
+side into one picture; a draft left like that is made a gallery when it is
+next opened (`foldPictures` in `worker/lib/drafts.mjs`), and nothing writes
+`drafts.images` now. Kevin's first forward, the Ocean Run Club's two
+Cronulla pictures, made two drafts, one per picture; for Crows Nest he had
+joined two screenshots by hand. **Add an image** takes several at once the
+same way, read as one announcement.
 - **Which parish.** A parish link in the words; else a contact's only parish;
   else, for a contact of several, where they last drafted (or their first
   parish). **Somebody who may edit every parish (an owner, an editor) starts at
@@ -563,8 +595,9 @@ published: the draft waits for a person, like any other. What is worth knowing:
   poster it is, since anybody may suggest anywhere), and words typed after it
   are added to it the same way. **Start a draft** from it is then a forwarded
   poster's draft: `source = 'whatsapp'`, their words as `message_text`, a
-  forward's other pictures in `drafts.images` (from `parish_suggestions.images`,
-  migration 038), already seen by whoever started it.
+  forward's pictures its gallery (the suggestion's poster and
+  `parish_suggestions.images`, migration 038), already seen by whoever
+  started it.
 - **Unopened, it shows.** `drafts.source = 'whatsapp'` and `seen_at` NULL:
   a red count on the parish card's + for whoever may edit the parish (one
   waiting opens it; several open the editor, which lists them), and a line on

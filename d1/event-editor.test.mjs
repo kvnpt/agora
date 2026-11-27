@@ -232,31 +232,34 @@ test('what a date changes on its service', () => {
     title: 'Mums & Bubs', location_override: 'Church hall' }, rule, null)].sort(), ['start_time', 'title', 'where']);
 });
 
-// Kevin's Cronulla forward: two phone screenshots, and Crows Nest's two that
-// he put side by side by hand. joinPictures draws them where this says.
-test('several pictures sit side by side as one poster, at the shortest one’s height, no wider than 2048', () => {
-  const two = E.pictureLayout([{ w: 1080, h: 1350 }, { w: 1080, h: 1350 }]);
-  assert.deepStrictEqual([two.width, two.height], [2048, 1266]);
-  assert.strictEqual(two.boxes[0].x, 0);
-  assert.ok(two.boxes[1].x > two.boxes[0].x + two.boxes[0].w, 'a white gap between them');
-  assert.strictEqual(two.boxes[1].x + two.boxes[1].w, 2048);
-  assert.ok(two.boxes.every(b => b.y === 0 && b.h === 1266));
+// Kevin, 27 Nov 2026: several pictures are a gallery, never joined into one.
+// A gallery's value is a JSON list of paths (shared/posters.js), and nothing
+// reads it as a PDF, whatever its pictures are called.
+test('a gallery is pictures, its thumbnail its first, and a PDF stays a PDF', () => {
+  globalThis.AgoraPosters = require('../public/shared/posters.js');
+  try {
+    const gallery = JSON.stringify(['/posters/a.jpg', '/posters/b.jpg']);
+    assert.strictEqual(E.isPdf(gallery), false);
+    assert.strictEqual(E.isPdf('/posters/programme.pdf'), true);
+    assert.strictEqual(E.isPdf('/posters/programme.PDF?v=2'), true);
+    assert.strictEqual(E.thumbOf(gallery), '/posters/a.jpg', 'the cover');
+    assert.strictEqual(E.thumbOf('/posters/one.jpg'), '/posters/one.jpg', 'one picture as ever');
+    assert.strictEqual(E.thumbOf('/posters/programme.pdf'), E.PDF_THUMB);
+    assert.strictEqual(E.MAX_PICTURES, 10, 'Instagram\u2019s ten');
+  } finally {
+    delete globalThis.AgoraPosters;
+  }
+});
 
-  // A taller picture is brought down to the shorter's height, never the other way.
-  const mixed = E.pictureLayout([{ w: 800, h: 1000 }, { w: 1000, h: 2000 }]);
-  assert.deepStrictEqual(mixed.boxes.map(b => b.h), [1000, 1000]);
-  assert.deepStrictEqual(mixed.boxes.map(b => b.w), [800, 500]);
-  assert.strictEqual(mixed.width, 800 + 24 + 500, 'small enough already: not scaled');
-
-  // Four are two rows of two; five, a row of three over a centred two.
-  const four = E.pictureLayout(Array(4).fill({ w: 500, h: 500 }));
-  assert.deepStrictEqual(four.boxes.map(b => [b.x, b.y]), [[0, 0], [524, 0], [0, 524], [524, 524]]);
-  const five = E.pictureLayout(Array(5).fill({ w: 500, h: 500 }));
-  assert.deepStrictEqual(five.boxes.map(b => b.y), [0, 0, 0, 524, 524]);
-  assert.strictEqual(five.boxes[3].x, 262, 'the shorter row is centred');
-
-  // One is itself.
-  assert.deepStrictEqual(E.pictureLayout([{ w: 900, h: 1200 }]).boxes, [{ x: 0, y: 0, w: 900, h: 1200 }]);
+test('several pictures go as a form, a picture each in order; one goes as itself', () => {
+  const one = new Blob(['x'], { type: 'image/png' });
+  const single = E.pictureBody([one]);
+  assert.strictEqual(single.body, one);
+  assert.deepStrictEqual(single.headers, { 'Content-Type': 'image/png' });
+  const many = E.pictureBody([one, new Blob(['y'], { type: 'image/jpeg' }), new Blob(['z'], { type: 'image/webp' })]);
+  assert.ok(many.body instanceof FormData);
+  assert.deepStrictEqual(many.headers, {}, 'the browser writes the form\u2019s own type');
+  assert.deepStrictEqual(many.body.getAll('picture').map(f => f.name), ['picture-1.png', 'picture-2.jpg', 'picture-3.webp']);
 });
 
 test('a WhatsApp draft names who sent it by their WhatsApp name', () => {

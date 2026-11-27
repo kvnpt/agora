@@ -23,8 +23,15 @@
 //   reload()     re-read the bundle fresh and repaint what is open
 //   retarget(from, to)  an open event card is now this id (a date moved onto a new rule)
 //   openParish(id), toast(text), recheck() (the account's counts)
+//   openPoster(value, at)  the page's viewer, at picture `at` of a gallery
 (function (root) {
   let host = null;
+  /** A poster full size: the page's viewer (a gallery to swipe), or its first picture in a tab. */
+  const viewPoster = (value, at = 0) => {
+    if (host && host.openPoster) return host.openPoster(value, at);
+    const P = root.AgoraPosters;
+    window.open(P ? P.list(value)[at] || P.first(value) : value, '_blank', 'noopener');
+  };
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -178,8 +185,8 @@
           : services && events ? 'both' : services ? 'regular'
             : intent === 'timetable' && !events ? 'sign' : 'event']);
       },
-      // A poster at full size: this page has no viewer of its own yet.
-      openPoster: (url) => window.open(url, '_blank', 'noopener'),
+      // A poster at full size, in the page's viewer: a gallery to swipe.
+      openPoster: (value, at) => viewPoster(value, at),
       // A sign writes to the parish itself, and asks first like any hand edit.
       keepByHand: (pid) => keepByHand(pid),
       pickPin,
@@ -235,11 +242,41 @@
     return c && Number.isFinite(c.lat) ? { lat: c.lat, lng: c.lng } : null;
   }
 
-  /** Upload (or, with no file, take off) a rule's own poster. */
-  async function rulePoster(id, file) {
+  /**
+   * What a poster upload sends: one picture as itself, raw, as ever; several
+   * as a form, a `picture` each in the order chosen — a gallery to swipe
+   * (shared/posters.js), never joined into one — each made the size the
+   * editor stores a poster first (event-editor.js shrinkPoster). `files` is
+   * a File or a list of them.
+   */
+  async function posterUpload(files) {
+    const all = (Array.isArray(files) ? files : [files]).filter(Boolean);
+    const max = (root.AgoraPosters && root.AgoraPosters.MAX) || 10;
+    const pics = all.filter(f => /^image\//.test(f.type || '')).slice(0, max);
+    if (pics.length <= 1) {
+      const f = pics[0] || all[0];
+      return { body: f, headers: { 'Content-Type': f.type || 'image/jpeg' } };
+    }
+    const shrink = root.AgoraEventEditor && root.AgoraEventEditor.shrinkPoster;
+    const form = new FormData();
+    for (let i = 0; i < pics.length; i++) {
+      const b = shrink ? await shrink(pics[i]).catch(() => pics[i]) : pics[i];
+      form.append('picture', b, pics[i].name || `picture-${i + 1}.jpg`);
+    }
+    return { body: form, headers: {} };
+  }
+  /** Too big to send as it is: one picture over the Worker's 8 MB (several are made smaller first). */
+  const tooBig = (files) => {
+    const all = (Array.isArray(files) ? files : [files]).filter(Boolean);
+    return all.length === 1 && all[0].size > 8 * 1024 * 1024;
+  };
+
+  /** Upload (or, with no file, take off) a rule's own poster: one picture or several. */
+  async function rulePoster(id, files) {
     const url = `/api/admin/schedules/${encodeURIComponent(id)}/poster`;
-    const res = await (file
-      ? fetch(url, { method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file })
+    const some = (Array.isArray(files) ? files : [files]).filter(Boolean);
+    const res = await (some.length
+      ? posterUpload(some).then(up => fetch(url, { method: 'POST', headers: up.headers, body: up.body }))
       : fetch(url, { method: 'DELETE' })).catch(() => null);
     if (!res) return { error: 'The poster did not go through. Check the connection.' };
     if (!res.ok) return { error: await errorText(res) };
@@ -264,7 +301,7 @@
       geocode,
       pickPin,
       posterNow,
-      openPoster: (url) => window.open(url, '_blank', 'noopener'),
+      openPoster: (value, at) => viewPoster(value, at),
     });
     const err = form.querySelector('.rf-error');
     const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
@@ -317,7 +354,7 @@
       <div class="schedule-add-or">or type it in</div>`);
     const sign = d.form.querySelector('[data-sign-input]');
     const signNote = d.form.querySelector('[data-sign-note]');
-    // One photo, or several of one board: the editor puts them side by side.
+    // One photo, or several of one board: a gallery, read as one.
     const fromSign = (files) => {
       const images = [].concat(files || []).filter(f => f && /^image\//.test(f.type || ''));
       if (!images.length) return;
@@ -364,7 +401,7 @@
         const file = d.live.poster();
         if (file && made && made.id) {
           btn.textContent = 'Adding the poster…';
-          const up = await rulePoster(made.id, file);
+          const up = await rulePoster(made.id, file);   // one picture or several
           // A service on several days is a rule for each, and each shows it.
           for (const r of (made.rules || []).slice(1)) {
             if (up.error) break;
@@ -473,10 +510,10 @@
         <button class="btn-outline" type="button" data-frame-close>Cancel</button>
         ${host.may('schedule.delete', first.parish_id) ? '<button class="btn-danger" type="button" data-rf-delete>Delete</button>' : ''}`,
       // Outside Save, as the app's: it goes on as it is picked, on every day.
-      posterNow: async (file) => {
-        const r = await rulePoster(first.id, file);
+      posterNow: async (files) => {
+        const r = await rulePoster(first.id, files);
         if (!r.error && rules.length > 1) {
-          const err = await patchEach(rules.slice(1), { poster_path: file ? r.poster_path : null });
+          const err = await patchEach(rules.slice(1), { poster_path: files ? r.poster_path : null });
           if (err) return { error: err };
         }
         if (!r.error) host.reload();
@@ -922,12 +959,19 @@
   /** The poster: this date's or this event's, a range of them, or the service's own. */
   function posterHTML(e, series, parish, face = null) {
     const has = !!e.poster_path;
+    const P = root.AgoraPosters;
+    const cover = P.first(e.poster_path);
     // The service's own poster shows here because this date has none; it is
     // the service's to change.
     const ruleOwn = has && !!e.rule_poster;
     // Shared: not the file this one's own upload writes, so taking it off
-    // here leaves it on the others (worker/lib/poster-range.mjs).
-    const shared = has && !ruleOwn && !String(e.poster_path).startsWith(`/posters/${String(e.id).replace(':', '-')}.`);
+    // here leaves it on the others (worker/lib/poster-range.mjs). A
+    // gallery's pictures are its own under the same name (`<id>.…`).
+    const shared = has && !ruleOwn && !String(cover).startsWith(`/posters/${String(e.id).replace(':', '-')}.`);
+    // Several pictures: the gallery, to swipe, each opening full size.
+    const pictureHTML = (cls) => (P.isGallery(e.poster_path)
+      ? P.galleryHTML(e.poster_path, { cls: `${cls}-gallery`, keep: false, link: false, picAttrs: () => `class="${cls}" data-evp-view` })
+      : `<img class="${cls}" alt="The poster" src="${esc(cover)}" data-evp-view>`);
     const day = series ? series.date : (e._date || host.today());
     const [y, m] = day.split('-').map(Number);
     const monthEnd = `${day.slice(0, 7)}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -940,25 +984,25 @@
     // asked in a menu as Add an image or Replace is tapped (wirePoster).
     const box = face ? (has ? `
       <div class="rf-poster cf-poster">
-        <img class="cf-poster-img" alt="The poster" src="${esc(e.poster_path)}" data-evp-view>
+        ${pictureHTML('cf-poster-img')}
         <div class="cf-fabs">
           <button class="cf-fab" type="button" data-evp-pick aria-haspopup="menu" aria-label="${ruleOwn ? 'Put a different poster on this date' : 'Replace the poster'}" title="${ruleOwn ? 'A different one here' : 'Replace'}">${face.ICON.picture}</button>
           ${!ruleOwn ? `<button class="cf-fab cf-fab-danger" type="button" data-evp-clear="${shared ? 'ask' : ''}" aria-label="Remove the poster" title="Remove">${face.ICON.trash}</button>` : ''}
         </div>
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden data-evp-input>
       </div>` : `
       <div class="rf-poster cf-poster">
         <button class="cf-poster-blank" type="button" data-evp-pick aria-haspopup="menu">${face.ICON.picture}<span><b>Add an image</b><small>A poster or flyer for ${series ? 'this date' : 'this event'}</small></span></button>
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden data-evp-input>
       </div>`) : `
       <div class="rf-poster">
-        <img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(e.poster_path)}"` : ' hidden'} data-evp-view>
+        <span class="rf-poster-pic pg-thumb"><img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(cover)}"` : ' hidden'} data-evp-view>${has ? P.markHTML(e.poster_path) : ''}</span>
         <div class="rf-poster-actions">
           <button class="rf-btn" type="button" data-evp-pick>${PICTURE}<span>${has && !ruleOwn ? 'Replace' : 'Add an image'}</span></button>
           ${has && !ruleOwn ? `<button class="rf-btn danger" type="button" data-evp-clear>${shared ? 'Remove from this one' : 'Remove'}</button>` : ''}
           ${shared ? '<button class="rf-btn danger" type="button" data-evp-clear="everywhere">Remove everywhere</button>' : ''}
         </div>
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-evp-input>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden data-evp-input>
       </div>`;
     const hint = ruleOwn ? `<div class="edit-row-hint">On every ${esc(name)}: the service’s own poster.
         ${series && host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Change it on the service</button>' : ''}</div>` : '';
@@ -1036,18 +1080,19 @@
         return;
       }
       if (!ev.target.matches('[data-evp-input]')) return;
-      const file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-      if (file.size > 8 * 1024 * 1024) return say('That poster is over 8 MB, the most the Worker takes.', true);
+      // Several chosen at once are one poster of several pictures: a gallery.
+      const files = [...(ev.target.files || [])];
+      if (!files.length) return;
+      if (tooBig(files)) return say('That poster is over 8 MB, the most the Worker takes.', true);
       const r = range();
-      say('Uploading…');
+      say(files.length > 1 ? `Uploading ${files.length} pictures…` : 'Uploading…');
       if (r.series) {
-        const up = await rulePoster(r.series, file);
+        const up = await rulePoster(r.series, files);
         return up.error ? say(up.error, true) : after('Saved on the service. It shows on every date.');
       }
-      const res = await fetch(`/api/admin/events/${encodeURIComponent(cur)}/poster${r.query}`, {
-        method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file,
-      }).catch(() => null);
+      const res = await posterUpload(files).then(up => fetch(`/api/admin/events/${encodeURIComponent(cur)}/poster${r.query}`, {
+        method: 'POST', headers: up.headers, body: up.body,
+      })).catch(() => null);
       if (!res || !res.ok) return say(res ? await errorText(res) : 'The poster did not go through. Check the connection.', true);
       const body = await res.json().catch(() => ({}));
       after(body.count > 1 ? `Saved on ${body.count} dates.` : 'Saved.');
@@ -1126,7 +1171,10 @@
     }
     box.addEventListener('click', (ev) => {
       const img = ev.target.closest('[data-evp-view]');
-      if (img && img.src) window.open(img.src, '_blank', 'noopener');
+      if (!img || !img.src) return;
+      const e = host.event(cur);
+      const at = img.closest('[data-poster-at]');
+      viewPoster((e && e.poster_path) || img.src, at ? Number(at.dataset.posterAt) : 0);
     });
     paint();
   }
