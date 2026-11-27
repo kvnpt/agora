@@ -51,7 +51,7 @@
 //                    nothing publishes until each is confirmed on its card
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
-//   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
+//   GET  /__calls  what the Worker sent: model, top-level keys, headers, image, pdfs
 //
 // Dev tooling only — nothing deployed imports it.
 import http from 'node:http';
@@ -337,6 +337,8 @@ http.createServer(async (req, res) => {
   calls.push({ model: parsed.model, keys: Object.keys(parsed), headers: { key: req.headers['x-api-key'], version: req.headers['anthropic-version'] },
     image: img ? img.source.media_type : null, bytes: img ? img.source.data.length : 0,
     images: content.filter(c => c.type === 'image').length,
+    // A PDF, read as itself (poster-read.mjs): a document block.
+    pdfs: content.filter(c => c.type === 'document' && c.source && c.source.media_type === 'application/pdf').length,
     context: content[content.length - 1].text });
   if (mode === 'busy') {
     res.writeHead(529, { 'content-type': 'application/json' });

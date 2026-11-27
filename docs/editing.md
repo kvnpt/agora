@@ -444,6 +444,23 @@ closing the dialog mid-read still leaves the cards filled next time. Without
 `ANTHROPIC_API_KEY` the poster is still stored and attached and the fields are
 typed by hand.
 
+**A PDF is a poster too** (Kevin, 26 Nov 2026: a programme forwarded as a
+PDF got "not PDFs yet"). Dropped on the editor (**Add an image** takes one),
+forwarded on WhatsApp, or added to a suggestion, it is stored as it came
+(`posters/….pdf`, up to 15 MB: base64 makes it a third larger, and a read
+takes 32) and read whole, as a `document` block, every page;
+`posterContext`'s `pdf` line says a PDF of several pages is one programme or
+newsletter, each event once however many pages show it. Nothing shows a
+PDF, though, and a rule's poster is never one, so the editor makes **a
+picture of it**: pdf.js (`public/lib/pdfjs/`, vendored, imported only for a
+PDF) draws its first six pages, `joinPictures` joins them side by side as it
+joins a forward's pictures, and `PUT …/drafts/:id/poster?from=` swaps the
+picture in for the PDF, the read standing. A dropped PDF is pictured at once;
+a forwarded one when the editor opens its draft, and until then its
+thumbnail is a page marked PDF. Publish waits for the picture. A card
+published with the PDF still there (a page that could not draw it) gets no
+poster rather than the PDF (`isPdfPoster`), and the PDF goes with the draft.
+
 The same reader fills in **Suggest edits** for somebody with no role who adds a
 suggested event's poster (docs/people-and-access.md). That is a message, not a
 draft: nothing is written but the suggestion, and **Start a draft** from it

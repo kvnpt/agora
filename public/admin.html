@@ -1547,7 +1547,7 @@
         const who = String(d.created_by || '').split('@')[0];
         return `
           <div class="card draft-row">
-            ${d.poster_path ? `<img class="draft-thumb" src="${attr(d.poster_path)}" alt="">` : '<span class="draft-thumb"></span>'}
+            ${d.poster_path ? `<img class="draft-thumb" src="${attr(AgoraEventEditor.isPdf(d.poster_path) ? AgoraEventEditor.PDF_THUMB : d.poster_path)}" alt="">` : '<span class="draft-thumb"></span>'}
             <span class="draft-what">
               <div class="draft-title">${esc(title)}</div>
               <div class="draft-meta">${esc(d.parish_name || d.parish_id)} · ${esc(span)}${flag}</div>
@@ -3982,7 +3982,7 @@
           ${x.kind === 'event' && when(x) ? `<div class="ask-why">${esc(when(x))}</div>` : ''}
           ${x.body ? `<div class="ask-why" style="white-space:pre-line;">\u201c${esc(x.body)}\u201d</div>` : ''}
           ${x.link ? `<div class="ask-why"><a href="${attr(x.link)}" target="_blank" rel="noopener nofollow">${esc(x.link)}</a></div>` : ''}
-          ${x.poster_path ? `<div class="ask-why" style="display:flex;gap:6px;flex-wrap:wrap;">${[x.poster_path, ...(x.images || [])].map((src, i) => `<a href="${attr(src)}" target="_blank" rel="noopener" title="Open the poster"><img src="${attr(src)}" alt="${i ? 'Another of their pictures' : 'Their poster'}" loading="lazy" style="display:block;width:84px;max-height:120px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:8px;"></a>`).join('')}</div>` : ''}
+          ${x.poster_path ? `<div class="ask-why" style="display:flex;gap:6px;flex-wrap:wrap;">${[x.poster_path, ...(x.images || [])].map((src, i) => `<a href="${attr(src)}" target="_blank" rel="noopener" title="Open the poster"><img src="${attr(AgoraEventEditor.isPdf(src) ? AgoraEventEditor.PDF_THUMB : src)}" alt="${i ? 'Another of their pictures' : 'Their poster'}" loading="lazy" style="display:block;width:84px;max-height:120px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:8px;"></a>`).join('')}</div>` : ''}
           <div class="ask-meta">${x.whatsapp
             // Sent on WhatsApp alone: no address, so write back on WhatsApp.
             ? `On WhatsApp, <a href="${attr(x.whatsapp.url)}" target="_blank" rel="noopener">${esc(x.whatsapp.phone)}</a>`

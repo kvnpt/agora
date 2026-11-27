@@ -505,6 +505,88 @@ test('reading a forward again before its pictures are joined reads them all', as
   assert.match(calls[0].messages[0].content[3].text, /There are 3 images, sent together/);
 });
 
+// ── a PDF ──
+
+const PDF_TEXT = '%PDF-1.4\n% a programme\n';
+const pdfBytes = () => new TextEncoder().encode(PDF_TEXT);
+
+/** The reader, answering `doc` to every read; the requests it got. */
+async function reading(doc, fn) {
+  const calls = [];
+  const out = await withFetch(async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return new Response(haikuStream(JSON.stringify(doc)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  }, fn);
+  return { calls, out };
+}
+
+test('a PDF is a poster too: kept as the PDF, and read as one, every page — again too', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  const { calls, out } = await reading(TWO, () => f.poster(d.id, pdfBytes(), 'application/pdf'));
+  const [key] = [...f.bucket.store.keys()];
+  assert.match(key, new RegExp(`^posters/${a}-[a-z0-9]+-[a-z0-9]+\\.pdf$`));
+  assert.equal(f.bucket.store.get(key).opts.httpMetadata.contentType, 'application/pdf');
+  assert.equal(out.frames[0].poster_path, `/${key}`);
+  const [doc, words] = calls[0].messages[0].content;
+  assert.equal(doc.type, 'document');
+  assert.deepEqual([doc.source.type, doc.source.media_type], ['base64', 'application/pdf']);
+  assert.equal(Buffer.from(doc.source.data, 'base64').toString(), PDF_TEXT);
+  assert.match(words.text, /The image is a PDF, of one page or several/);
+  assert.deepEqual(out.frames.at(-1).draft.cards.map(c => c.title), ['Youth Night', 'Talk on prayer']);
+
+  // Read again, it is read as the PDF still.
+  const again = await reading(TWO, () => f.poster(d.id, null, 'image/jpeg', '?reread=1'));
+  assert.equal(again.calls[0].messages[0].content[0].type, 'document');
+
+  assert.equal((await f.poster(d.id, new Uint8Array(15 * 1024 * 1024 + 1), 'application/pdf')).status, 413);
+  assert.equal(f.bucket.store.size, 1, 'nothing stored for the refused one');
+});
+
+test('the editor makes a PDF’s picture: it takes the PDF’s place, and the read stands', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  await reading(TWO, () => f.poster(d.id, pdfBytes(), 'application/pdf'));
+  const pdf = (await f.call('GET', `/api/admin/drafts/${d.id}`)).body.poster_path;
+  assert.match(pdf, /\.pdf$/);
+  const put = (from, bytes = jpeg(), type = 'image/jpeg') => f.send('PUT',
+    `/api/admin/drafts/${d.id}/poster?from=${encodeURIComponent(from)}`, { body: bytes, headers: { 'Content-Type': type } });
+
+  assert.equal((await put(pdf, pdfBytes(), 'application/pdf')).status, 415, 'what takes its place is a picture');
+  const res = await put(pdf);
+  assert.equal(res.status, 200);
+  const now = await res.json();
+  assert.match(now.poster_path, /^\/posters\/.+\.jpg$/);
+  assert.equal(now.read_status, 'read', 'read already, as the PDF: not read again');
+  assert.equal(now.cards.length, 2);
+  assert.deepEqual(f.bucket.deleted, [pdf.slice(1)]);
+  // Made already (another tab), and a picture poster is not replaced this way.
+  assert.equal((await put(pdf)).status, 409);
+  assert.equal((await put(now.poster_path)).status, 409);
+  assert.equal(f.bucket.store.size, 1);
+});
+
+test('a PDF still on its draft is never an event’s or a rule’s poster, and goes with the draft', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  await f.poster(d.id, pdfBytes(), 'application/pdf');
+  const [key] = [...f.bucket.store.keys()];
+  await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`,
+    { title: 'Fair', date: '2026-12-05', start_time: '10:00', end_time: '14:00', event_type: 'social' });
+  const one = await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {});
+  assert.equal(one.status, 201);
+  assert.equal(one.body.event.poster_path, null);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts').get().n, 0);
+  assert.deepEqual(f.bucket.deleted, [key], 'the PDF goes with its draft');
+
+  const rule = f.raw.prepare('SELECT id FROM schedules WHERE parish_id = ? LIMIT 1').get(a);
+  const patch = await f.call('PATCH', `/api/admin/schedules/${rule.id}`, { poster_path: `/${key}` });
+  assert.equal(patch.status, 400);
+});
+
 // ── plumbing ──
 
 test('draft writes leave the public data version alone; publishing moves it', () => {

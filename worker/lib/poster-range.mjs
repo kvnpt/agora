@@ -121,6 +121,13 @@ export function overrideStatements(db, targets, path) {
   return stmts;
 }
 
+/**
+ * A draft's poster that is still the PDF it came as: read as a PDF, and never
+ * an event's or a rule's poster, which are pictures. The editor makes its
+ * picture when the draft is opened (PUT /api/admin/drafts/:id/poster).
+ */
+export const isPdfPoster = (path) => typeof path === 'string' && /\.pdf$/i.test(path.split('?')[0]);
+
 /** The R2 key a stored poster path names: '/posters/x.png?v=1' → 'posters/x.png'. */
 export function posterKeyOf(path) {
   if (!path || typeof path !== 'string') return null;
