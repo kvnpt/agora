@@ -210,11 +210,12 @@ itself still lets in every role; only the way to it went.
 
 **Notifications** is what the panel's Asks held, brought into the app so it
 stays in reach once the panel is gone (Kevin, 25 Nov 2026). The menu's row
-says what waits in the red dot's words ("2 asks waiting, 1 suggestion"), and
+says what waits in the red dot's words ("2 requests waiting, 1 suggestion"), and
 opens a card of its own (`openNotes` in next.js) reading the panel's own
 routes: people asking to keep a parish (the owner's, Approve or Decline),
 suggestions at the parishes you may edit (Start a draft, Done, Dismiss, Open
-the parish), asks (every open one for the owner to decide, your own to
+the parish), **Requests** — the panel's asks, called requests on the page
+(Kevin, 27 Nov 2026) — (every open one for the owner to decide, your own to
 withdraw for anybody else), what another parish's event is doing at yours (a
 contact's: Take my parish out, Mark read), and Lately, what was decided. A
 decline, a dismiss and an approve ask in the row itself, never in a dialog,

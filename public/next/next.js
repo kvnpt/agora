@@ -2953,7 +2953,7 @@
    */
   function waiting() {
     const { openAsks: a, parishNotices: n, suggestions: g } = S.who;
-    return [a && `${a} ${a === 1 ? 'ask' : 'asks'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
+    return [a && `${a} ${a === 1 ? 'request' : 'requests'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
       g && `${g} ${g === 1 ? 'suggestion' : 'suggestions'}`].filter(Boolean).join(', ');
   }
   /**
@@ -4974,7 +4974,8 @@
   // account may do; the card asks only for what the account may see:
   //   People asking to keep a parish (claims), for the owner.
   //   Suggestions at the parishes this account may edit.
-  //   Asks: every open one for the owner, who decides; your own for anybody else.
+  //   Requests (the panel's asks; Kevin, 27 Nov 2026: "requests" on the page):
+  //     every open one for the owner, who decides; your own for anybody else.
   //   At your parishes: another parish's event listed at yours, or holding
   //     one of your services (a contact's).
   //   Lately: what was decided, so a decision is not just a row vanishing.
@@ -5102,8 +5103,8 @@
 
     // An owner decides every open ask; anybody else sees their own waiting.
     const openAsks = decider ? asks.filter(a => a.status === 'open') : mine.filter(a => a.status === 'open');
-    if (openAsks.length) secs.push([decider ? 'Asks' : 'Your asks', openAsks.map(a => noteRow('ask', a.id, {
-      item: a, parish: S.byId.has(a.subject) ? a.subject : null, what: a.summary || 'This ask cannot be read, so it cannot be approved.',
+    if (openAsks.length) secs.push([decider ? 'Requests' : 'Your requests', openAsks.map(a => noteRow('ask', a.id, {
+      item: a, parish: S.byId.has(a.subject) ? a.subject : null, what: a.summary || 'This request cannot be read, so it cannot be approved.',
       said: [a.reason && quoted(a.reason)],
       meta: `${a.mine ? 'You asked' : `Asked by ${esc(a.proposedBy || 'somebody')}`} · ${agoWords(a.createdAt)}`,
       acts: [
