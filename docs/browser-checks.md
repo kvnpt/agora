@@ -355,6 +355,13 @@ node scripts/mock-whatsapp.mjs send --image poster.png --caption "Mums Group, fi
 curl -s localhost:8789/__replies
 ```
 
+`send --pdf programme.pdf --caption …` forwards a PDF as WhatsApp sends one (a
+document): it should make one draft whose poster is the `.pdf`, and the reader
+stand-in's `/__calls` count it under `pdfs`. Opening the draft's link should
+load pdf.js, `PUT …/poster?from=…pdf` with an `image/webp` of its pages side by
+side, and turn the "PDF" thumbnail into that picture; dropping the same PDF on
+Add an image should `POST` it as `application/pdf`, then make the same `PUT`.
+
 A forward of several pictures is several `send --image`s at the same
 `--at` second, the caption on the first. One poster over several pictures
 should make one draft, its pictures joined side by side when the editor opens

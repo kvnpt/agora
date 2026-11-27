@@ -8,7 +8,7 @@
 //
 // lib/poster-read.mjs is the model side; lib/drafts.mjs has every step below.
 
-import { readPoster, posterContext, noteParts } from './poster-read.mjs';
+import { readPoster, posterContext, noteParts, PDF_TYPE } from './poster-read.mjs';
 import { placeRead, afterServices, placeHosts, matchOccurrences, matchOnFile, suggestEnds, suggestLanguages,
   mergeRead, setReadStatus, splitDraft } from './drafts.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
@@ -83,12 +83,14 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
     words: words.parts.length,
     today,
     context: posterContext({ ...parish, timezone: zone }, today, rules, note,
-      { image: pictures.length > 0, whatsapp, pictures: pictures.length, split: apart }),
+      { image: pictures.length > 0, whatsapp, pictures: pictures.length, split: apart,
+        pdf: pictures.some(p => p.mediaType === PDF_TYPE) }),
   }, send);
   // One line per read, for Workers Observability: what it cost and how long.
   console.log(JSON.stringify({ poster_read: {
     draft: draft.id, parish: draft.parish_id, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
     ...(pictures.length > 1 ? { pictures: pictures.length } : {}),
+    ...(pictures.some(p => p.mediaType === PDF_TYPE) ? { pdf: true } : {}),
     ...(read.parts ? { posters: read.parts.length } : {}),
     ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
   } }));
@@ -206,7 +208,7 @@ export async function readForSuggestion(env, parishId, { apiKey, images = [], no
     images,
     today,
     context: posterContext({ id: parishId, ...(parish || {}), timezone: zone }, today, rules, note,
-      { image: images.length > 0, whatsapp, pictures: images.length }),
+      { image: images.length > 0, whatsapp, pictures: images.length, pdf: images.some(p => p.mediaType === PDF_TYPE) }),
   });
   console.log(JSON.stringify({ poster_read: {
     suggestion: true, parish: parishId, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),

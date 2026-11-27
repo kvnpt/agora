@@ -18,12 +18,29 @@
 // The phone is WhatsApp's wa_id: digits, country code first, no "+".
 // docs/adapters.md ("door 1") and docs/people-and-access.md have the why.
 
+import { PDF_TYPE } from './poster-read.mjs';
+
 export const GRAPH = 'https://graph.facebook.com/v23.0';
 
 /** What a forwarded image can be, for the reader (routes/admin.mjs POSTER_TYPES). */
 export const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 /** The reader's own limit. WhatsApp sends images far under it. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * A PDF forwarded as a poster: a parish's programme or bulletin, which is read
+ * as the PDF itself (poster-read.mjs) — every page, its words as written
+ * rather than a photograph of them. The editor turns its pages into the
+ * poster's picture when the draft is opened (docs/editing.md).
+ */
+export { PDF_TYPE };
+/**
+ * The most a PDF may be. The reader's request takes 32 MB, and base64 makes
+ * 15 MB 20 (READ_BYTES). WhatsApp takes documents up to 100 MB; a parish's
+ * programme is a few hundred KB, a phone's scan of one a few MB.
+ */
+export const MAX_PDF_BYTES = 15 * 1024 * 1024;
+/** The file a poster is kept as in R2: a picture's, or a PDF's. */
+export const posterExt = (mediaType) => IMAGE_TYPES[mediaType] || (mediaType === PDF_TYPE ? 'pdf' : null);
 /** Drafts one phone may make in a day. */
 export const DAILY_LIMIT = 30;
 /** How long a link code lasts. */
@@ -467,10 +484,11 @@ export const REPLIES = {
   tooManyCodes: () => 'Too many codes that didn\'t work from this phone today. Try again tomorrow.',
   noRole: (email, origin) => `${email} can't add events at any parish yet. To become an editor, open ${origin} and choose Become an editor at the foot of the page.`,
   limit: (origin) => `That's ${DAILY_LIMIT} posters from this phone today, the most for one day. Send it again tomorrow, or add it at ${origin}.`,
-  pdf: () => 'I can read pictures and text, not PDFs yet. Send a screenshot of it instead.',
-  other: () => 'I can read posters (pictures) and text. Send a picture of it instead.',
+  pdfTooLarge: () => `That PDF is over ${MAX_PDF_BYTES / 1024 / 1024} MB, the most I can read. Send a screenshot of its pages instead.`,
+  other: () => 'I can read posters (pictures or PDFs) and text. Send a picture of it instead.',
   tooLarge: () => 'That picture is too large for me to read. Send a screenshot of it instead.',
   mediaFailed: () => 'I couldn\'t download that picture from WhatsApp. Send it again in a minute.',
+  pdfFailed: () => 'I couldn\'t download that PDF from WhatsApp. Send it again in a minute.',
   gorgonTooLarge: () => 'That PDF is too large for Gorgon (25 MB at most). Save it to Files and use Upload there instead.',
   gorgonFailed: () => 'I couldn\'t download that PDF from WhatsApp. Send it again in a minute.',
   // `at` is "at St Nicholas, Punchbowl", or "without a parish yet".

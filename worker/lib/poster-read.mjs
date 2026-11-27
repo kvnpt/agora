@@ -342,8 +342,9 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
  *   message of words only (routes/ingest.mjs), read as the poster itself
  * @param {boolean} [o.whatsapp=false]  the note is what came with the image on
  *   WhatsApp — usually the announcement's own words, not a note about it
+ * @param {boolean} [o.pdf=false]  the image is a PDF, of one page or several
  */
-export function posterContext(parish, today, rules = [], note = '', { image = true, whatsapp = false, pictures = 1, split = false } = {}) {
+export function posterContext(parish, today, rules = [], note = '', { image = true, whatsapp = false, pictures = 1, split = false, pdf = false } = {}) {
   const said = saidOf(note);
   // Several posters at once can be told apart (splitRead): only a WhatsApp
   // forward's pictures, which nobody has joined into one yet.
@@ -372,6 +373,9 @@ export function posterContext(parish, today, rules = [], note = '', { image = tr
     // photographed page by page, or a poster and its translation. They are
     // read as the one image the editor joins them into (docs/editing.md).
     ...(image && pictures > 1 ? [apart ? splitText(pictures) : `There are ${pictures} images, sent together as one announcement: read them as one image, as if they were printed side by side. They may be the pages of one programme, one poster and its translation, or a few posters at once. Each event is listed once, however many of them show it, and kind is what they are together.`] : []),
+    // A PDF is a poster, or a programme or bulletin over several pages: one
+    // announcement, read as the image is, every page of it.
+    ...(image && pdf ? ['The image is a PDF, of one page or several: a poster, or a programme, newsletter or bulletin. Read every page of it, as one image printed page after page. Each event is listed once, however many pages show it, and kind is what the pages are together.'] : []),
     ...(said ? [noteText(said, { image, whatsapp, pictures, split: apart })] : []),
     image ? (pictures > 1 ? 'Read the images.' : 'Read the image.') : 'Read the message.',
   ].join('\n\n');
@@ -447,9 +451,13 @@ function noteText(said, { image, whatsapp, pictures = 1, split = false }) {
   return `What the person sending this poster wrote beside it. Their words: they may say which event they mean, or add what the poster leaves out. What the poster prints is still read from the poster.${quoted}`;
 }
 
+/** A PDF, which the Messages API reads as a document: each page's words and its picture. */
+export const PDF_TYPE = 'application/pdf';
+
 /**
  * The Messages API request body. One image (`data`, `mediaType`), several
  * (`images`: [{ data, mediaType }], in the order they were sent), or none.
+ * A PDF is an image here too, sent as a `document` block.
  */
 export function buildPosterRequest({ data, mediaType, images = null, context, split = false }) {
   // No image: a WhatsApp message of words only, which the context carries.
@@ -459,7 +467,9 @@ export function buildPosterRequest({ data, mediaType, images = null, context, sp
   const apart = split && list.length > 1;
   const image = list.flatMap((i, n) => [
     ...(apart ? [{ type: 'text', text: `Image ${n + 1}:` }] : []),
-    { type: 'image', source: { type: 'base64', media_type: i.mediaType, data: i.data } },
+    i.mediaType === PDF_TYPE
+      ? { type: 'document', source: { type: 'base64', media_type: PDF_TYPE, data: i.data } }
+      : { type: 'image', source: { type: 'base64', media_type: i.mediaType, data: i.data } },
   ]);
   return {
     model: POSTER_MODEL,

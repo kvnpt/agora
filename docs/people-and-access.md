@@ -279,7 +279,9 @@ and every "Gorgon code 482 193": Gorgon takes a PDF whose caption or phone
 carries a live code, or that comes from a phone linked to the Gorgon account
 waiting (this table's email, passed along: Access tells Gorgon only the email).
 A PDF Gorgon takes is downloaded here (up to 25 MB) and handed over; nothing is
-filed in Agora. Any other PDF, or Gorgon down, gets the usual "not PDFs yet".
+filed in Agora. Any other PDF, or one sent while Gorgon is down, goes the
+usual way: a poster, read into a draft or a suggestion (docs/editing.md, "A
+PDF is a poster too").
 
 ## Emails about claims
 

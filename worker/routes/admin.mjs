@@ -20,8 +20,10 @@ import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
-  namesPoster }
+  namesPoster, isPdfPoster }
   from '../lib/poster-range.mjs';
+import { PDF_TYPE } from '../lib/poster-read.mjs';
+import { MAX_PDF_BYTES } from '../lib/whatsapp.mjs';
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
@@ -2166,7 +2168,8 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     const draft = r.draft;
     const from = c.query.get('from') || '';
-    if (!draft.images.length || from !== draft.poster_path) {
+    // Its pictures to join, or its PDF's pages made into one picture.
+    if (!(draft.images.length || isPdfPoster(draft.poster_path)) || from !== draft.poster_path) {
       return json({ error: 'This draft’s pictures were put together already.', draft }, 409);
     }
     const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -2181,7 +2184,7 @@ export function registerAdminRoutes(router) {
     });
     const done = await env.DB.prepare(
       `UPDATE drafts SET poster_path = ?, images = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-       WHERE id = ? AND poster_path = ? AND images IS NOT NULL`
+       WHERE id = ? AND poster_path = ? AND (images IS NOT NULL OR lower(poster_path) LIKE '%.pdf')`
     ).bind(`/${key}`, draft.id, from).run();
     if (!(done.meta && done.meta.changes)) {
       await env.ASSETS_BUCKET.delete(key);
@@ -2218,7 +2221,8 @@ export function registerAdminRoutes(router) {
       if (!obj && !wordsOnly) return json({ error: 'This draft has no poster to read.' }, 400);
       if (obj) {
         bytes = await obj.arrayBuffer();
-        mediaType = (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
+        mediaType = isPdfPoster(draft.poster_path) ? PDF_TYPE
+          : (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
       }
       // A forward's pictures not yet joined are read together, as they came.
       if (obj && draft.images.length) {
@@ -2230,13 +2234,18 @@ export function registerAdminRoutes(router) {
       }
     } else {
       mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-      const ext = POSTER_TYPES[mediaType];
-      if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
+      // A PDF is read as itself, every page; the editor makes its picture.
+      const pdf = mediaType === PDF_TYPE;
+      const ext = pdf ? 'pdf' : POSTER_TYPES[mediaType];
+      if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image, or a PDF.' }, 415);
       bytes = await request.arrayBuffer();
-      if (!bytes.byteLength) return json({ error: 'No image received' }, 400);
+      if (!bytes.byteLength) return json({ error: pdf ? 'No PDF received' : 'No image received' }, 400);
       // The reader's own limit. The editor sends 2048px, which is far under it.
-      if (bytes.byteLength > 5 * 1024 * 1024) {
+      if (!pdf && bytes.byteLength > 5 * 1024 * 1024) {
         return json({ error: 'That image is over 5 MB, the most the reader takes.' }, 413);
+      }
+      if (pdf && bytes.byteLength > MAX_PDF_BYTES) {
+        return json({ error: `That PDF is over ${MAX_PDF_BYTES / 1024 / 1024} MB, the most the reader takes.` }, 413);
       }
       const key = draftPosterKey(draft.parish_id, ext);
       await env.ASSETS_BUCKET.put(key, bytes, {
@@ -2333,7 +2342,12 @@ export function registerAdminRoutes(router) {
     const { env } = c;
     const r = await cardInScope(c, c.params.id);
     if (r.response) return r.response;
-    const card = r.card;
+    // A draft's PDF is never an event's poster. The editor makes its picture
+    // when the draft is opened, and waits for it before publishing; only if
+    // that could not be done does the event go up without one. The PDF goes
+    // with the draft (spendCard).
+    const card = isPdfPoster(r.card.poster_path)
+      ? { ...r.card, poster_path: null, draft_poster_path: r.card.poster_path } : r.card;
 
     const parish = await env.DB.prepare('SELECT timezone FROM parishes WHERE id = ?').bind(card.parish_id).first();
     const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
@@ -2403,7 +2417,7 @@ export function registerAdminRoutes(router) {
       return left.n;
     }
     await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
-    await releaseUnused(env, [card.poster_path]);
+    await releaseUnused(env, [card.draft_poster_path || card.poster_path]);
     return 0;
   }
 
@@ -3587,7 +3601,8 @@ export function registerAdminRoutes(router) {
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   /** A path naming a poster already in R2 under /posters/ — never a URL elsewhere. */
-  const isPosterPath = (v) => typeof v === 'string' && /^\/posters\/[A-Za-z0-9._-]+(\?v=\d+)?$/.test(v);
+  // A picture: a draft's PDF is turned into one before it is anything's poster.
+  const isPosterPath = (v) => typeof v === 'string' && /^\/posters\/[A-Za-z0-9._-]+(\?v=\d+)?$/.test(v) && !isPdfPoster(v);
 
   router.patch('/api/admin/schedules/:id', guarded('schedule.edit', async (c) => {
     const { env, params, request } = c;

@@ -70,7 +70,10 @@ function graph() {
       return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
     }
     const id = url.startsWith(`${GRAPH}/`) ? decodeURIComponent(url.slice(GRAPH.length + 1)) : null;
-    if (id && media.has(id)) return Response.json({ url: `https://lookaside.example/${id}`, mime_type: media.get(id).mime, file_size: 6 });
+    if (id && media.has(id)) {
+      const m = media.get(id);
+      return Response.json({ url: `https://lookaside.example/${id}`, mime_type: m.mime, file_size: m.size || m.bytes.length });
+    }
     const dl = /^https:\/\/lookaside\.example\/(.+)$/.exec(url);
     if (dl && media.has(dl[1])) return new Response(media.get(dl[1]).bytes);
     return new Response('not found', { status: 404 });
@@ -622,19 +625,98 @@ test('a parish contact’s poster from a parish not theirs stays at theirs', asy
   assert.equal(f.drafts()[0].parish_id, A);
 });
 
-test('a PDF is asked for as a screenshot; thirty a day is the most', async () => {
+test('thirty a day is the most', async () => {
   const f = fresh();
   f.link();
-  await f.deliver([{ type: 'document', document: { id: 'D1', mime_type: 'application/pdf', filename: 'Nov.pdf' } }]);
-  assert.match(f.graph.texts()[0], /not PDFs yet\. Send a screenshot/);
   const ins = f.raw.prepare("INSERT INTO whatsapp_messages (id, phone, type, sent_at, outcome) VALUES (?, ?, 'image', ?, 'draft')");
   for (let i = 0; i < 30; i++) ins.run(`old${i}`, PHONE, 1762400000 - 100 - i);
   await withReader(READ, async (calls) => {
     await f.deliver([image('one more')]);
+    await f.deliver([{ ...pdf('and a PDF'), at: 1762400030 }]);
     assert.equal(calls.length, 0);
   });
+  assert.match(f.graph.texts()[0], /That's 30 posters from this phone today/);
   assert.match(f.graph.texts()[1], /That's 30 posters from this phone today/);
   assert.equal(f.drafts().length, 0);
+});
+
+// ── a PDF ──
+
+const PDF_TEXT = '%PDF-1.7\n% St Nicholas, December\n';
+/** A PDF forwarded on WhatsApp: a document, with its caption if it had one. */
+const pdf = (caption = null, extra = {}) => ({ type: 'document',
+  document: { id: 'D1', mime_type: 'application/pdf', filename: 'December.pdf', ...(caption ? { caption } : {}) }, ...extra });
+const withPdf = (f, o = {}) => f.graph.media.set('D1', { mime: 'application/pdf', bytes: new TextEncoder().encode(PDF_TEXT), ...o });
+
+test('a forwarded PDF and its words become a draft, read as the PDF itself', async () => {
+  const f = fresh();
+  f.link();
+  withPdf(f);
+  const calls = await withReader(READ, async () => {
+    await f.deliver([pdf('Our December programme', { context: { forwarded: true } }), { ...text('Mums Group on the 4th.'), at: 1762400001 }]);
+  });
+  const [d] = f.drafts();
+  assert.equal(d.parish_id, A);
+  assert.equal(d.message_text, 'Our December programme\n\nMums Group on the 4th.');
+  assert.match(d.poster_path, new RegExp(`^/posters/${A}-.+\\.pdf$`));
+  assert.equal(d.images, null);
+  const stored = f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1));
+  assert.equal(stored.opts.httpMetadata.contentType, 'application/pdf');
+  assert.equal(new TextDecoder().decode(stored.bytes), PDF_TEXT);
+  assert.equal(d.read_status, 'read');
+
+  assert.equal(calls.length, 1);
+  const [doc, words] = calls[0].messages[0].content;
+  assert.equal(doc.type, 'document');
+  assert.equal(doc.source.media_type, 'application/pdf');
+  assert.equal(Buffer.from(doc.source.data, 'base64').toString(), PDF_TEXT);
+  assert.match(words.text, /The image is a PDF/);
+  assert.match(words.text, /Our December programme/);
+  assert.match(f.graph.texts()[0], /^Got it: Mums Group, Fri 4 Dec 10am\. It's a draft at St Nicholas, Punchbowl/);
+  const outcomes = f.raw.prepare('SELECT type, outcome, draft_id FROM whatsapp_messages ORDER BY rowid').all();
+  assert.deepEqual(outcomes, [{ type: 'pdf', outcome: 'draft', draft_id: d.id }, { type: 'text', outcome: 'joined', draft_id: d.id }]);
+});
+
+test('a PDF sent with a picture is a draft of its own, never joined to it', async () => {
+  const f = fresh();
+  f.link();
+  withPdf(f);
+  const calls = await withReader(READ, async () => {
+    await f.deliver([image('Mums Group'), pdf()]);
+  });
+  const ds = f.drafts();
+  assert.equal(ds.length, 2);
+  assert.deepEqual(ds.map(d => d.poster_path.split('.').pop()).sort(), ['jpg', 'pdf']);
+  assert.ok(ds.every(d => d.images === null));
+  assert.deepEqual(calls.map(c => c.messages[0].content[0].type).sort(), ['document', 'image']);
+});
+
+test('a PDF too large to read, or one WhatsApp will not give, is said so', async () => {
+  const f = fresh();
+  f.link();
+  withPdf(f, { size: 15 * 1024 * 1024 + 1 });
+  await withReader(READ, async (calls) => {
+    await f.deliver([pdf()]);
+    assert.equal(calls.length, 0);
+  });
+  assert.match(f.graph.texts()[0], /That PDF is over 15 MB, the most I can read/);
+  f.graph.media.delete('D1');
+  await f.deliver([{ ...pdf(), at: 1762400100 }]);
+  assert.match(f.graph.texts()[1], /couldn't download that PDF/);
+  assert.equal(f.drafts().length, 0);
+});
+
+test('a PDF from a phone nobody linked is a suggestion, read as the PDF', async () => {
+  const f = fresh();
+  withPdf(f);
+  const calls = await withReader(READ, async () => { await f.deliver([pdf('orthodoxy.au/snp')]); });
+  const [s] = f.suggestions();
+  assert.equal(s.parish_id, A);
+  assert.equal(s.kind, 'event');
+  const sp = f.raw.prepare('SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ?').get(s.id);
+  assert.match(sp.poster_path, /\.pdf$/);
+  assert.equal(calls[0].messages[0].content[0].type, 'document');
+  assert.match(f.graph.texts()[0], /It's with whoever keeps St Nicholas, Punchbowl now/);
 });
 
 test('without the reader’s key the poster is still a draft, to fill in by hand', async () => {
@@ -1002,14 +1084,18 @@ test('Gorgon: a linked phone’s PDF goes with its account’s email', async () 
   assert.deepEqual(f.graph.texts(), ['Got it. Your PDF is opening in Gorgon.']);
 });
 
-test('Gorgon: a PDF nobody waits for, or Gorgon unreachable, gets the usual answer', async () => {
+test('Gorgon: a PDF nobody waits for, or Gorgon unreachable, goes the usual way', async () => {
   const f = fresh();
+  f.link();
+  f.graph.media.set('D1', { mime: 'application/pdf', bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]) });
   f.env.GORGON = fakeGorgon();
-  await f.deliver([pdfDoc()]);
-  f.env.GORGON = { async message() { throw new Error('down'); } };
-  await f.deliver([pdfDoc()]);
-  const pdf = 'I can read pictures and text, not PDFs yet. Send a screenshot of it instead.';
-  assert.deepEqual(f.graph.texts(), [pdf, pdf]);
+  await withReader(READ, async () => {
+    await f.deliver([pdfDoc()]);
+    f.env.GORGON = { async message() { throw new Error('down'); } };
+    await f.deliver([{ ...pdfDoc(), at: 1762400100 }]);
+  });
+  assert.equal(f.drafts().length, 2);
+  assert.ok(f.graph.texts().every(t => /^Got it: Mums Group/.test(t)));
 });
 
 test('Gorgon: ordinary words and link codes never reach it', async () => {
