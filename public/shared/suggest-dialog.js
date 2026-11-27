@@ -432,7 +432,7 @@
           <p class="sg-wa-lead"><b>Send this on WhatsApp</b></p>
           <p class="sg-wa-msg">${esc(t.text)}</p>
           <a class="sg-wa-open" href="${esc(t.url)}" target="_blank" rel="noopener">${CHAT}<span>Open WhatsApp</span></a>
-          <p class="edit-row-hint">WhatsApp opens with it written, to Agora's number: just send it. On another phone, send it to ${esc(shown)} in the next half hour. What you wrote goes to whoever keeps ${esc(name)} the moment it arrives, from your WhatsApp number, and they can write back to you there. Nothing on the page changes until one of them has looked.</p>
+          <p class="edit-row-hint">WhatsApp opens with it written, to orthodoxy.au's number: just send it. On another phone, send it to ${esc(shown)} in the next half hour. What you wrote goes to whoever keeps ${esc(name)} the moment it arrives, from your WhatsApp number, and they can write back to you there. Nothing on the page changes until one of them has looked.</p>
           <p class="sg-wa-status" data-sg-wa-status aria-live="polite">Waiting for your message. You can close this: it still goes when you send it.</p>
         </div>`;
       // Nothing here is undone by leaving: the bar's way out says so.

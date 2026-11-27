@@ -34,8 +34,8 @@ supposed to see it. Both bugs above would have died in thirty seconds.
 screens the way a person does and fails on anything the page throws or logs —
 home on a phone and wide (the map, the parishes in view counted, the
 collections), a parish's card from the parishes in view and from its link, its
-Calendar and Month, and, as an owner, Add service and Edit service through to
-the timetable. It builds its own database from the baseline and the seed and
+Calendar and Month, the account menu's Notifications, Favourites and Saved,
+and, as an owner, Add service and Edit service through to the timetable. It builds its own database from the baseline and the seed and
 starts its own `wrangler dev` (port 8797, its own `--persist-to`), so it runs
 beside `npm run dev` without touching it:
 

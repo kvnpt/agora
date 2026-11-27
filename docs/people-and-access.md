@@ -102,8 +102,8 @@ works because there is one origin: every subdomain redirects to `orthodoxy.au`
 **Signing in comes back to the page.** Every Sign in on the page (the account
 menu's, and the one on the Saved and Favourites cards) is
 `/admin?back=<path>`, and `admin.html` sends anybody Access lets through, role
-or none, straight back to that path on this site; only the account menu's
-**Admin panel** goes to the panel (Kevin, 4 Nov 2026). The path brings back
+or none, straight back to that path on this site; only **Admin panel** goes
+to the panel (Kevin, 4 Nov 2026). The path brings back
 the card and the filters; the map's view goes along in this tab's
 `sessionStorage` (`agora-sign-in-view`, half an hour), so In view is what it
 was, with whether a card was open: a collection's link opens its card on a
@@ -193,11 +193,34 @@ is marked and sent next time rather than overwritten. A browser that was signed
 in as somebody else takes the new account's copy instead of merging, since the
 last person's things are already on theirs. The page tells a person with no role
 from a visitor by `/api/admin/ping`'s 403 (Access let the request through,
-`admin_roles` did not); their account menu has no Admin panel, only Sign out.
+`admin_roles` did not); their account menu is Favourites, Saved and Sign out.
 The account's bookmarks and lists are also its calendars: `/api/admin/saved/calendar`
 hands it one private link, `/saved/<token>.ics` (and `/saved/<token>/<list>.ics`
 for Favourites or a list), made the first time it asks (docs/architecture.md,
 "Saved is the home for subscriptions").
+
+**The account menu** is who you are, then **Notifications** for anybody with
+a role, then **Favourites** and **Saved** (the Favourites list card and the
+Saved card, a tap from anywhere; a visitor has them too, kept in the browser),
+**Link WhatsApp** for whoever may add events, and Sign out (Kevin, 24–25 Nov
+2026). **Admin panel is not in it.** The panel is being retired for everybody
+but the owner, so its link is at the foot of the home page, after Disclaimer,
+shown only to whoever holds `people.manage` (the owner's alone). `/admin`
+itself still lets in every role; only the way to it went.
+
+**Notifications** is what the panel's Asks held, brought into the app so it
+stays in reach once the panel is gone (Kevin, 25 Nov 2026). The menu's row
+says what waits in the red dot's words ("2 requests waiting, 1 suggestion"), and
+opens a card of its own (`openNotes` in next.js) reading the panel's own
+routes: people asking to keep a parish (the owner's, Approve or Decline),
+suggestions at the parishes you may edit (Start a draft, Done, Dismiss, Open
+the parish), **Requests** — the panel's asks, called requests on the page
+(Kevin, 27 Nov 2026) — (every open one for the owner to decide, your own to
+withdraw for anybody else), what another parish's event is doing at yours (a
+contact's: Take my parish out, Mark read), and Lately, what was decided. A
+decline, a dismiss and an approve ask in the row itself, never in a dialog,
+with a box for the word the other person reads. Each route re-checks what the
+account may do, so the card shows only what the panel would have.
 
 ## A phone on WhatsApp
 
