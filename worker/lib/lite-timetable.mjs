@@ -28,6 +28,7 @@ import lines from '../../public/shared/timetable-lines.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { previewLogo } from './juris-logos.mjs';
 import { jurisLabel, weekFrom, parishSlug, time12 } from './lite-page.mjs';
+import posters from '../../public/shared/posters.js';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 /** The accent when the page is not one jurisdiction's: the app's own blue (next.css --accent). */
@@ -275,7 +276,9 @@ export function timetableIndexable(m) {
 export function timetableImage(m) {
   // What is on next at the parishes a link names, by its poster.
   const poster = (m.upcoming || []).find(e => e.poster_path);
-  if (poster) return /^https?:/.test(poster.poster_path) ? poster.poster_path : `${m.origin}${poster.poster_path}`;
+  // A gallery's cover (public/shared/posters.js).
+  const cover = poster && posters.first(poster.poster_path);
+  if (cover) return /^https?:/.test(cover) ? cover : `${m.origin}${cover}`;
   const j = m.route.jurisdiction;
   const logo = m.collection && previewLogo(m.logos, m.collection.jurisdiction);
   const path = logo || (m.collection && m.collection.image) || `/og/${OG_CARDS.has(j) ? j : 'default'}.jpg`;

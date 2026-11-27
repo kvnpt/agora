@@ -42,6 +42,7 @@ import collections from '../../public/shared/collections.js';
 import search from '../../public/shared/search-words.js';
 import ruleFilters from '../../public/shared/timetable.js';
 import { liteSwitch, wantsLite, liteIndex, liteHomeHTML, readerPlace, withLite } from '../lib/lite-mode.mjs';
+import posters from '../../public/shared/posters.js';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
@@ -420,7 +421,7 @@ async function wordsPage(env, url, page, now) {
       origin: url.origin, phrase,
       places: v.ids.map(id => byId.get(id).name),
       titles: v.found.map(r => r.title),
-      image: poster ? poster.poster_path : null,
+      image: poster ? posters.first(poster.poster_path) : null,
     })),
     card: '', q: phrase, ids: v.ids,
   };

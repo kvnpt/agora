@@ -80,7 +80,9 @@ their `patch_` columns on `schedule_overrides`); its draft columns are also
 added on first use, as REAL for the two coordinates. So is 031's
 `draft_events.parish_scoped` (the Add event card's Public / Parish only pill), as
 INTEGER. So are 037's `drafts.images` (a WhatsApp forward's pictures after the
-first, waiting to be joined into its poster) and `drafts.sender_name` (the
+first, which waited to be joined into its poster; since 27 Nov 2026 a poster
+of several pictures is a gallery in `poster_path` itself, and nothing writes
+`images` — docs/editing.md) and `drafts.sender_name` (the
 sender's WhatsApp name), as TEXT. And 038's `whatsapp_messages.suggestion_id`
 and `parish_suggestions.images` (`lib/whatsapp.mjs` `addLaterColumns`): the
 webhook reads `suggestion_id` for every message, linked phones' too, so a

@@ -50,13 +50,14 @@
 // splitRead). Several posters are a draft each, with its own pictures and
 // words, and the reply lists them; one poster over several pictures (a
 // programme's pages, a poster and its translation) is one draft, whose poster
-// is the first picture, the rest waiting in drafts.images until the editor
-// joins them, side by side, into the one poster (docs/editing.md).
+// is those pictures as a gallery, each its own, to swipe through
+// (public/shared/posters.js; Kevin, 27 Nov 2026), never joined into one.
 //
 // A PDF IS A POSTER (Kevin, 26 Nov 2026). A document WhatsApp sends as a PDF,
 // once Gorgon has declined it (toGorgon), is a poster like a picture: a draft
 // of its own (never joined to a forward's pictures), stored as the .pdf, read
-// whole, every page. The editor makes the picture that shows (docs/editing.md).
+// whole, every page. The editor makes the pictures that show, a page each
+// (docs/editing.md).
 //
 // lib/whatsapp.mjs has the API; lib/draft-read.mjs the read.
 
@@ -65,6 +66,7 @@ import { readSecret } from '../lib/secrets.mjs';
 import { resolveRole, can, mayTouchParish } from '../lib/roles.mjs';
 import { ensureDraftTables, draftPosterKey, getDraft, moveDraft } from '../lib/drafts.mjs';
 import { readIntoDraft, readForSuggestion } from '../lib/draft-read.mjs';
+import { posterValue } from '../lib/poster-range.mjs';
 import { ensureSuggestionsTable, suggestionPosterKey, fillFromRead, OPEN_LIMIT, POSTER_DAILY_LIMIT } from '../lib/suggestions.mjs';
 import {
   whatsappConfig, ensureWhatsappTables, verifySignature, messagesOf, kindOf, fetchMedia, sendText,
@@ -556,13 +558,13 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
     });
     paths.push(`/${key}`);
   }
-  // Its poster is the first picture; the rest wait in images for the editor
-  // to join them all into one.
-  const [posterPath = null, ...rest] = paths;
+  // Its poster is every picture, in the order sent: one is the picture, as
+  // ever, and several a gallery to swipe (public/shared/posters.js), until
+  // the read says whether they are one poster or several (splitDraft).
   const d = await db.prepare(
-    `INSERT INTO drafts (parish_id, created_by, poster_path, images, source, message_text, sender_name)
-     VALUES (?, ?, ?, ?, 'whatsapp', ?, ?) RETURNING id`
-  ).bind(place.parishId, link.email, posterPath, rest.length ? JSON.stringify(rest) : null, text || null,
+    `INSERT INTO drafts (parish_id, created_by, poster_path, source, message_text, sender_name)
+     VALUES (?, ?, ?, 'whatsapp', ?, ?) RETURNING id`
+  ).bind(place.parishId, link.email, posterValue(paths), text || null,
     m.name || link.name || null).first();
   // The draft is the first picture's (one a day's count counts); the rest of
   // the forward points at it.

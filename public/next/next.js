@@ -1102,7 +1102,8 @@
   // poster (the page's error listener, by `data-full`); once one has, the
   // whole poster is what is asked for. '' for a poster that will not come.
   function posterThumb(path, width, cls = '') {
-    const p = String(path || '');
+    // A poster of several pictures is drawn small as its first (shared/posters.js).
+    const p = String(window.AgoraPosters.first(path) || '');
     const thumb = p.startsWith('/posters/') ? `/cdn-cgi/image/width=${width},quality=78,format=auto,fit=scale-down${p}` : '';
     if (picBad(p) && (!thumb || picBad(thumb))) return '';
     const c = cls ? `class="${cls}" ` : '';
@@ -2356,7 +2357,7 @@
   function oncePerPoster(list) {
     const rules = new Set(), shown = new Map();
     return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).filter(e => {
-      const r = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, p = String(e.poster_path).split('?')[0];
+      const r = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, p = String(window.AgoraPosters.first(e.poster_path)).split('?')[0];
       const at = Date.parse(e.start_utc);
       if (rules.has(r) || (shown.has(p) && at - shown.get(p) < OCCASION)) return false;
       rules.add(r);
@@ -2365,8 +2366,9 @@
     });
   }
   /** A poster on the shelf, and what it is under it: its own words are on it already. */
+  // Several pictures: the first, marked as Instagram marks a post of several.
   const posterCard = (e, from, img = posterThumb(e.poster_path, 640)) => `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg${img ? '' : ' noimg'}">${img}</span>
+          <span class="pimg${img ? '' : ' noimg'}">${img}${img ? window.AgoraPosters.markHTML(e.poster_path) : ''}</span>
           <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
             ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
         </button>`;
@@ -2669,6 +2671,17 @@
     // gives way to this one where it stands, with no slide.
     const painted = $$(':scope > .ssr', host);
     if (painted.length) {
+      // A gallery it painted (shared/posters.js) is taken over as it stands:
+      // on the picture it was swiped to, its pictures loaded.
+      // Moved, a scroller forgets how far it was scrolled: told again.
+      const kept = painted.flatMap(x => $$('.pg[data-keep]', x));
+      for (const g of $$('.pg[data-keep]', el)) {
+        const was = kept.find(k => k.dataset.keep === g.dataset.keep);
+        if (!was) continue;
+        const at = window.AgoraPosters.indexOf(was);
+        g.replaceWith(was);
+        if (at) window.AgoraPosters.go(was, at, false);
+      }
       el.classList.add('open', 'instant');
       painted.forEach(x => x.remove());
       requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('instant')));
@@ -4781,7 +4794,13 @@
         ${at ? `<button class="ev-at" type="button" data-parish="${esc(at.id)}">${avatar(at)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></button>` : ''}${stamp}</div>`;
     // Said in the band, the kind is not said again over the title.
     const kind = e.poster_path ? kindPill(e.event_type) : '';
-    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : band}
+    // Several pictures: the gallery to swipe, drawn as the Worker paints it
+    // (worker/lib/page-card.mjs posterHTML), so the one it painted is kept.
+    const poster = !e.poster_path ? band
+      : window.AgoraPosters.isGallery(e.poster_path)
+        ? `<div class="ev-poster ev-gallery${offCls}">${window.AgoraPosters.galleryHTML(e.poster_path)}${stamp}</div>`
+        : `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>`;
+    return `${poster}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
           <h1>${esc(e.title)}</h1>
@@ -5112,25 +5131,43 @@
    * Copy and Share hand over the picture itself. Safari's own long press on
    * the image often hands over its address instead, and pasting that gives a
    * link, so these two are the sure way to the image.
+   *
+   * Several pictures (shared/posters.js) are a gallery here too, opened at
+   * the one tapped (`at`): a swipe, an arrow or ← → moves between them, the
+   * dots say where, and Copy and Share are of the one showing.
    */
-  function openPoster(src) {
+  function openPoster(value, at = 0) {
+    const P = window.AgoraPosters;
+    const pics = P.list(value);
+    if (!pics.length) return;
+    const many = pics.length > 1;
     const el = document.createElement('div');
-    el.className = 'poster-view';
+    el.className = `poster-view${many ? ' is-gallery' : ''}`;
     el.setAttribute('role', 'dialog');
-    el.setAttribute('aria-label', 'Poster');
+    el.setAttribute('aria-label', many ? `Poster, ${pics.length} pictures` : 'Poster');
     const canCopy = !!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
-    el.innerHTML = `<img src="${esc(src)}" alt=""><button class="gbtn" type="button" aria-label="Close">${I.x}</button>
+    el.innerHTML = `${many ? P.galleryHTML(value, { cls: 'pg-view', keep: false, link: false }) : `<img src="${esc(pics[0])}" alt="">`}<button class="gbtn" type="button" aria-label="Close">${I.x}</button>
       <div class="poster-acts">
         ${canCopy ? '<button class="pbtn" type="button" data-pv="copy">Copy image</button>' : ''}
         ${navigator.share ? `<button class="pbtn" type="button" data-pv="share">${I.share}<span>Share</span></button>` : ''}
       </div>`;
+    const g = many ? el.querySelector('.pg') : null;
+    const shown = () => pics[g ? P.indexOf(g) : 0];
     // Fetched now, so Share has the file at the tap: Safari lets a share go
-    // only straight from the tap, not after a wait for the network.
-    let file = null;
-    const blob = fetch(src).then(r => (r.ok ? r.blob() : null)).catch(() => null);
-    blob.then(b => { if (b) file = new File([b], `poster.${/png/.test(b.type) ? 'png' : 'jpg'}`, { type: b.type || 'image/jpeg' }); });
+    // only straight from the tap, not after a wait for the network. In a
+    // gallery, the one showing, fetched as it comes into view.
+    const blobs = new Map(), files = new Map();
+    const fetchOne = (src) => {
+      if (!blobs.has(src)) {
+        const b = fetch(src).then(r => (r.ok ? r.blob() : null)).catch(() => null);
+        blobs.set(src, b);
+        b.then(x => { if (x) files.set(src, new File([x], `poster.${/png/.test(x.type) ? 'png' : 'jpg'}`, { type: x.type || 'image/jpeg' })); });
+      }
+      return blobs.get(src);
+    };
+    fetchOne(pics[Math.min(Math.max(0, at), pics.length - 1)]);
     // A clipboard takes PNG everywhere; a JPEG only in some browsers.
-    const png = () => blob.then(b => new Promise((ok, no) => {
+    const png = (src) => fetchOne(src).then(b => new Promise((ok, no) => {
       if (!b) return no(new Error('no image'));
       const img = new Image();
       const url = URL.createObjectURL(b);
@@ -5145,18 +5182,26 @@
       img.src = url;
     }));
     const close = () => { el.remove(); document.removeEventListener('keydown', onKey, true); };
-    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') { ev.stopPropagation(); close(); return; }
+      if (g && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        P.go(g, P.indexOf(g) + (ev.key === 'ArrowRight' ? 1 : -1));
+      }
+    };
     el.addEventListener('click', async (ev) => {
       const b = ev.target.closest('[data-pv]');
       if (!b) return close();
       ev.stopPropagation();
+      const src = shown();
       try {
         if (b.dataset.pv === 'copy') {
           // The item is made in the tap, its picture filled in after (Safari's rule).
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]);
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': png(src) })]);
           toast('Image copied');
-        } else if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] });
+        } else if (files.get(src) && navigator.canShare && navigator.canShare({ files: [files.get(src)] })) {
+          await navigator.share({ files: [files.get(src)] });
         } else {
           await navigator.share({ url: new URL(src, location.href).href });
         }
@@ -5166,6 +5211,11 @@
     });
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(el);
+    if (g) {
+      P.go(g, at, false);
+      P.sync(g);
+      g.querySelector('.pg-track').addEventListener('scroll', () => fetchOne(shown()), { passive: true });
+    }
   }
 
   /** Every open card, redrawn. */
@@ -5885,7 +5935,16 @@
       go(path);
       return;
     }
-    if ((b = t.closest('[data-poster]'))) { openPoster(b.dataset.poster); return; }
+    // A gallery's picture is a link to itself, for a card painted before
+    // this script came: here it opens the viewer, at that picture.
+    if ((b = t.closest('[data-poster]'))) {
+      if (b.tagName === 'A') {
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+        ev.preventDefault();
+      }
+      openPoster(b.dataset.poster, Number(b.dataset.posterAt) || 0);
+      return;
+    }
     if ((b = t.closest('[data-mark]'))) {
       toggleMark(b.dataset.mark, b.dataset.id);
       const on = isMarked(b.dataset.mark, b.dataset.id);
@@ -6202,6 +6261,8 @@
           may,
           reload,
           openParish: (id) => openParish(id),
+          // The page's own viewer, a gallery's pictures to swipe through.
+          openPoster: (value, at) => openPoster(value, at),
           avatar,
           toast,
           recheck: checkSignIn,
@@ -6226,6 +6287,13 @@
     // A page kept for no signal (sw.js) can be older than this file: one from
     // before morph.js names no such script, and nothing here draws without it.
     if (!window.AgoraMorph) await loadScript('/shared/morph.js');
+    // Nor, from before galleries, posters.js and its styles: a poster of
+    // several pictures. The styles are not waited for: a gallery without
+    // them is its pictures in a row, still there to see.
+    if (!window.AgoraPosters) {
+      loadCss('/shared/posters.css').catch(() => {});
+      await loadScript('/shared/posters.js');
+    }
     // The WhatsApp reply's ?draft=241, before the address is tidied.
     const linkedDraft = new URLSearchParams(location.search).get('draft');
     const arrivedAt = location.pathname + location.search;

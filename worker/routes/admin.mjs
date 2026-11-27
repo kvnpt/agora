@@ -20,10 +20,10 @@ import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
-  namesPoster, isPdfPoster }
+  posterKeysOf, posterValue, namesSamePoster, isPdfPoster }
   from '../lib/poster-range.mjs';
 import { PDF_TYPE } from '../lib/poster-read.mjs';
-import { MAX_PDF_BYTES } from '../lib/whatsapp.mjs';
+import { MAX_PDF_BYTES, READ_BYTES } from '../lib/whatsapp.mjs';
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
@@ -49,8 +49,9 @@ import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, setReadStatus, draftPosterKey, publishBody,
   placeRead, afterServices, moveDraft, onFileHere, oneOffFeast,
-  suggestEnds, occurrenceBody, isNewOccurrence, CANCEL_CONFIRMED } from '../lib/drafts.mjs';
+  suggestEnds, occurrenceBody, isNewOccurrence, CANCEL_CONFIRMED, foldPictures } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
+import posterList from '../../public/shared/posters.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
@@ -793,6 +794,60 @@ async function openSuggestionCount(db, who) {
 /** What a poster may be, and the extension it is stored under. */
 const POSTER_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
+/** Is this upload several pictures, a form of them (readGallery)? */
+const isGalleryUpload = (request) =>
+  (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() === 'multipart/form-data';
+
+/** The most one gallery upload may weigh in all: ten pictures the editor made, with room. */
+const GALLERY_BYTES = 30 * 1024 * 1024;
+
+/**
+ * The pictures of a poster of several (Kevin, 27 Nov 2026: Instagram's
+ * several pictures, never joined into one — public/shared/posters.js): a
+ * multipart form, one `picture` field each, in the order they show. Each is
+ * an image the editor has made 2048px on its long side already, so each is
+ * held to `maxBytes` like a single poster.
+ * → { pictures: [{bytes, mediaType, ext}] } or { error, status }.
+ */
+async function readGallery(request, { maxBytes = 5 * 1024 * 1024 } = {}) {
+  let form;
+  try { form = await request.formData(); } catch { return { error: 'The pictures could not be read.', status: 400 }; }
+  const files = form.getAll('picture').filter(f => f && typeof f === 'object' && typeof f.arrayBuffer === 'function');
+  if (!files.length) return { error: 'No image received', status: 400 };
+  if (files.length > posterList.MAX) return { error: `A poster holds ${posterList.MAX} pictures at most.`, status: 400 };
+  const pictures = [];
+  let total = 0;
+  for (const f of files) {
+    const mediaType = String(f.type || '').split(';')[0].trim().toLowerCase();
+    const ext = POSTER_TYPES[mediaType];
+    if (!ext) return { error: 'A poster has to be a JPEG, PNG, WebP or GIF image.', status: 415 };
+    const bytes = await f.arrayBuffer();
+    if (!bytes.byteLength) return { error: 'No image received', status: 400 };
+    if (bytes.byteLength > maxBytes) return { error: `One of the pictures is over ${Math.round(maxBytes / 1024 / 1024)} MB.`, status: 413 };
+    total += bytes.byteLength;
+    if (total > GALLERY_BYTES) return { error: 'Those pictures are too large together. Try fewer of them.', status: 413 };
+    pictures.push({ bytes, mediaType, ext });
+  }
+  return { pictures };
+}
+
+/**
+ * Pictures into R2, each under the key `keyOf(n, ext)` gives it (n from 1),
+ * → the poster value that holds them: one path, or a gallery.
+ */
+async function storePictures(env, pictures, keyOf) {
+  const paths = [];
+  for (let i = 0; i < pictures.length; i++) {
+    const p = pictures[i];
+    const key = keyOf(i + 1, p.ext);
+    await env.ASSETS_BUCKET.put(key, p.bytes, {
+      httpMetadata: { contentType: p.mediaType, cacheControl: 'public, max-age=86400' },
+    });
+    paths.push(`/${key}`);
+  }
+  return posterValue(paths);
+}
+
 
 /**
  * Signed in, role or not. For the few routes a person with NO role must reach:
@@ -1237,13 +1292,14 @@ export function registerAdminRoutes(router) {
     const sp = await c.env.DB.prepare(
       'SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ? AND poster_path IS NOT NULL'
     ).bind(s.id).first();
-    const [poster = null, ...images] = [...(sp ? [sp.poster_path] : []), ...imagesOf(s)];
+    // A forward's pictures, all of them, are the draft's gallery (public/shared/posters.js).
+    const poster = posterValue([...(sp ? [sp.poster_path] : []), ...imagesOf(s)]);
     if (poster || onWhatsapp) {
       await c.env.DB.batch([
         c.env.DB.prepare(
           `UPDATE drafts SET poster_path = ?, images = ?, source = ?, message_text = ?, sender_name = ?,
              seen_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-        ).bind(poster, images.length ? JSON.stringify(images) : null,
+        ).bind(poster, null,
           onWhatsapp ? 'whatsapp' : null, onWhatsapp ? s.body : null, onWhatsapp ? s.name : null,
           // Opened by whoever started it, this moment: not one for the + badge.
           onWhatsapp ? NOW() : null, draft.id),
@@ -1809,6 +1865,27 @@ export function registerAdminRoutes(router) {
       if (range.error) return json({ error: range.error }, 400);
     }
 
+    // Several pictures at once are a gallery (public/shared/posters.js),
+    // each its own picture, in order — never joined into one.
+    if (isGalleryUpload(request)) {
+      const g = await readGallery(request, { maxBytes: 8 * 1024 * 1024 });
+      if (g.error) return json({ error: g.error }, g.status);
+      if (g.pictures.length > 1) {
+        if (range) return putRangePoster(env, anchor, range, g.pictures, params.id);
+        // Its own, as a single upload is (`posters/<id>.…`), and a new key
+        // each time, so nobody keeps yesterday's from the day-long cache.
+        const stamp = Date.now().toString(36);
+        const base = posterKey(params.id, '').slice(0, -1);
+        const value = await storePictures(env, g.pictures, (n, ext) => `${base}.${stamp}-${n}.${ext}`);
+        const r = await setPosterPath(env, params.id, value);
+        if (r.error) return json({ error: r.error }, r.code || 400);
+        await releaseUnused(env, [anchor.previous], { keep: value });
+        return json({ id: params.id, poster_path: value, count: 1 });
+      }
+      const one = g.pictures[0];
+      return putOwnPoster(env, anchor, range, params.id, one.bytes, one.mediaType, one.ext);
+    }
+
     const contentType = request.headers.get('content-type') || '';
     const ext = contentType.includes('png') ? 'png'
               : contentType.includes('webp') ? 'webp'
@@ -1821,26 +1898,31 @@ export function registerAdminRoutes(router) {
     // before upload while a poster keeps its shape.
     if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
 
-    if (range) return putRangePoster(env, anchor, range, body, contentType, ext, params.id);
+    return putOwnPoster(env, anchor, range, params.id, body, contentType, ext);
+  }));
 
-    const key = posterKey(params.id, ext);
+  /** One picture on an event or a date, or on a range of them. */
+  async function putOwnPoster(env, anchor, range, id, body, contentType, ext) {
+    if (range) return putRangePoster(env, anchor, range, [{ bytes: body, mediaType: contentType || 'image/jpeg', ext }], id);
+
+    const key = posterKey(id, ext);
     await env.ASSETS_BUCKET.put(key, body, {
       httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
     });
-    const stale = posterKeys(params.id).filter(k => k !== key);
+    const stale = posterKeys(id).filter(k => k !== key);
     if (stale.length) await env.ASSETS_BUCKET.delete(stale);
 
     // ?v= for the same reason a logo carries one: assets.mjs caches posters for
     // a day, a replacement usually overwrites the same key, and without this
     // everybody keeps yesterday's flyer for 24 hours.
     const posterPath = `/${key}?v=${Date.now()}`;
-    const r = await setPosterPath(env, params.id, posterPath);
+    const r = await setPosterPath(env, id, posterPath);
     if (r.error) return json({ error: r.error }, r.code || 400);
     // A bulletin this service was sharing is released if this was the last
     // service still showing it.
     await releaseUnused(env, [anchor.previous], { keep: key });
-    return json({ id: params.id, poster_path: posterPath, count: 1 });
-  }));
+    return json({ id: id, poster_path: posterPath, count: 1 });
+  }
 
   /**
    * One object for the whole range, under a key of its own — never derived
@@ -1849,7 +1931,7 @@ export function registerAdminRoutes(router) {
    * batch, then whatever those services showed before is released if nothing
    * else still shows it (a corrected bulletin replacing the first one).
    */
-  async function putRangePoster(env, anchor, range, body, contentType, ext, anchorId) {
+  async function putRangePoster(env, anchor, range, pictures, anchorId) {
     const { scope, from, until } = range;
     const fromUtc = new Date(Date.parse(from + 'T00:00:00Z') - 86400000).toISOString();
     const toUtc = new Date(Date.parse(until + 'T00:00:00Z') + 2 * 86400000).toISOString();
@@ -1875,11 +1957,10 @@ export function registerAdminRoutes(router) {
     }
 
     const stamp = Date.now().toString(36);
-    const key = `posters/${anchor.parishId}-${from}-${until}-${stamp}.${ext}`;
-    await env.ASSETS_BUCKET.put(key, body, {
-      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
-    });
-    const posterPath = `/${key}`;
+    // A bulletin of several pages is a gallery, its pictures numbered.
+    const base = `posters/${anchor.parishId}-${from}-${until}-${stamp}`;
+    const posterPath = await storePictures(env, pictures,
+      (n, ext) => (pictures.length > 1 ? `${base}-${n}.${ext}` : `${base}.${ext}`));
 
     const stmts = overrideStatements(env.DB, targets, posterPath);
     if (events.length) {
@@ -1892,7 +1973,7 @@ export function registerAdminRoutes(router) {
 
     await releaseUnused(env, [
       ...targets.map(t => t.previous), ...events.map(e => e.poster_path),
-    ], { keep: key });
+    ], { keep: posterPath });
     return json({
       id: anchorId, poster_path: posterPath, scope, from, until,
       count: targets.length + events.length,
@@ -1911,11 +1992,11 @@ export function registerAdminRoutes(router) {
     // Only this parish's: the same object somewhere else is not this
     // contact's to remove, and it is released only if nothing names it.
     const everywhere = new URL(request.url).searchParams.has('everywhere');
-    const sharedKey = posterKeyOf(anchor.previous);
     let count = 1;
-    if (everywhere && sharedKey) {
-      const ovName = namesPoster('patch_poster_path', sharedKey);
-      const evName = namesPoster('poster_path', sharedKey);
+    if (everywhere && posterKeysOf(anchor.previous).length) {
+      // The same picture, or the same gallery (lib/poster-range.mjs).
+      const ovName = namesSamePoster('patch_poster_path', anchor.previous);
+      const evName = namesSamePoster('poster_path', anchor.previous);
       const [ov, ev] = await env.DB.batch([
         env.DB.prepare(
           `DELETE FROM schedule_overrides
@@ -2023,14 +2104,16 @@ export function registerAdminRoutes(router) {
   router.get('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
     const r = await draftInScope(c, c.params.id);
     if (r.response) return r.response;
+    // A forward from before galleries: its pictures made one, as they are now.
+    const draft = await foldPictures(c.env.DB, r.draft);
     // A poster from WhatsApp, opened: off the badge on its parish's +, and off
     // the home page of whoever sent it — whoever it is that opens it.
-    if (r.draft.source === 'whatsapp' && !r.draft.seen_at) {
+    if (draft.source === 'whatsapp' && !draft.seen_at) {
       await c.env.DB.prepare(`UPDATE drafts SET seen_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND seen_at IS NULL`)
-        .bind(r.draft.id).run();
-      return json(await getDraft(c.env.DB, r.draft.id));
+        .bind(draft.id).run();
+      return json(await getDraft(c.env.DB, draft.id));
     }
-    return json(r.draft);
+    return json(draft);
   }));
 
   // ── a phone on WhatsApp, linked to this account ──
@@ -2154,13 +2237,14 @@ export function registerAdminRoutes(router) {
     return json(await getDraft(c.env.DB, r.draft.id));
   }));
 
-  // The pictures of a WhatsApp forward, joined into one poster by the editor
-  // (public/shared/event-editor.js joinPictures). They were read together
-  // when they came (routes/ingest.mjs), so the read stands: only the poster
-  // changes, from the first picture to all of them side by side, and the
-  // pictures go once nothing shows them. `?from=` is the poster the editor
-  // joined from; a draft that has moved on since — joined already in another
-  // tab, or given another poster — is 409, and this join is thrown away.
+  // A PDF's pages, made pictures by the editor (public/shared/event-editor.js
+  // pdfPages), take the PDF's place as the draft's poster: a gallery, a
+  // picture a page (Kevin, 27 Nov 2026: "it should convert into images and
+  // let users swipe like a gallery"). The PDF was read whole, so the read
+  // stands, and the PDF goes once nothing shows it. One picture, raw, as
+  // before; several, a form of them (readGallery). `?from=` is the poster the
+  // editor made them from; a draft that has moved on since — done already in
+  // another tab, or given another poster — is 409, and these are thrown away.
   router.put('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
     const { env, request } = c;
     if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
@@ -2168,27 +2252,31 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     const draft = r.draft;
     const from = c.query.get('from') || '';
-    // Its pictures to join, or its PDF's pages made into one picture.
-    if (!(draft.images.length || isPdfPoster(draft.poster_path)) || from !== draft.poster_path) {
-      return json({ error: 'This draft’s pictures were put together already.', draft }, 409);
+    if (!isPdfPoster(draft.poster_path) || from !== draft.poster_path) {
+      return json({ error: 'This draft’s pictures were made already.', draft }, 409);
     }
-    const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const ext = POSTER_TYPES[mediaType];
-    if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
-    const bytes = await request.arrayBuffer();
-    if (!bytes.byteLength) return json({ error: 'No image received' }, 400);
-    if (bytes.byteLength > 5 * 1024 * 1024) return json({ error: 'That image is over 5 MB.' }, 413);
-    const key = draftPosterKey(draft.parish_id, ext);
-    await env.ASSETS_BUCKET.put(key, bytes, {
-      httpMetadata: { contentType: mediaType, cacheControl: 'public, max-age=86400' },
-    });
+    let pictures;
+    if (isGalleryUpload(request)) {
+      const g = await readGallery(request);
+      if (g.error) return json({ error: g.error }, g.status);
+      pictures = g.pictures;
+    } else {
+      const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      const ext = POSTER_TYPES[mediaType];
+      if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
+      const bytes = await request.arrayBuffer();
+      if (!bytes.byteLength) return json({ error: 'No image received' }, 400);
+      if (bytes.byteLength > 5 * 1024 * 1024) return json({ error: 'That image is over 5 MB.' }, 413);
+      pictures = [{ bytes, mediaType, ext }];
+    }
+    const value = await storePictures(env, pictures, (n, ext) => draftPosterKey(draft.parish_id, ext));
     const done = await env.DB.prepare(
       `UPDATE drafts SET poster_path = ?, images = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-       WHERE id = ? AND poster_path = ? AND (images IS NOT NULL OR lower(poster_path) LIKE '%.pdf')`
-    ).bind(`/${key}`, draft.id, from).run();
+       WHERE id = ? AND poster_path = ? AND lower(poster_path) LIKE '%.pdf'`
+    ).bind(value, draft.id, from).run();
     if (!(done.meta && done.meta.changes)) {
-      await env.ASSETS_BUCKET.delete(key);
-      return json({ error: 'This draft’s pictures were put together already.', draft: await getDraft(env.DB, draft.id) }, 409);
+      await env.ASSETS_BUCKET.delete(posterKeysOf(value));
+      return json({ error: 'This draft’s pictures were made already.', draft: await getDraft(env.DB, draft.id) }, 409);
     }
     await releaseUnused(env, [from, ...draft.images]);
     return json(await getDraft(env.DB, draft.id));
@@ -2214,24 +2302,40 @@ export function registerAdminRoutes(router) {
 
     let bytes = null, mediaType = null, images = null;
     if (c.query.get('reread') === '1') {
-      const key = posterKeyOf(draft.poster_path);
-      const obj = key && await env.ASSETS_BUCKET.get(key);
+      // Every picture of a gallery, read together as one announcement, as
+      // they came — and a draft from before galleries, its pictures waiting
+      // in `images`, the same way. As many as one read holds (READ_BYTES).
+      const keys = posterKeysOf([draft.poster_path, ...draft.images]);
+      const got = [];
+      let total = 0;
+      for (const key of keys) {
+        const obj = await env.ASSETS_BUCKET.get(key);
+        if (!obj) continue;
+        const b = await obj.arrayBuffer();
+        if (got.length && total + b.byteLength > READ_BYTES) break;
+        total += b.byteLength;
+        got.push({ bytes: b, mediaType: isPdfPoster('/' + key) ? PDF_TYPE
+          : (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg' });
+      }
       // Words alone, from WhatsApp, are read again without an image.
       const wordsOnly = !draft.poster_path && draft.source === 'whatsapp' && !!draft.message_text;
-      if (!obj && !wordsOnly) return json({ error: 'This draft has no poster to read.' }, 400);
-      if (obj) {
-        bytes = await obj.arrayBuffer();
-        mediaType = isPdfPoster(draft.poster_path) ? PDF_TYPE
-          : (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
-      }
-      // A forward's pictures not yet joined are read together, as they came.
-      if (obj && draft.images.length) {
-        images = [{ bytes, mediaType }];
-        for (const path of draft.images) {
-          const more = posterKeyOf(path) && await env.ASSETS_BUCKET.get(posterKeyOf(path));
-          if (more) images.push({ bytes: await more.arrayBuffer(), mediaType: (more.httpMetadata && more.httpMetadata.contentType) || 'image/jpeg' });
-        }
-      }
+      if (!got.length && !wordsOnly) return json({ error: 'This draft has no poster to read.' }, 400);
+      if (got.length) ({ bytes, mediaType } = got[0]);
+      if (got.length > 1) images = got;
+    } else if (isGalleryUpload(request)) {
+      // Several pictures chosen at once: a gallery, read as one announcement.
+      const g = await readGallery(request);
+      if (g.error) return json({ error: g.error }, g.status);
+      const previous = [draft.poster_path, ...draft.images].filter(Boolean);
+      draft.poster_path = await storePictures(env, g.pictures, (n, ext) => draftPosterKey(draft.parish_id, ext));
+      await env.DB.prepare(
+        `UPDATE drafts SET poster_path = ?, images = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
+           read_parish = NULL, read_language = NULL, read_services = NULL, read_details = NULL,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(draft.poster_path, draft.id).run();
+      if (previous.length) await releaseUnused(env, previous, { keep: draft.poster_path });
+      ({ bytes, mediaType } = g.pictures[0]);
+      if (g.pictures.length > 1) images = g.pictures.map(p => ({ bytes: p.bytes, mediaType: p.mediaType }));
     } else {
       mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       // A PDF is read as itself, every page; the editor makes its picture.
@@ -3601,8 +3705,15 @@ export function registerAdminRoutes(router) {
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   /** A path naming a poster already in R2 under /posters/ — never a URL elsewhere. */
-  // A picture: a draft's PDF is turned into one before it is anything's poster.
-  const isPosterPath = (v) => typeof v === 'string' && /^\/posters\/[A-Za-z0-9._-]+(\?v=\d+)?$/.test(v) && !isPdfPoster(v);
+  // A picture: a draft's PDF is turned into pictures before it is anything's poster.
+  const isPicturePath = (v) => typeof v === 'string' && /^\/posters\/[A-Za-z0-9._-]+(\?v=\d+)?$/.test(v) && !isPdfPoster(v);
+  /** One such path, or a gallery of them (public/shared/posters.js), as it is stored. */
+  const isPosterPath = (v) => {
+    if (typeof v !== 'string') return false;
+    if (v[0] !== '[') return isPicturePath(v);
+    const l = posterList.list(v);
+    return l.length > 1 && l.length <= posterList.MAX && l.every(isPicturePath) && posterValue(l) === v;
+  };
 
   router.patch('/api/admin/schedules/:id', guarded('schedule.edit', async (c) => {
     const { env, params, request } = c;
@@ -3671,7 +3782,7 @@ export function registerAdminRoutes(router) {
       .bind(...vals, params.id).run();
     // A poster the rule no longer shows goes once nothing else does.
     if (b.poster_path !== undefined && row.poster_path && row.poster_path !== b.poster_path) {
-      await releaseUnused(env, [row.poster_path], { keep: posterKeyOf(b.poster_path) });
+      await releaseUnused(env, [row.poster_path], { keep: b.poster_path });
     }
     await stampTimetable(c, row.parish_id, b);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
@@ -4018,21 +4129,28 @@ export function registerAdminRoutes(router) {
     if (!row) return json({ error: 'Schedule not found' }, 404);
     const scoped = outOfScope(c, row.parish_id);
     if (scoped) return scoped;
-    const contentType = request.headers.get('content-type') || '';
-    const ext = contentType.includes('png') ? 'png'
-              : contentType.includes('webp') ? 'webp'
-              : contentType.includes('gif') ? 'gif' : 'jpg';
-    const body = await request.arrayBuffer();
-    if (!body.byteLength) return json({ error: 'No data received' }, 400);
-    if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
-    const key = `posters/rule-${row.id}-${Date.now().toString(36)}.${ext}`;
-    await env.ASSETS_BUCKET.put(key, body, {
-      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
-    });
-    const posterPath = `/${key}`;
+    let pictures;
+    // Several pictures at once are a gallery (public/shared/posters.js).
+    if (isGalleryUpload(request)) {
+      const g = await readGallery(request, { maxBytes: 8 * 1024 * 1024 });
+      if (g.error) return json({ error: g.error }, g.status);
+      pictures = g.pictures;
+    } else {
+      const contentType = request.headers.get('content-type') || '';
+      const ext = contentType.includes('png') ? 'png'
+                : contentType.includes('webp') ? 'webp'
+                : contentType.includes('gif') ? 'gif' : 'jpg';
+      const body = await request.arrayBuffer();
+      if (!body.byteLength) return json({ error: 'No data received' }, 400);
+      if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
+      pictures = [{ bytes: body, mediaType: contentType || 'image/jpeg', ext }];
+    }
+    const base = `posters/rule-${row.id}-${Date.now().toString(36)}`;
+    const posterPath = await storePictures(env, pictures,
+      (n, ext) => (pictures.length > 1 ? `${base}-${n}.${ext}` : `${base}.${ext}`));
     await env.DB.prepare('UPDATE schedules SET poster_path = ?, updated_at = ?, updated_by = ? WHERE id = ?')
       .bind(posterPath, NOW(), await editor(c), row.id).run();
-    await releaseUnused(env, [row.poster_path], { keep: key });
+    await releaseUnused(env, [row.poster_path], { keep: posterPath });
     return json({ id: row.id, poster_path: posterPath });
   }));
 

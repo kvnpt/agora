@@ -399,11 +399,12 @@ test('a forward of two pictures and its caption is one draft, read together', as
   const [d] = f.drafts();
   assert.equal(d.message_text, 'ORC - Cronulla Beach. We’re heading south.');
   assert.equal(d.sender_name, 'Kevin', 'their WhatsApp name, for the editor');
-  const rest = JSON.parse(d.images);
-  assert.equal(rest.length, 1, 'the second picture waits to be joined');
-  assert.notEqual(rest[0], d.poster_path);
-  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the first is the poster');
-  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(rest[0].slice(1)).bytes], [...JPEG2]);
+  // Both pictures are the poster, each its own, in the order sent: a gallery.
+  const both = JSON.parse(d.poster_path);
+  assert.equal(both.length, 2, 'a gallery of the two');
+  assert.equal(d.images, null, 'nothing waits to be joined');
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(both[0].slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the first is the cover');
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(both[1].slice(1)).bytes], [...JPEG2]);
 
   assert.equal(calls.length, 1, 'one read');
   const content = calls[0].messages[0].content;
@@ -444,8 +445,9 @@ test('the captioned picture is the poster even when the other one arrives first'
   });
   assert.equal(f.drafts().length, 1, 'one draft');
   const [d] = f.drafts();
-  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the captioned one is the poster');
-  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(JSON.parse(d.images)[0].slice(1)).bytes], [...JPEG2]);
+  const [cover, second] = JSON.parse(d.poster_path);
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(cover.slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the captioned one is the cover');
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(second.slice(1)).bytes], [...JPEG2]);
   assert.equal(d.message_text, 'ORC - Cronulla Beach. We’re heading south.');
 });
 
@@ -570,7 +572,8 @@ test('a forward that is one poster over two pictures stays one draft, and gives 
   await withReader(one, async () => { await f.deliver(pictures(2)); });
   const [d, ...more] = f.drafts();
   assert.equal(more.length, 0);
-  assert.equal(JSON.parse(d.images).length, 1, 'the second picture waits to be joined, as before');
+  assert.equal(JSON.parse(d.poster_path).length, 2, 'both pictures, a gallery');
+  assert.equal(d.images, null);
   assert.equal(d.message_text, POST, 'every word, as it came');
   const descs = f.raw.prepare('SELECT description FROM draft_events WHERE draft_id = ? ORDER BY position').all(d.id).map(r => r.description);
   assert.deepEqual(descs, ['The reader’s words about Vespers.', 'The reader’s words about Seafood Night.']);
@@ -1017,8 +1020,9 @@ test('Asks shows a WhatsApp sender’s number; Start a draft opens it as a forwa
   const made = await f.call('POST', `/api/admin/suggestions/${x.id}/draft`);
   assert.equal(made.status, 201);
   const d = f.drafts()[0];
-  assert.deepEqual([d.source, d.message_text, d.sender_name, d.poster_path], ['whatsapp', 'Mums Group. orthodoxy.au/snp', 'Kevin', x.poster_path]);
-  assert.deepEqual(JSON.parse(d.images), x.images, 'for the editor to join');
+  assert.deepEqual([d.source, d.message_text, d.sender_name], ['whatsapp', 'Mums Group. orthodoxy.au/snp', 'Kevin']);
+  assert.deepEqual(JSON.parse(d.poster_path), [x.poster_path, ...x.images], 'every picture, a gallery');
+  assert.equal(d.images, null);
   assert.ok(d.seen_at, 'opened by whoever started it: no + badge');
   const card = f.raw.prepare('SELECT title, date, description FROM draft_events WHERE draft_id = ?').get(d.id);
   assert.deepEqual(card, { title: 'Mums Group', date: '2026-12-04', description: null }, 'their words are in the WhatsApp box');

@@ -30,6 +30,7 @@
 import { ensureDraftTables } from './drafts.mjs';
 import { isValidOccurrence, breakCovering, exceptionsOf } from './expand.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
+import posters from '../../public/shared/posters.js';
 
 const DAY_MS = 86400000;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,9 +125,10 @@ export function overrideStatements(db, targets, path) {
 /**
  * A draft's poster that is still the PDF it came as: read as a PDF, and never
  * an event's or a rule's poster, which are pictures. The editor makes its
- * picture when the draft is opened (PUT /api/admin/drafts/:id/poster).
+ * pictures, a page each, when the draft is opened (PUT /api/admin/drafts/:id/poster).
+ * A gallery (public/shared/posters.js) is pictures, never a PDF.
  */
-export const isPdfPoster = (path) => typeof path === 'string' && /\.pdf$/i.test(path.split('?')[0]);
+export const isPdfPoster = (path) => typeof path === 'string' && path[0] !== '[' && /\.pdf$/i.test(path.split('?')[0]);
 
 /** The R2 key a stored poster path names: '/posters/x.png?v=1' → 'posters/x.png'. */
 export function posterKeyOf(path) {
@@ -134,6 +136,25 @@ export function posterKeyOf(path) {
   const key = path.replace(/^\//, '').split('?')[0];
   return key.startsWith('posters/') ? key : null;
 }
+
+/**
+ * Every R2 key a poster value names: one for a picture, one for each picture
+ * of a gallery (a JSON list of paths, public/shared/posters.js). Takes keys,
+ * or a list of either, as well.
+ */
+export function posterKeysOf(value) {
+  const out = [];
+  for (const v of Array.isArray(value) ? value : [value]) {
+    for (const p of posters.list(v)) {
+      const k = posterKeyOf(p);
+      if (k && !out.includes(k)) out.push(k);
+    }
+  }
+  return out;
+}
+
+/** A poster value as stored: one path, or several as a gallery. */
+export const posterValue = (paths) => posters.valueOf(paths);
 
 /**
  * SQL naming one poster object in `col`, with or without its ?v= — and the
@@ -154,6 +175,34 @@ export function namesPoster(col, key) {
 }
 
 /**
+ * SQL naming one poster object in `col` as the poster or as one picture of a
+ * gallery. In a gallery's JSON a path is quoted, and only there: a single
+ * path never holds a double quote, so `"/posters/x.jpg"` (or `"/posters/x.jpg?`
+ * with its ?v=) found anywhere in the value is that picture, and nothing
+ * else. instr, not LIKE, for D1's 50-byte cap on a pattern.
+ */
+export function namesPicture(col, key) {
+  const one = namesPoster(col, key);
+  const quoted = `"/${key}"`, versioned = `"/${key}?`;
+  return {
+    sql: `(${one.sql} OR instr(${col}, ?) > 0 OR instr(${col}, ?) > 0)`,
+    args: [...one.args, quoted, versioned],
+  };
+}
+
+/**
+ * SQL naming the very poster `value` is in `col`: the same picture (with or
+ * without its ?v=), or the same gallery, every picture in its order — a
+ * bulletin's dates share the one value, so taking it off everywhere finds
+ * them all.
+ */
+export function namesSamePoster(col, value) {
+  if (posters.isGallery(value)) return { sql: `(${col} = ?)`, args: [posters.valueOf(value)] };
+  const key = posterKeyOf(posters.first(value));
+  return key ? namesPoster(col, key) : { sql: '(0)', args: [] };
+}
+
+/**
  * Is anything still pointing at this R2 key?
  *
  * A draft counts (lib/drafts.mjs): its poster is on file before any event is,
@@ -167,11 +216,12 @@ export function namesPoster(col, key) {
  * And so does a rule's own poster (schedules.poster_path, migration 021).
  */
 async function referenced(db, key) {
-  const ev = namesPoster('poster_path', key);
-  const ov = namesPoster('patch_poster_path', key);
-  const dr = namesPoster('poster_path', key);
+  // A picture of a gallery counts wherever the gallery is (namesPicture).
+  const ev = namesPicture('poster_path', key);
+  const ov = namesPicture('patch_poster_path', key);
+  const dr = namesPicture('poster_path', key);
   const sr = namesPoster('source_ref', key);
-  const sp = namesPoster('poster_path', key);
+  const sp = namesPicture('poster_path', key);
   const ir = namesPoster('info_source_ref', key);
   // One term per TABLE, never per column: D1 refuses a compound SELECT of
   // more than five terms ("too many terms in compound SELECT"), where Node's
@@ -199,13 +249,16 @@ export function referencedSql(ev, ov, dr, sr, sp, ir) {
 }
 
 /**
- * Delete the objects behind these paths that nothing refers to any more.
- * Returns the keys deleted. `keep` is a key that must survive regardless —
- * the one just uploaded, which a sweep must never race.
+ * Delete the objects behind these posters that nothing refers to any more:
+ * each picture of a gallery on its own, since a picture may be in another
+ * gallery still. Returns the keys deleted. `keep` is what must survive
+ * regardless — the poster just uploaded (a key, a value, or a list of them),
+ * which a sweep must never race.
  */
 export async function releaseUnused(env, paths, { keep = null } = {}) {
   if (!env.ASSETS_BUCKET) return [];
-  const keys = [...new Set((paths || []).map(posterKeyOf).filter(Boolean))].filter(k => k !== keep);
+  const kept = new Set(keep ? posterKeysOf(keep) : []);
+  const keys = posterKeysOf((paths || []).filter(Boolean)).filter(k => !kept.has(k));
   if (!keys.length) return [];
   // `referenced` reads `drafts`, which a deploy ahead of migration 018 has not
   // got yet — and a missing table must not stop a poster being taken down.

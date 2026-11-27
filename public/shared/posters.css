@@ -1,0 +1,102 @@
+/* A poster of several pictures, a gallery to swipe through (posters.js):
+ * Instagram's, as Kevin asked (27 Nov 2026) — one picture at a time, a dot
+ * for each under it, the one showing in the user's blue.
+ *
+ * For every page that shows one: the page and a link's painted card
+ * (index.html), /admin's editor (admin.html). Where it sits, and how tall,
+ * is each host's own (next.css .ev-gallery and .pg-view; event-editor.css).
+ *
+ * The swipe is the browser's: a row that scrolls sideways, snapping a whole
+ * picture at a time, so a finger moves it before any script has come and
+ * nothing has to be running for it. */
+
+.pg { position: relative; min-width: 0; --pg-dot: rgba(60, 60, 67, .26); --pg-on: #007aff; }
+@media (prefers-color-scheme: dark) {
+  .pg { --pg-dot: rgba(235, 235, 245, .3); }
+}
+.pg-track {
+  display: flex;
+  overflow-x: auto;
+  /* Sideways only: on iOS a scroller that may also scroll down takes a
+     sideways swipe a little down as well, and the card under it with it. */
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.pg-track::-webkit-scrollbar { display: none; }
+.pg-pic {
+  flex: 0 0 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  /* One picture a swipe, however hard: the dots count them one by one. */
+  scroll-snap-stop: always;
+}
+.pg-pic img { display: block; max-width: 100%; }
+
+/* A dot for each: small, as Instagram's are, in a hit area a little larger. */
+.pg-dots { display: flex; justify-content: center; flex-wrap: wrap; padding-top: 6px; }
+.pg-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pg-dot);
+  background-clip: content-box;
+  cursor: pointer;
+  transition: background-color .15s;
+}
+.pg-dot.on { background-color: var(--pg-on); }
+.pg-dot:focus-visible { outline: 2px solid var(--pg-on); outline-offset: 0; }
+
+/* An arrow each side, only for a mouse: a finger swipes. Shown as the
+   pointer comes over the pictures, and gone at either end. */
+.pg-arrow { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .pg-arrow {
+    position: absolute;
+    top: calc(50% - 10px);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .92);
+    color: #1c1c1e;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .28);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .pg:hover .pg-arrow, .pg-arrow:focus-visible { opacity: 1; }
+  .pg-arrow[hidden] { display: none; }
+  .pg-prev { left: 10px; }
+  .pg-next { right: 10px; }
+}
+
+/* On a small picture of a poster of several (a list's, a draft's): two
+   cards, one behind the other, in its top right corner, as Instagram marks
+   a post of several. Its picture's box is the one it sits in. */
+.pg-thumb { position: relative; display: inline-flex; flex: none; vertical-align: top; }
+.pg-mark {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  color: #fff;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .65));
+  pointer-events: none;
+}
+.pg-mark svg { width: 13px; height: 13px; }

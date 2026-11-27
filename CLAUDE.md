@@ -99,6 +99,10 @@ for them, are in the doc it links to — read that before changing the area.
 - A poster belongs to an occurrence (or a range of them) — or, for something
   held every week (a choir practice's flyer), to its rule, which every date
   shows unless its own says otherwise. A bulletin never goes on the rule.
+- Several pictures of one poster (and a PDF's pages) are a gallery, never
+  joined into one: a JSON list of paths in the same poster column. Read a
+  poster value through `public/shared/posters.js`, never straight into an
+  `<img src>`; what only a picture can be is its first.
 - Adding an event is a draft until Publish: `drafts`/`draft_events` hold the
   parish's LOCAL wall clock, and only `…/draft-events/:id/publish` writes
   `events`, one card per request. A poster read only ever fills empty fields.

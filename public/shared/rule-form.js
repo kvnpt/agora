@@ -434,15 +434,20 @@
   const kindRowHTML = (label, select, attr, scoped) =>
     `<div class="edit-row"><div class="edit-row-head"><label>${label}</label>${scopeHTML(attr, scoped)}</div>${select}</div>`;
 
+  // A poster of several pictures (shared/posters.js): its first here, marked
+  // as several, and the gallery full size.
+  const posterFirst = (v) => (root.AgoraPosters ? root.AgoraPosters.first(v) : v);
+  const posterMark = (v) => (root.AgoraPosters ? root.AgoraPosters.markHTML(v) : '');
+
   function posterHTML(rule) {
     const has = !!rule.poster_path;
     return `<div class="rf-poster" data-rf-poster>
-        <img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(rule.poster_path)}"` : ' hidden'} data-rf-poster-view>
+        <span class="rf-poster-pic pg-thumb"><img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(posterFirst(rule.poster_path))}"` : ' hidden'} data-rf-poster-view><span data-rf-poster-mark>${has ? posterMark(rule.poster_path) : ''}</span></span>
         <div class="rf-poster-actions">
           <button class="rf-btn" type="button" data-rf-poster-pick>${PICTURE}<span>${has ? 'Replace' : 'Add an image'}</span></button>
           <button class="rf-btn danger" type="button" data-rf-poster-clear${has ? '' : ' hidden'}>Remove</button>
         </div>
-        <input type="file" accept="image/*" hidden data-rf-poster-input>
+        <input type="file" accept="image/*" multiple hidden data-rf-poster-input>
       </div>
       <div class="edit-row-hint" data-rf-poster-status>On every date that has no poster of its own.</div>`;
   }
@@ -573,26 +578,35 @@
     const input = box.querySelector('[data-rf-poster-input]');
     const status = form.querySelector('[data-rf-poster-status]');
     const say = (msg, bad = false) => { status.textContent = msg; status.classList.toggle('edit-row-hint-bad', bad); };
-    const show = (src) => {
+    const mark = box.querySelector('[data-rf-poster-mark]');
+    // What the thumbnail stands for: the poster as stored, one picture or several.
+    let shown = (o.rule && o.rule.poster_path) || null;
+    const show = (value, count = null) => {
       if (thumb._url) { URL.revokeObjectURL(thumb._url); thumb._url = null; }
+      shown = value;
+      const src = posterFirst(value);
       if (src) thumb.src = src; else thumb.removeAttribute('src');
       thumb.hidden = !src;
+      mark.innerHTML = count > 1 ? posterMark(count) : (value ? posterMark(value) : '');
       clearBtn.hidden = !src;
       pickBtn.querySelector('span').textContent = src ? 'Replace' : 'Add an image';
     };
     pickBtn.addEventListener('click', () => { input.value = ''; input.click(); });
     input.addEventListener('change', async () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      if (file.size > 8 * 1024 * 1024) return say('That poster is over 8 MB, the most the Worker takes.', true);
+      // Several chosen at once are one poster of several pictures: a gallery.
+      const files = [...(input.files || [])];
+      if (!files.length) return;
+      if (files.length === 1 && files[0].size > 8 * 1024 * 1024) return say('That poster is over 8 MB, the most the Worker takes.', true);
+      const one = files.length === 1 ? files[0] : files;
       if (!o.posterNow) {
-        waiting = file;
-        show(URL.createObjectURL(file));
-        thumb._url = thumb.src;
-        return say('It goes on with the service.');
+        waiting = one;
+        const url = URL.createObjectURL(files[0]);
+        show(url, files.length);
+        thumb._url = url;
+        return say(files.length > 1 ? `Its ${files.length} pictures go on with the service.` : 'It goes on with the service.');
       }
-      say('Uploading…');
-      const r = await o.posterNow(file);
+      say(files.length > 1 ? `Uploading ${files.length} pictures…` : 'Uploading…');
+      const r = await o.posterNow(one);
       if (r.error) return say(r.error, true);
       show(r.poster_path);
       say('Saved. It shows on every date.');
@@ -604,7 +618,10 @@
       show(null);
       say('Removed. Dates with a poster of their own keep theirs.');
     });
-    thumb.addEventListener('click', () => { if (thumb.src && o.openPoster) o.openPoster(thumb.src); });
+    thumb.addEventListener('click', () => {
+      if (!thumb.src || !o.openPoster) return;
+      o.openPoster(thumb._url || !shown ? thumb.src : shown, 0);
+    });
 
     function values() {
       const mode = (cad.querySelector('input[data-cad-mode]:checked') || {}).value || 'weekly';

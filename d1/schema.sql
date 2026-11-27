@@ -924,8 +924,8 @@ CREATE INDEX idx_parish_claims_open ON parish_claims(status, created_at);
 -- "wa:61412345678", the number WhatsApp vouched for (worker/lib/whatsapp.mjs
 -- phoneIdentity), never an address and never anybody's sign-in. `images` is
 -- the pictures of a WhatsApp forward after the first, which is the poster: a
--- JSON list of '/posters/<key>' paths, NULL when there are none, handed to
--- the draft started from it (drafts.images).
+-- JSON list of '/posters/<key>' paths, NULL when there are none: with the
+-- poster, the gallery of the draft started from it (drafts.poster_path).
 --
 -- worker/lib/suggestions.mjs also creates this table IF NOT EXISTS on first
 -- use, with the same DDL, so a deploy that lands before migration 024 does not
@@ -1166,6 +1166,8 @@ CREATE TABLE drafts (
   -- bulletin over a range (worker/lib/poster-range.mjs). The key is not derived
   -- from any event id, so no single event's poster delete can take it from the
   -- others, and it is released only once no event, override or draft names it.
+  -- Several pictures (a forward's, a PDF's pages) are a gallery: a JSON list
+  -- of such paths, in order (public/shared/posters.js), as in every poster column.
   poster_path TEXT,
   -- How far reading the poster got. NULL when nothing was read (no poster, or
   -- no key on this deployment). A 'reading' row older than a couple of minutes
@@ -1207,9 +1209,12 @@ CREATE TABLE drafts (
   message_text TEXT,
   seen_at      TEXT,
   -- Migration 037: several pictures in one forward are one draft. `images`
-  -- is the pictures after the first, JSON '/posters/<key>' paths, until the
-  -- editor joins them all side by side into poster_path; NULL when there are
-  -- none. `sender_name` is the name WhatsApp has for whoever sent it.
+  -- was the pictures after the first, JSON '/posters/<key>' paths, until the
+  -- editor joined them side by side into poster_path. Since 27 Nov 2026 they
+  -- are poster_path's gallery from the start, and nothing writes `images`; a
+  -- draft left with some is folded into its gallery when it is next opened
+  -- (worker/lib/drafts.mjs foldPictures). `sender_name` is the name WhatsApp
+  -- has for whoever sent it.
   images       TEXT,
   sender_name  TEXT
 );
