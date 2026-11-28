@@ -800,6 +800,8 @@ const isGalleryUpload = (request) =>
 
 /** The most one gallery upload may weigh in all: ten pictures the editor made, with room. */
 const GALLERY_BYTES = 30 * 1024 * 1024;
+/** How long a poster read goes on once the editor that asked has gone: inside the runtime's 30 seconds, with room to save it. */
+const GONE_MS = 18000;
 
 /**
  * The pictures of a poster of several (Kevin, 27 Nov 2026: Instagram's
@@ -2286,7 +2288,9 @@ export function registerAdminRoutes(router) {
   //
   // The body is the image (raw, like the poster upload above), already shrunk
   // to 2048px by the editor. `?reread=1` with no body reads the poster the
-  // draft already has — a read that failed, or one the Worker never finished.
+  // draft already has — a read that failed, or one the Worker never finished;
+  // `?more=1` reads on from where its read stopped part-way (`read_cut`), and
+  // adds the rest after its cards.
   //
   // The answer is text/event-stream from the first byte: `poster`, then
   // `kind`, `field` and `item` as Claude writes them, then `result` with the
@@ -2301,7 +2305,14 @@ export function registerAdminRoutes(router) {
     const draft = r.draft;
 
     let bytes = null, mediaType = null, images = null;
-    if (c.query.get('reread') === '1') {
+    // `more`: read on from where the last read stopped part-way (its
+    // `read_cut`), the rest added after the cards it made.
+    const more = c.query.get('more') === '1';
+    const after = more ? draft.read_cut : null;
+    if (more && !(after && after.after)) {
+      return json({ error: 'This poster’s read did not stop part-way: there is nothing more to read.' }, 400);
+    }
+    if (more || c.query.get('reread') === '1') {
       // Every picture of a gallery, read together as one announcement, as
       // they came — and a draft from before galleries, its pictures waiting
       // in `images`, the same way. As many as one read holds (READ_BYTES).
@@ -2371,12 +2382,23 @@ export function registerAdminRoutes(router) {
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
     let open = true;
+    // The editor gone (closed, or its connection lost), the runtime gives
+    // the read half a minute more: it stops before then and keeps what it
+    // has (poster-read.mjs `stop`), rather than be cut off with nothing.
+    const stopper = new AbortController();
+    let leaving = null;
+    const gone = () => { if (!leaving) leaving = setTimeout(() => stopper.abort(), GONE_MS); };
     // Never awaited: the writes queue in order, and a reader that has gone
     // away (the dialog closed) must not stop the read from being saved.
-    const send = (event, payload) => {
-      if (open) writer.write(encoder.encode(sseFrame(event, payload))).catch(() => { open = false; });
+    const write = (event, payload) => {
+      if (open) writer.write(encoder.encode(sseFrame(event, payload))).catch(() => { open = false; gone(); });
     };
+    // Reading on, the read's events are the cards after the ones there are.
+    const offset = after ? draft.cards.length : 0;
+    const send = (event, payload) => write(event,
+      offset && (event === 'field' || event === 'item') ? { ...payload, index: payload.index + offset } : payload);
     const finish = () => {
+      clearTimeout(leaving);
       if (open) { open = false; writer.close().catch(() => {}); }
     };
 
@@ -2391,6 +2413,7 @@ export function registerAdminRoutes(router) {
       const whatsapp = draft.source === 'whatsapp';
       const read = await readIntoDraft(env, draft, {
         apiKey, bytes, mediaType, images, send, whatsapp, note: whatsapp ? draft.message_text || '' : '',
+        after, stop: stopper.signal,
       });
       if (!read.ok) {
         send('error', { error: read.error, retry: read.retry });

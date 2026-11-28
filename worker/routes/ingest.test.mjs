@@ -138,17 +138,41 @@ const READ = {
   services: [], details: null, notes: [],
 };
 
-/** The Messages API, answering every read with `doc`; the requests it got. */
+/**
+ * What the reader answers a request with, from `doc`: a forward's sort
+ * (poster-read.mjs sortPosters) from its `posters`, or one poster of every
+ * picture; a read of one of them ("announcement n of the k") with the events
+ * marked `poster: n`; any other read with the whole of it.
+ */
+function answerFor(doc, body) {
+  const schema = body.output_config.format.schema;
+  const content = body.messages[0].content;
+  if (schema.properties.posters && !schema.properties.events) {
+    const n = content.filter(c => c.type === 'image' || c.type === 'document').length;
+    return JSON.stringify({ posters: doc.posters || [{ pictures: Array.from({ length: n }, (_, i) => i + 1), words: [], parish: '', place: '' }] });
+  }
+  const { posters, ...read } = doc;
+  const part = /announcement (\d+) of the \d+ forwarded together/.exec(content[content.length - 1].text);
+  return JSON.stringify({ ...read,
+    events: read.events.filter(e => !part || e.poster === Number(part[1])).map(({ poster, ...e }) => e),
+    services: (read.services || []).filter(x => !part || x.poster === Number(part[1])).map(({ poster, ...x }) => x) });
+}
+
+/** The Messages API, answering every request from `doc` (answerFor); the requests it got. */
 async function withReader(doc, fn) {
   const real = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init) => {
-    calls.push(JSON.parse(init.body));
-    return new Response(haikuStream(JSON.stringify(doc)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    return new Response(haikuStream(answerFor(doc, body)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
   };
   try { await fn(calls); } finally { globalThis.fetch = real; }
   return calls;
 }
+/** Which of the reader's requests were a forward's sort, and which reads. */
+const sorts = (calls) => calls.filter(c => !c.output_config.format.schema.properties.events);
+const reads = (calls) => calls.filter(c => c.output_config.format.schema.properties.events);
 
 // ── the webhook itself ──
 
@@ -406,18 +430,23 @@ test('a forward of two pictures and its caption is one draft, read together', as
   assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(both[0].slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the first is the cover');
   assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(both[1].slice(1)).bytes], [...JPEG2]);
 
-  assert.equal(calls.length, 1, 'one read');
-  const content = calls[0].messages[0].content;
-  assert.deepEqual(content.map(c => c.type), ['text', 'image', 'text', 'image', 'text'], 'both pictures, in the order sent, numbered');
-  assert.deepEqual([content[0].text, content[2].text], ['Image 1:', 'Image 2:']);
-  assert.equal(content[3].source.data, Buffer.from(JPEG2).toString('base64'));
-  // Asked whether they are one poster or several (a read that does not say
-  // is one draft, as this one is).
-  assert.match(content[4].text, /There are 2 images, sent together on WhatsApp, each headed with its number/);
-  assert.match(content[4].text, /The words these images came with on WhatsApp, in numbered parts/);
-  assert.match(content[4].text, /\[1\] ORC - Cronulla Beach\. We’re heading south\./);
-  assert.match(content[4].text, /Read the images\.$/);
-  assert.ok(calls[0].output_config.format.schema.properties.posters, 'the schema that tells posters apart');
+  // Asked first, on its own, whether they are one poster or several: one, so one read of both.
+  assert.equal(calls.length, 2, 'the sort, then one read');
+  const [sort] = sorts(calls);
+  const asked = sort.messages[0].content;
+  assert.deepEqual(asked.map(c => c.type), ['text', 'image', 'text', 'image', 'text'], 'both pictures, in the order sent, numbered');
+  assert.deepEqual([asked[0].text, asked[2].text], ['Image 1:', 'Image 2:']);
+  assert.equal(asked[3].source.data, Buffer.from(JPEG2).toString('base64'));
+  assert.match(asked[4].text, /There are 2 images, each headed with its number/);
+  assert.match(asked[4].text, /The words the images came with, in numbered parts/);
+  assert.match(asked[4].text, /\[1\] ORC - Cronulla Beach\. We’re heading south\./);
+  assert.match(asked[4].text, /Sort the images\.$/);
+  const [one] = reads(calls);
+  const content = one.messages[0].content;
+  assert.deepEqual(content.map(c => c.type), ['image', 'image', 'text'], 'read as one, as ever');
+  assert.match(content[2].text, /There are 2 images, sent together as one announcement: read them as one image/);
+  assert.match(content[2].text, /The words these images came with on WhatsApp/);
+  assert.match(content[2].text, /Read the images\.$/);
   // One event, and the words sent with it: they are its description.
   assert.equal(f.raw.prepare('SELECT description FROM draft_events WHERE draft_id = ?').get(d.id).description,
     'ORC - Cronulla Beach. We’re heading south.');
@@ -488,7 +517,20 @@ test('a forward of several posters is a draft for each, with its own picture and
   f.link();
   for (let i = 1; i <= 4; i++) f.graph.media.set(`M${i}`, { mime: 'image/jpeg', bytes: jpeg(i) });
   const calls = await withReader(FOUR, async () => { await f.deliver(pictures(4)); });
-  assert.equal(calls.length, 1, 'one read of the four');
+  // Sorted, then each read on its own: its own picture and its own words.
+  assert.equal(sorts(calls).length, 1, 'one sort of the four');
+  const each = reads(calls);
+  assert.equal(each.length, 4, 'a read for each poster');
+  each.forEach((c, i) => {
+    const content = c.messages[0].content;
+    assert.deepEqual(content.map(x => x.type), ['image', 'text']);
+    assert.equal(content[0].source.data, Buffer.from(jpeg(i + 1)).toString('base64'));
+    assert.match(content[1].text, new RegExp(`This image is announcement ${i + 1} of the 4 forwarded together on WhatsApp`));
+    assert.doesNotMatch(content[1].text, /Good morning everyone/, 'nobody’s words are nobody’s');
+  });
+  assert.match(each[1].messages[0].content[1].text, /Seafood Night Fellowship/);
+  assert.doesNotMatch(each[1].messages[0].content[1].text, /Fruit Picking/);
+  assert.doesNotMatch(each[3].messages[0].content[1].text, /The words this image came with/, 'the cruise came with no words of its own');
 
   const drafts = f.drafts();
   assert.equal(drafts.length, 4, 'a draft for each poster');
@@ -586,9 +628,9 @@ test('a forward of several posters read too slowly is answered, then listed when
   f.graph.media.set('M2', { mime: 'image/jpeg', bytes: jpeg(2) });
   const two = { ...FOUR, posters: FOUR.posters.slice(0, 2), events: FOUR.events.slice(0, 2) };
   const real = globalThis.fetch;
-  globalThis.fetch = async () => {
-    await new Promise(r => setTimeout(r, 400));
-    return new Response(haikuStream(JSON.stringify(two)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  globalThis.fetch = async (url, init) => {
+    await new Promise(r => setTimeout(r, 200));
+    return new Response(haikuStream(answerFor(two, JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'text/event-stream' } });
   };
   try { await f.deliver(pictures(2)); } finally { globalThis.fetch = real; }
   const drafts = f.drafts();
@@ -600,6 +642,48 @@ test('a forward of several posters read too slowly is answered, then listed when
       `• Men’s Group, Thu 19 Nov 6:30pm: https://orthodoxy.au/snp?draft=${drafts[0].id}`,
       `• Seafood Night, Sun 29 Nov 8pm: https://orthodoxy.au/snp?draft=${drafts[1].id}`,
     ].join('\n'),
+  ]);
+});
+
+// Cabramatta's two-page timetable (28 Nov 2026): more than one read takes,
+// and on WhatsApp the runtime cut it off at 30 seconds with nothing kept. A
+// read that stops part-way keeps what it finished, and the reply says how far.
+const PROGRAMME = ['2026-12-06', '2026-12-13', '2026-12-20'].map((date, i) => ({ title: `Divine Liturgy ${i + 1}`, feast: null,
+  date, weekday_printed: 'Sunday', year_printed: true, after: null, start_time: '09:00', end_time: null, event_type: 'liturgy',
+  languages: [], venue: null, description: null, notes: [] }));
+/** As far as two of them, and part of the third: then out of room. */
+const outOfRoom = () => haikuStream(`{"kind":"poster","written_in":"English","other_parish":null,"events":[${PROGRAMME.slice(0, 2).map(e => JSON.stringify(e)).join(',')},{"title":"Divine Litur`, { stop: 'max_tokens' });
+
+test('a read that stops part-way keeps what it read, and the reply says how far it got', async () => {
+  const f = fresh();
+  f.link();
+  withPdf(f);
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response(outOfRoom(), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  try { await f.deliver([pdf('Our December services')]); } finally { globalThis.fetch = real; }
+  const [d] = f.drafts();
+  assert.equal(d.read_status, 'read');
+  assert.deepEqual(f.raw.prepare('SELECT date FROM draft_events WHERE draft_id = ? ORDER BY position').all(d.id).map(r => r.date),
+    ['2026-12-06', '2026-12-13']);
+  const notes = JSON.parse(d.read_notes);
+  assert.deepEqual(notes.map(n => n.cut && n.cut.after), ['2026-12-13'], 'where it stopped, kept for reading on');
+  assert.match(f.graph.texts()[0], /^Got it: Divine Liturgy 1, Sun 6 Dec 9am, and 1 more\. I read it as far as 13 Dec; open the draft and choose Read the rest for the others\. It's a draft at St Nicholas, Punchbowl until it's published: https:\/\/orthodoxy\.au\/snp\?draft=\d+$/);
+});
+
+test('one that stops part-way after the first reply is said again, with how far it got', async () => {
+  const f = fresh();
+  f.link();
+  withPdf(f);
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => {
+    await new Promise(r => setTimeout(r, 400));
+    return new Response(outOfRoom(), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  try { await f.deliver([pdf('Our December services')]); } finally { globalThis.fetch = real; }
+  const [d] = f.drafts();
+  assert.deepEqual(f.graph.texts(), [
+    `Got it. It's still being read, and will be a draft at St Nicholas, Punchbowl: https://orthodoxy.au/snp?draft=${d.id}`,
+    `Read as far as 13 Dec: Divine Liturgy 1, Sun 6 Dec 9am, and 1 more. Open the draft and choose Read the rest for the others: https://orthodoxy.au/snp?draft=${d.id}`,
   ]);
 });
 

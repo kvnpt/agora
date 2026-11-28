@@ -38,16 +38,21 @@
 // seconds (waitUntil). So the message is logged and answered first, and the
 // rest runs after: a wait of SETTLE_MS for the rest of the forward (its
 // other pictures, and the text that comes with them), the pictures, the read
-// (most take 7–10 seconds, a full programme 25), and the reply, sent by REPLY_BY_MS whether the read has finished or
-// not. A read cut short leaves the draft 'reading', which the editor shows as
-// one to read again.
+// (most take 7–10 seconds, a full programme 25 or more), and the reply,
+// sent by REPLY_BY_MS whether the read has finished or not. A read still
+// going at READ_BY_MS stops and keeps what it has, and the reply says how
+// far it got: the editor reads the rest (docs/editing.md). One the runtime
+// still cuts off leaves the draft 'reading', which the editor shows as one
+// to read again.
 //
 // ONE POSTER, ONE DRAFT. WhatsApp sends each picture of a forward as a
 // message of its own, the caption on the first. The first of them to be
 // handled takes the others and every word sent with them (whatsapp.mjs
-// picturesFor), and they are read together, in one read that also says
-// which pictures and which parts of the words each poster is (poster-read.mjs
-// splitRead). Several posters are a draft each, with its own pictures and
+// picturesFor). A small read first says which pictures and which parts of
+// the words each poster is (poster-read.mjs sortPosters), and then each
+// poster is read on its own, side by side (draft-read.mjs readApart: one
+// read doing both had an answer format the API would not take, a 400, on
+// Mays Hill's two posters, 28 Nov 2026). Several posters are a draft each, with its own pictures and
 // words, and the reply lists them; one poster over several pictures (a
 // programme's pages, a poster and its translation) is one draft, whose poster
 // is those pictures as a gallery, each its own, to swipe through
@@ -70,7 +75,7 @@ import { posterValue } from '../lib/poster-range.mjs';
 import { ensureSuggestionsTable, suggestionPosterKey, fillFromRead, OPEN_LIMIT, POSTER_DAILY_LIMIT } from '../lib/suggestions.mjs';
 import {
   whatsappConfig, ensureWhatsappTables, verifySignature, messagesOf, kindOf, fetchMedia, sendText,
-  codeIn, groupOf, picturesFor, inSentOrder, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
+  codeIn, groupOf, picturesFor, inSentOrder, parishNamed, pruneStatements, readSummary, readUpTo, draftLink, draftAt, REPLIES,
   IMAGE_TYPES, PDF_TYPE, MAX_PDF_BYTES, posterExt, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES, MAX_IMAGE_BYTES, TICKET_MINUTES, TICKETS_PER_HOUR,
   phoneIdentity, ticketIn, ticketText, ticketUrl, newCode, newSecret, ticketsPastKeeping, keeperOf,
   gorgonCodeIn, GORGON_MAX_BYTES,
@@ -80,6 +85,12 @@ import {
 export const SETTLE_MS = 3000;
 /** When the reply goes, read or not: inside waitUntil's 30 seconds, with room to send it. */
 export const REPLY_BY_MS = 22000;
+/**
+ * When a read still going stops and keeps what it has (poster-read.mjs
+ * `deadline`): inside the 30 seconds too, with room to save it and say so.
+ * Past them the runtime ends it with nothing (Cabramatta's timetable, 28 Nov 2026).
+ */
+export const READ_BY_MS = 25000;
 /** Codes that did not work, per phone per day, before it is told to stop. */
 const BAD_CODES = 5;
 
@@ -603,7 +614,8 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
   }
   // Several pictures may be several posters, each read into a draft of its
   // own (draft-read.mjs `split`).
-  const reading = readIntoDraft(env, draft, { apiKey, images, note: text, whatsapp: true, split: true, choose })
+  const reading = readIntoDraft(env, draft, { apiKey, images, note: text, whatsapp: true, split: true, choose,
+    deadline: io.started + READ_BY_MS })
     .then(async (r) => { if (r.ok && r.drafts) await pointAt(db, r.drafts, got, m.id); return r; })
     .catch(e => {
       console.error(`[whatsapp] read ${draft.id}: ${e && (e.stack || e.message)}`);
@@ -615,7 +627,7 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
     for (const d of drafts) {
       if (!d.draft) continue;
       const p = await parishRow(db, d.draft.parish_id);
-      items.push({ summary: readSummary(d.draft), at: draftAt(p), link: draftLink(origin, p, d.id) });
+      items.push({ summary: readSummary(d.draft), upTo: readUpTo(d.draft), at: draftAt(p), link: draftLink(origin, p, d.id) });
     }
     return reply(REPLIES.split(items, { late }) + missing);
   };
@@ -624,15 +636,20 @@ async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], 
   const done = await Promise.race([reading, io.sleep(left).then(() => late)]);
   if (done === late) {
     await answer(await getDraft(db, draft.id), (name, url) => REPLIES.reading(name, url));
-    // And keep reading, for as long as there is: the link went to the
-    // first poster's, so the rest are said when they are made.
+    // And keep reading, for as long as there is (READ_BY_MS): the link went
+    // to the first poster's, so the rest are said when they are made — and a
+    // read that stopped part-way, where, so the rest can be read in the editor.
     const r = await reading;
     if (r && r.ok && r.drafts) await answerSplit(r.drafts, true);
+    else if (r && r.ok && r.draft && readUpTo(r.draft)) {
+      await answer(r.draft, (name, url) => REPLIES.readOn(readSummary(r.draft), readUpTo(r.draft), url));
+    }
     return;
   }
   if (!done.ok) return answer(null, (name, url) => REPLIES.readFailed(done.error, name, url));
   if (done.drafts) return answerSplit(done.drafts, false);
-  return answer(done.draft, (name, url) => REPLIES.read(done.draft ? readSummary(done.draft) : '', name, url));
+  return answer(done.draft, (name, url) => REPLIES.read(done.draft ? readSummary(done.draft) : '', name, url,
+    done.draft ? readUpTo(done.draft) : null));
 }
 
 /**
@@ -856,7 +873,7 @@ async function makeSuggestion(env, io, m, { text, claimed, pictures = [], mark, 
     bytes += p.media.bytes.byteLength;
     images.push({ bytes: p.media.bytes, mediaType: p.media.mediaType });
   }
-  const reading = readForSuggestion(env, start, { apiKey, images, note: text, fixed: !!named })
+  const reading = readForSuggestion(env, start, { apiKey, images, note: text, fixed: !!named, deadline: io.started + READ_BY_MS })
     .then(async (r) => { if (r.ok) await applyRead(db, id, r); return r; })
     .catch(e => {
       console.error(`[whatsapp] read ${m.id}: ${e && (e.stack || e.message)}`);
@@ -936,7 +953,7 @@ async function confirmTicket(env, io, m, code, { mark, reply }) {
     ? await env.ASSETS_BUCKET.get(key) : null;
   if (!obj) return reply(REPLIES.suggested(keeper, ''));
   const images = [{ bytes: await obj.arrayBuffer(), mediaType: (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg' }];
-  const reading = readForSuggestion(env, parish.id, { apiKey, images, note: t.body || '', whatsapp: false, fixed: true })
+  const reading = readForSuggestion(env, parish.id, { apiKey, images, note: t.body || '', whatsapp: false, fixed: true, deadline: io.started + READ_BY_MS })
     .then(async (r) => { if (r.ok) await applyRead(db, id, r); return r; })
     .catch(e => {
       console.error(`[whatsapp] read ${m.id}: ${e && (e.stack || e.message)}`);

@@ -444,6 +444,28 @@ closing the dialog mid-read still leaves the cards filled next time. Without
 `ANTHROPIC_API_KEY` the poster is still stored and attached and the fields are
 typed by hand.
 
+**A read that stops part-way keeps what it read** (Cabramatta's two-page
+timetable, 28 Nov 2026: out of room after 56 seconds in the editor, cut off
+at 30 on WhatsApp, and nothing kept either time). It stops out of room
+(`max_tokens`, 16,000), at the most events one read lists (40, `cap`: it
+used to end there with "check it for any after …"), at a deadline
+(WhatsApp's `READ_BY_MS`; or 18
+seconds after the editor that asked has gone, `GONE_MS` in
+`routes/admin.mjs`, since the runtime then gives the read 30 more), or cut
+off; every event and service it finished is the cards, and a note says how
+far it got ("Read up to 13 December, …: the rest is still to read").
+Where it stopped is kept in `read_notes` beside that note (`readCut`:
+the last date, its event, and every event read so far, by date, time and
+title), and comes out as the draft's `read_cut`. **Read the rest** (`POST
+…/poster?reread=1&more=1`) reads on: told every event already on the draft
+— a programme need not be in date order — it lists only the others, which
+are added after the cards (`mergeRead`'s `append`); one it says again is
+dropped (`onFrom`), and a stop of its own is kept the same way. Out of room
+or at the cap, with the editor open, it reads on by itself, up to four reads in a row; out
+of time, or past those, it waits for the person's tap. If the connection
+drops mid-read, the editor watches the draft and fills it in when the read
+is saved.
+
 **A PDF is a poster too** (Kevin, 26 Nov 2026: a programme forwarded as a
 PDF got "not PDFs yet"). Dropped on the editor (**Add an image** takes one),
 forwarded on WhatsApp, or added to a suggestion, it is stored as it came
@@ -547,12 +569,20 @@ published: the draft waits for a person, like any other. What is worth knowing:
   whatever order their deliveries land — so within a second the captioned
   picture counts as first (`inSentOrder`; run 504 once made the other one the
   poster). The first of them handled takes the others and every word in the group
-  (`picturesFor`, runs of six), and they are read **together**, in one read,
-  each picture headed with its number and the words in numbered parts
-  (paragraphs, or the lines of one). The read says which pictures and which
-  parts of the words each announcement is, and whose, and which one each
-  event and service is on (`POSTER_SCHEMA_SPLIT`, `splitRead`). **Several
-  posters are a draft each** (`splitDraft`): St Mary's, Mays Hill's post of
+  (`picturesFor`, runs of six). **A small read sorts them first**
+  (`sortPosters`, `SORT_SCHEMA`, low effort): each picture headed with its
+  number and the words in numbered parts (paragraphs, or the lines of one),
+  it says which pictures and which parts of the words each announcement is,
+  and whose, and transcribes nothing (`sortGroups`). **Then each poster is
+  read on its own**, side by side, with its own pictures and words and the
+  one schema there is (`readApart` in `draft-read.mjs`), told it is "announcement
+  n of the k" so it reads only that one; when no words were given to anyone,
+  it gets them all, said to be everyone's (`posterContext`'s `part`). Until
+  28 Nov 2026 it was one read that sorted and transcribed at once, under a
+  schema that tagged every event and service with its poster: the API
+  refused to compile it ("compiled grammar is too large", a 400) on Mays
+  Hill's next two-poster post, which then fell back to one draft of both.
+  **Several posters are a draft each** (`keepParts`, `splitDraft`): St Mary's, Mays Hill's post of
   four posters (a men's group, a seafood night, fruit picking, a lunch cruise)
   and one caption made one draft whose every card carried all four joined into
   one picture, and whose Fill from WhatsApp offered every card the whole
@@ -562,11 +592,12 @@ published: the draft waits for a person, like any other. What is worth knowing:
   the last poster's, and each is one of the day's thirty. The reply lists
   them, a line and a link each (and, when the read outlasts the first reply,
   a second message once they exist). A picture with nothing of its own (a QR
-  code, a menu) goes with the poster before it; something only in the words
-  is a draft with no picture. A read that does not say clearly — no posters,
-  one, or an event on none it listed — is **one draft, as before**, and so is
-  one poster over several pictures (a programme's pages, a poster and its
-  translation). The editor's own Read again of a draft's pictures reads them
+  code, a menu), or one whose read found nothing of its own, goes with the
+  poster before it — a failed one with a note on that draft to read it
+  again; something only in the words is a draft with no picture. A sort that
+  does not say clearly, or fails, is **one read of them all, one draft, as
+  before**, and so is one poster over several pictures (a programme's pages,
+  a poster and its translation). The editor's own Read again of a draft's pictures reads them
   as one announcement (`posterContext`'s `pictures`: "read them as one
   image"), never split. The draft's poster is **its pictures as a gallery**, in the order they
 were sent (above). Until 27 Nov 2026 the rest waited in `drafts.images`
@@ -606,8 +637,13 @@ same way, read as one announcement.
 - **Thirty seconds.** Meta wants its 200 at once, and work after a response
   gets 30 seconds (`waitUntil`). The message is logged and answered first; the
   reply goes at 22 seconds whether the read has finished or not ("still being
-  read"). Most posters read in 7–10 seconds and a full programme in about 25;
-  one cut short stays `reading`, which the editor offers to read again. A
+  read"). Most posters read in 7–10 seconds and a full programme in 25 or
+  more; a read still going at 25 seconds (`READ_BY_MS`) **stops and keeps
+  what it has** (below), and the reply — or a second one, after "still being
+  read" — says how far it got: "I read it as far as 13 Dec; open the draft
+  and choose Read the rest". Until 28 Nov 2026 the runtime cut it off at 30
+  with nothing kept (Cabramatta's two-page timetable). One the runtime still
+  cuts off stays `reading`, which the editor offers to read again. A
   draft opened from the link while it is still being read is looked at every
   few seconds and filled in when it is done.
 - **Once, by WhatsApp's id.** Every message is a `whatsapp_messages` row keyed

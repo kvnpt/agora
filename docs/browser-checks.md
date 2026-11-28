@@ -368,7 +368,21 @@ A forward of several pictures is several `send --image`s at the same
 should make one draft whose poster is a gallery of them (a JSON list in
 `drafts.poster_path`), shown so in the editor with no `PUT`; several
 posters should make a draft each, with its own picture and its own part of
-the caption, and one reply listing them.
+the caption, and one reply listing them. The stand-in answers the sort
+first (from the mode's `posters`; `forward_smmh` has four), then one read
+per poster: `/__calls` shows the sort ending "Sort the images." and each
+read "announcement n of the k".
+
+**A read that stops part-way.** `POST /__mode {"cut": 2}` makes each read
+stop out of room after two events, part-way into the third, and a read on
+say the last one again, as a model does. Dropping a PDF with
+`feasts_november` should read on by itself ("Reading the rest of the
+poster, after Sun 8 Nov…") until all six cards are there, in order, with
+no card left over; with `"cut": 1` the reads in a row stop at four and
+**Read the rest** shows under the poster's note, and a tap finishes it.
+Forwarded on WhatsApp, the reply should say "I read it as far as …", and
+the draft's link open with the note and **Read the rest**. `{"cut": 0}`
+reads whole again.
 
 ## A poster of several pictures
 
