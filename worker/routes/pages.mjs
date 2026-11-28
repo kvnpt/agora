@@ -24,6 +24,7 @@
 // be the reason a link does not work.
 
 import urlState from '../../public/shared/url-state.js';
+import { PIN_COLS_SQL } from '../../public/shared/parish-join.mjs';
 import slugs from '../../public/shared/slugs.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId, fetchWeekExceptions, attachExceptions } from '../lib/expand.mjs';
@@ -48,9 +49,9 @@ const DEFAULT_ZONE = 'Australia/Sydney';
 
 // The parish columns a page shows. Not SELECT *: `updated_by` is an admin's
 // email and nothing public carries it.
-const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
+const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, ${PIN_COLS_SQL}, timezone,
   website, phone, email, logo_path, acronym, languages, live_url, donation_url,
-  info_source_name, info_source_ref, info_checked_at, maps_url, updated_at`;
+  info_source_name, info_source_ref, info_checked_at, maps_url, updated_at, kind`;
 
 const SITE_PATHS = new Set(slugs.SITE_PATHS);
 
@@ -91,8 +92,8 @@ export function pageOf(pathname, now = Date.now()) {
 // region, languages for /en, and nothing an admin wrote about themselves.
 // A rule's subtitle and description are what a link's words are looked for
 // in (wordsPage), as the search box looks.
-const TIMETABLE_PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, acronym, languages,
-  logo_path`;
+const TIMETABLE_PARISH_COLS = `id, name, full_name, jurisdiction, address, ${PIN_COLS_SQL}, timezone, acronym, languages,
+  logo_path, kind`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   feast, description, poster_path, languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at, location_override, location_parish_id`;

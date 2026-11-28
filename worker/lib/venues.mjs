@@ -13,6 +13,7 @@
 // card, so the four cannot disagree about what a place is. Naming the host
 // parish itself as the venue is "at home".
 
+import { PIN_COLS_SQL } from '../../public/shared/parish-join.mjs';
 const KEYS = ['location_parish_id', 'location_override', 'location_lat', 'location_lng'];
 
 const num = (v) => {
@@ -42,7 +43,7 @@ export async function readVenue(db, body, { hostParishId = null } = {}) {
   const pid = body.location_parish_id ? String(body.location_parish_id).trim() : '';
   if (pid) {
     if (pid === hostParishId) return home;
-    const p = await db.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').bind(pid).first();
+    const p = await db.prepare(`SELECT id, ${PIN_COLS_SQL} FROM parishes WHERE id = ?`).bind(pid).first();
     if (!p || pid === '_unassigned') return { error: 'That parish is not on file.' };
     return { present: true, pin: p.lat != null ? { lat: p.lat, lng: p.lng } : null,
       venue: { location_parish_id: pid, location_override: null, location_lat: null, location_lng: null } };

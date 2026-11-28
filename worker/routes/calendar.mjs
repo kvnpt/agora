@@ -34,6 +34,7 @@ import { identityOf } from '../lib/calendar-links.mjs';
 import { readSaved } from '../lib/saved-items.mjs';
 import { parseInstanceId } from '../../public/shared/project.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
+import { PIN_COLS_SQL } from '../../public/shared/parish-join.mjs';
 import linkWords from '../../public/shared/link-words.js';
 
 const DAY_MS = 86400000;
@@ -46,7 +47,7 @@ export const AHEAD_DAYS = 92;
 export const MAX_PARISHES = 40;
 
 const TYPE = 'text/calendar; charset=utf-8';
-const PARISH_COLS = 'id, name, full_name, acronym, address, lat, lng, timezone';
+const PARISH_COLS = `id, name, full_name, acronym, address, ${PIN_COLS_SQL}, timezone`;
 
 /** '/sgr/sun/liturgy.ics' → '/sgr/sun/liturgy'; null when it is not a calendar's address. */
 export function calendarPath(pathname) {

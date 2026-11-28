@@ -32,6 +32,18 @@ export const PARISH_JOIN = [
 ];
 
 /**
+ * A parish's pin as the public sees it: none where it has no place to visit
+ * (`has_place = 0`: a group like the Orthodox Run Club, or a monastery closed
+ * to visitors). The point stays stored for whoever edits the row; nothing
+ * public reads it, so the map, distances, In view and a city's page all take
+ * the row as having no pin, which they already know how to do.
+ */
+export const pinSql = (col, t = '') => `CASE WHEN ${t}has_place = 0 THEN NULL ELSE ${t}${col} END`;
+
+/** `lat, lng` for a SELECT list, through pinSql. */
+export const PIN_COLS_SQL = `${pinSql('lat')} AS lat, ${pinSql('lng')} AS lng`;
+
+/**
  * The SELECT list the Worker joins with, `p` being the parishes alias.
  *
  * Every column but the colour. A parish has no colour of its own — it wears
@@ -40,7 +52,7 @@ export const PARISH_JOIN = [
  * the jurisdiction's itself (PARISH_COLOR_SQL in worker/lib/juris-colors.mjs).
  */
 export const PARISH_JOIN_SQL = PARISH_JOIN.filter(([col]) => col !== 'color')
-  .map(([col, as]) => `p.${col} AS ${as}`).join(', ');
+  .map(([col, as]) => `${col === 'lat' || col === 'lng' ? pinSql(col, 'p.') : `p.${col}`} AS ${as}`).join(', ');
 
 /**
  * A rule with its parish's fields attached, as the SQL join would have given
