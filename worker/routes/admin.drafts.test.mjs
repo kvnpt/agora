@@ -287,6 +287,65 @@ test('a busy reader says to try again, marks the read failed and leaves the card
   assert.equal(f.bucket.store.size, 1);
 });
 
+// Cabramatta's two-page timetable (28 Nov 2026): out of room after 56
+// seconds, and nothing kept. Now what it finished is the cards, and the rest
+// is read on from where it stopped.
+const SUNDAYS = ['2026-12-06', '2026-12-13', '2026-12-20', '2026-12-27'].map((date, i) => ({
+  title: i === 3 ? 'Sunday School picnic' : 'Divine Liturgy', date, weekday_printed: 'Sunday', year_printed: true,
+  start_time: i === 3 ? '12:00' : '09:00', end_time: null, event_type: i === 3 ? 'social' : 'liturgy', languages: [], venue: null,
+  description: null, notes: [] }));
+const asFar = (events) => `{"kind":"poster","written_in":"English","other_parish":null,"events":[${events.map(e => JSON.stringify(e)).join(',')},{"title":"Divine Litur`;
+
+test('a read out of room keeps the cards it finished, and the rest is read on from where it stopped', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  const first = await withFetch(fakeFetch(haikuStream(asFar(SUNDAYS.slice(0, 2)), { stop: 'max_tokens' })), () => f.poster(d.id));
+  const done = first.frames[first.frames.length - 1].draft;
+  assert.equal(done.read_status, 'read');
+  assert.deepEqual(done.cards.map(c => c.date), ['2026-12-06', '2026-12-13']);
+  assert.deepEqual(done.read_cut, { after: '2026-12-13', count: 2, title: 'Divine Liturgy', why: 'max_tokens',
+    had: [{ date: '2026-12-06', start_time: '09:00', title: 'Divine Liturgy' }, { date: '2026-12-13', start_time: '09:00', title: 'Divine Liturgy' }] });
+  assert.deepEqual(done.read_notes, ['Read up to 13 December, when there was more on the poster than one read takes: the rest is still to read.']);
+
+  // Reading on: told where it stopped, and the 13th's Liturgy said again is dropped.
+  const rest = fakeFetch(haikuStream(JSON.stringify({ ...TWO, kind: 'poster', events: SUNDAYS.slice(1) })));
+  const more = await withFetch(rest, () => f.poster(d.id, undefined, '', '?reread=1&more=1'));
+  assert.match(rest.calls[0].body.messages[0].content.at(-1).text,
+    /goes on from one that stopped part-way, after “Divine Liturgy” on 13 December\. The events it read are on the draft already:\n- Sunday 6 December 2026 09:00: Divine Liturgy\n- Sunday 13 December 2026 09:00: Divine Liturgy\n/);
+  assert.equal(more.frames[0].event, 'poster');
+  // Its fields reach the cards after the two there are.
+  assert.deepEqual([...new Set(more.frames.filter(x => x.event === 'item').map(x => x.index))], [2, 3, 4],
+    'as the reader wrote them, the one said again among them');
+  const after = more.frames[more.frames.length - 1].draft;
+  assert.deepEqual(after.cards.map(c => [c.date, c.title]), [
+    ['2026-12-06', 'Divine Liturgy'], ['2026-12-13', 'Divine Liturgy'], ['2026-12-20', 'Divine Liturgy'], ['2026-12-27', 'Sunday School picnic'],
+  ]);
+  assert.equal(after.read_cut, null, 'read to the end');
+  assert.deepEqual(after.read_notes, []);
+  assert.equal(after.read_status, 'read');
+
+  // Nothing more to read: refused, and nothing asked of the reader.
+  const none = fakeFetch(haikuStream('{}'));
+  const again = await withFetch(none, () => f.poster(d.id, undefined, '', '?reread=1&more=1'));
+  assert.equal(again.status, 400);
+  assert.match(again.body.error, /nothing more to read/);
+  assert.equal(none.calls.length, 0);
+});
+
+test('reading on that fails keeps the read before it, and where it stopped', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  await withFetch(fakeFetch(haikuStream(asFar(SUNDAYS.slice(0, 2)), { stop: 'max_tokens' })), () => f.poster(d.id));
+  const { frames } = await withFetch(fakeFetch('{"type":"error"}', { status: 429 }), () => f.poster(d.id, undefined, '', '?reread=1&more=1'));
+  assert.deepEqual(frames.map(x => x.event), ['poster', 'error', 'result']);
+  const kept = frames[2].draft;
+  assert.equal(kept.read_status, 'read');
+  assert.equal(kept.cards.length, 2);
+  assert.equal(kept.read_cut.after, '2026-12-13');
+});
+
 // ── publishing ──
 
 test('publishing turns local wall-clock into instants, puts the poster on, and spends the card', async () => {

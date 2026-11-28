@@ -5,10 +5,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
-  POSTER_MODEL, POSTER_SCHEMA, POSTER_SCHEMA_SPLIT, SYSTEM_PROMPT, MAX_EVENTS, READ_KINDS,
-  buildPosterRequest, posterContext, readPoster, normalizeRead, readFailure, clip,
-  splitRead, noteParts,
+  POSTER_MODEL, POSTER_SCHEMA, SORT_SCHEMA, SORT_SYSTEM, SYSTEM_PROMPT, MAX_EVENTS, READ_KINDS,
+  buildPosterRequest, posterContext, sortContext, readPoster, sortPosters, normalizeRead, readFailure, clip,
+  sortGroups, keepParts, noteParts,
 } from './poster-read.mjs';
+import { onFrom } from './draft-read.mjs';
 import whatsappWords from '../../public/shared/whatsapp-words.js';
 
 const { plainWords } = whatsappWords;
@@ -29,8 +30,8 @@ const ONE = {
 };
 
 const image = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
-const read = (fetchImpl, emit) => readPoster(
-  { apiKey: 'test-key', image, mediaType: 'image/jpeg', context: 'ctx', fetchImpl }, emit);
+const read = (fetchImpl, emit, extra = {}) => readPoster(
+  { apiKey: 'test-key', image, mediaType: 'image/jpeg', context: 'ctx', fetchImpl, ...extra }, emit);
 
 test('the request: Haiku 5.5, medium effort, structured output, the image as base64 — and nothing Haiku refuses', () => {
   const body = buildPosterRequest({ data: 'QUJD', mediaType: 'image/webp', context: 'ctx' });
@@ -544,73 +545,76 @@ test('a passed date the reader put in next year goes back to the poster’s year
 });
 
 // ── a WhatsApp forward of several posters (St Mary's, Mays Hill, 19 Nov 2026) ──
+//
+// Sorted first, in a small request of its own, and each poster then read on
+// its own. One read that did both had an answer format the API would not
+// compile (a 400, Mays Hill's two posters, 28 Nov 2026).
 
 const NO_DETAILS = { address: '', phone: '', email: '', website: '' };
-const tagged = (poster, title, date, extra = {}) => ({ poster, title, feast: '', date, weekday_printed: null,
+const ev = (title, date, extra = {}) => ({ title, feast: '', date, weekday_printed: null,
   year_printed: false, cancelled: false, after: '', start_time: '19:00', end_time: null, end_date: '',
   event_type: 'social', languages: [], venue: null, description: null, notes: [], ...extra });
 const announce = (pictures, words = [], parish = '', place = '') => ({ pictures, words, parish, place });
+const doc = (events, extra = {}) => ({ kind: 'poster', written_in: 'English', other_parish: null,
+  details: NO_DETAILS, notes: [], services: [], events, ...extra });
+const readOf = (d) => ({ ok: true, read: normalizeRead(d) });
 
-test('the split schema: the posters before the events, each event and service on one, and no new unions', () => {
-  const S = POSTER_SCHEMA_SPLIT;
-  assert.deepStrictEqual(S.required, ['kind', 'written_in', 'other_parish', 'posters', 'events', 'services', 'details', 'notes']);
-  assert.deepStrictEqual(Object.keys(S.properties), S.required, 'decided before anything is transcribed');
-  assert.deepStrictEqual(S.properties.posters.items.required, ['pictures', 'words', 'parish', 'place']);
-  for (const list of ['events', 'services']) {
-    const items = S.properties[list].items;
-    assert.strictEqual(items.required[0], 'poster');
-    assert.deepStrictEqual(items.required.slice(1), POSTER_SCHEMA.properties[list].items.required);
-    assert.strictEqual(Object.keys(items.properties)[0], 'poster');
-  }
-  const unions = (schema) => {
-    let n = 0;
-    const walk = (s) => {
-      if (s.anyOf) { n++; s = s.anyOf[0]; }
-      for (const v of Object.values(s.properties || {})) walk(v);
-      if (s.items) walk(s.items);
-    };
-    walk(schema);
-    return n;
+test('the sort: a small schema of its own, nothing transcribed, no unions', () => {
+  assert.deepStrictEqual(SORT_SCHEMA.required, ['posters']);
+  assert.deepStrictEqual(SORT_SCHEMA.properties.posters.items.required, ['pictures', 'words', 'parish', 'place']);
+  const walk = (x) => {
+    assert.ok(!x.anyOf, 'no union');
+    if (x.type === 'object') assert.strictEqual(x.additionalProperties, false);
+    for (const v of Object.values(x.properties || {})) walk(v);
+    if (x.items) walk(x.items);
   };
-  assert.strictEqual(unions(S), unions(POSTER_SCHEMA));
-  const walk = (s) => {
-    if (s.type === 'object') assert.strictEqual(s.additionalProperties, false);
-    for (const v of Object.values(s.properties || {})) walk(v.anyOf ? v.anyOf[0] : v);
-    if (s.items) walk(s.items);
-  };
-  walk(S);
+  walk(SORT_SCHEMA);
+  assert.match(SORT_SYSTEM, /Transcribe nothing/);
   assert.deepStrictEqual(POSTER_SCHEMA.required, ['kind', 'written_in', 'other_parish', 'events', 'services', 'details', 'notes'],
-    'a poster on its own is asked as before');
+    'each poster is read with the one schema there is');
 });
 
-test('told apart, each picture is headed with its number and the split schema is asked for; one picture, or not told, is as before', () => {
-  const two = [{ data: 'QUFB', mediaType: 'image/jpeg' }, { data: 'QkJC', mediaType: 'image/png' }];
-  const apart = buildPosterRequest({ images: two, context: 'ctx', split: true });
-  assert.deepStrictEqual(apart.messages[0].content.map(c => c.type === 'text' ? c.text : c.source.data),
-    ['Image 1:', 'QUFB', 'Image 2:', 'QkJC', 'ctx']);
-  assert.strictEqual(apart.output_config.format.schema, POSTER_SCHEMA_SPLIT);
-  const together = buildPosterRequest({ images: two, context: 'ctx' });
-  assert.deepStrictEqual(together.messages[0].content.map(c => c.type), ['image', 'image', 'text']);
-  assert.strictEqual(together.output_config.format.schema, POSTER_SCHEMA);
-  const alone = buildPosterRequest({ images: two.slice(0, 1), context: 'ctx', split: true });
-  assert.strictEqual(alone.output_config.format.schema, POSTER_SCHEMA);
-  assert.deepStrictEqual(alone.messages[0].content.map(c => c.type), ['image', 'text']);
-});
-
-test('told apart, the context asks which images and words each poster is, and numbers the words', () => {
+test('the sort asks with each picture numbered, the words in numbered parts, at low effort', async () => {
   const words = 'Good morning!\n\n*Seafood Night*\nSunday 29 November\n\n*Fruit Picking*\nSaturday 16 January';
-  const text = posterContext(PARISH, '2026-11-19', RULES, words, { whatsapp: true, pictures: 3, split: true });
-  assert.match(text, /There are 3 images, sent together on WhatsApp, each headed with its number\./);
+  const text = sortContext(PARISH, 3, words);
+  assert.match(text, /There are 3 images, each headed with its number\./);
   assert.match(text, /or several posters at once, each its own announcement/);
   assert.match(text, /an image with nothing of its own to announce, such as a QR code/);
-  assert.match(text, /Every event and every service gives in poster the number of the announcement/);
-  assert.match(text, /in numbered parts/);
   assert.match(text, /\[1\] Good morning!\n\[2\] \*Seafood Night\*\nSunday 29 November\n\[3\] \*Fruit Picking\*\nSaturday 16 January/);
-  assert.doesNotMatch(text, /read them as one image/);
-  // Not told apart (the editor's read again of a draft's pictures): one announcement, as before.
-  const one = posterContext(PARISH, '2026-11-19', RULES, words, { whatsapp: true, pictures: 3 });
+  assert.match(text, /Sort the images\.$/);
+
+  const answer = { posters: [announce([1], [2]), announce([2, 3], [3])] };
+  const fetchImpl = fakeFetch(haikuStream(JSON.stringify(answer)));
+  const two = [{ bytes: image, mediaType: 'image/jpeg' }, { bytes: image, mediaType: 'image/png' }];
+  const r = await sortPosters({ apiKey: 'k', images: two, parish: PARISH, note: words, fetchImpl });
+  assert.deepStrictEqual(r.posters, answer.posters);
+  const sent = fetchImpl.calls[0].body;
+  assert.deepStrictEqual(sent.messages[0].content.map(c => c.type === 'text' ? c.text.slice(0, 8) : c.type),
+    ['Image 1:', 'image', 'Image 2:', 'image', 'The pari']);
+  assert.deepStrictEqual(sent.output_config.format.schema, SORT_SCHEMA);
+  assert.strictEqual(sent.output_config.effort, 'low');
+  assert.strictEqual(sent.system, SORT_SYSTEM);
+  assert.ok(sent.max_tokens <= 4000);
+
+  // Read as one, as ever: no numbers, the reader's own schema.
+  const together = buildPosterRequest({ images: [{ data: 'QUFB', mediaType: 'image/jpeg' }, { data: 'QkJC', mediaType: 'image/png' }], context: 'ctx' });
+  assert.deepStrictEqual(together.messages[0].content.map(c => c.type), ['image', 'image', 'text']);
+  assert.strictEqual(together.output_config.format.schema, POSTER_SCHEMA);
+});
+
+test('one poster of several, read on its own: told so, with its own words or all of them as everyone’s', () => {
+  const own = posterContext(PARISH, '2026-11-19', RULES, '*Seafood Night*\nSunday 29 November',
+    { whatsapp: true, pictures: 1, part: { n: 2, of: 4, shared: false } });
+  assert.match(own, /This image is announcement 2 of the 4 forwarded together on WhatsApp\. The others are read on their own: read only this one\./);
+  assert.doesNotMatch(own, /came with the other announcements too/);
+  const shared = posterContext(PARISH, '2026-11-19', RULES, 'See you all there',
+    { whatsapp: true, pictures: 2, part: { n: 1, of: 2, shared: true } });
+  assert.match(shared, /These 2 images are announcement 1 of the 2/);
+  assert.match(shared, /They came with the other announcements too, and may be about those as well: take from them only what is about this one\./);
+  // Not one of several (the editor's read again of a draft's pictures): one announcement, as before.
+  const one = posterContext(PARISH, '2026-11-19', RULES, 'words', { whatsapp: true, pictures: 3 });
   assert.match(one, /sent together as one announcement: read them as one image/);
-  assert.doesNotMatch(one, /\[1\]/);
+  assert.doesNotMatch(one, /announcement \d of the/);
 });
 
 test('the words in parts: paragraphs, or the lines of one paragraph', () => {
@@ -632,119 +636,187 @@ test('the words as a description: WhatsApp’s marks off, emojis and links kept'
   assert.ok(plainWords('word '.repeat(400)).length <= 1000);
 });
 
-test('a forward of four posters is four reads, each with its own pictures, words and events', () => {
-  const doc = {
-    kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: ['The fourth image is cropped.'],
-    posters: [announce([1], [2]), announce([2], [3]), announce([3], [4]), announce([4])],
-    events: [
-      tagged(1, 'MENS GROUP', '2026-11-19', { start_time: '18:30' }),
-      tagged(2, 'Seafood Night', '2026-11-29', { after: 'Evening Liturgy', start_time: null }),
-      tagged(3, 'Fruit Picking Trip', '2027-01-16', { start_time: '08:00' }),
-      tagged(4, 'Lunch Cruise', '2027-02-06', { start_time: '12:00', end_time: '16:00', venue: 'Huntleys Point Wharf' }),
-    ],
-    services: [],
-  };
-  const parts = splitRead(doc, { pictures: 4, words: 5 });
-  assert.deepStrictEqual(parts.map(p => p.pictures), [[1], [2], [3], [4]]);
-  assert.deepStrictEqual(parts.map(p => p.words), [[2], [3], [4], []]);
-  assert.deepStrictEqual(parts.map(p => p.read.events.map(e => e.title)),
-    [['Mens Group'], ['Seafood Night'], ['Fruit Picking Trip'], ['Lunch Cruise']], 'each normalised: unshouted');
-  assert.strictEqual(parts[1].read.events[0].after, 'Evening Liturgy');
-  assert.strictEqual(parts[3].read.events[0].location_override, 'Huntleys Point Wharf');
-  assert.ok(parts.every(p => p.read.kind === 'poster' && !('poster' in p.read.events[0])));
-  assert.deepStrictEqual(parts[0].read.notes, ['The fourth image is cropped.']);
+test('the sort as groups to read: four posters are four, each with its pictures and words', () => {
+  const groups = sortGroups([announce([1], [2]), announce([2], [3]), announce([3], [4]), announce([4])], { pictures: 4, words: 5 });
+  assert.deepStrictEqual(groups.map(g => [g.pictures, g.words]), [[[1], [2]], [[2], [3]], [[3], [4]], [[4], []]]);
+  // One announcement over both pictures, a poster and its translation: one group, so one read.
+  assert.strictEqual(sortGroups([announce([1, 2], [1])], { pictures: 2, words: 1 }).length, 1);
+  // Nothing usable said about the pictures, or one picture: one read of them all.
+  assert.strictEqual(sortGroups([], { pictures: 2 }), null);
+  assert.strictEqual(sortGroups([announce([], [1])], { pictures: 2, words: 1 }), null);
+  assert.strictEqual(sortGroups([announce([7, 0, 1.5, '2'])], { pictures: 2 }), null, 'no picture that is one');
+  assert.strictEqual(sortGroups([announce([1]), announce([2])], { pictures: 1 }), null);
+  assert.strictEqual(sortGroups('nope', { pictures: 2 }), null);
 });
 
-test('a poster and its translation, or every event on one poster, is no split', () => {
-  const base = { kind: 'poster', written_in: 'Greek', other_parish: null, details: NO_DETAILS, notes: [], services: [] };
-  // One announcement over both pictures.
-  assert.strictEqual(splitRead({ ...base, posters: [announce([1, 2], [1])],
-    events: [tagged(1, 'Feast', '2026-12-06'), tagged(1, 'Vespers', '2026-12-05')] }, { pictures: 2, words: 1 }), null);
-  // Two listed, but everything on the first: the second (its translation) has nothing of its own.
-  assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
-    events: [tagged(1, 'Feast', '2026-12-06')] }, { pictures: 2 }), null);
-  // No posters said, one picture, or an event on no poster it listed: one draft, as before.
-  assert.strictEqual(splitRead({ ...base, events: [tagged(1, 'Feast', '2026-12-06')] }, { pictures: 2 }), null);
-  assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
-    events: [tagged(1, 'A', '2026-12-06'), tagged(2, 'B', '2026-12-07')] }, { pictures: 1 }), null);
-  for (const bad of [0, 3, null, '2', 1.5]) {
-    assert.strictEqual(splitRead({ ...base, posters: [announce([1]), announce([2])],
-      events: [tagged(1, 'A', '2026-12-06'), tagged(bad, 'B', '2026-12-07')] }, { pictures: 2 }), null, `poster ${bad}`);
-  }
+test('a picture no poster lists goes with the one before it; one listed twice is the first’s', () => {
+  // 1 a poster, 2 listed by nobody, 3 another poster, 4 listed twice.
+  const groups = sortGroups([announce([1], [1, 9]), announce([3, 4], [3]), announce([4], [2])], { pictures: 4, words: 3 });
+  assert.deepStrictEqual(groups.map(g => [g.pictures, g.words]), [[[1, 2], [1]], [[3, 4], [3]], [[], [2]]],
+    'a part of the words not shown is no part; one only in the words is last');
+  // The first picture, listed by nobody, goes with the one after it.
+  assert.deepStrictEqual(sortGroups([announce([2]), announce([3])], { pictures: 3 }).map(g => g.pictures), [[1, 2], [3]]);
+  // Listed in an order that is not the pictures': by the first picture each holds.
+  const order = sortGroups([announce([], [3]), announce([2], [2], 'St Nicholas', 'Punchbowl'), announce([1], [1])], { pictures: 2, words: 3 });
+  assert.deepStrictEqual(order.map(g => [g.pictures, g.words, g.parish]), [[[1], [1], null], [[2], [2], 'St Nicholas'], [[], [3], null]]);
 });
 
-test('a picture with nothing of its own, or that no poster lists, goes with the picture before it', () => {
-  const base = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [] };
-  // 1 a poster, 2 its QR code listed apart, 3 another poster, 4 listed by nobody.
-  const parts = splitRead({ ...base,
-    posters: [announce([1], [1]), announce([2], [2]), announce([3, 3, 9], [3, 7])],
-    events: [tagged(1, 'Camp', '2027-01-10'), tagged(3, 'Picnic', '2027-01-24')],
-  }, { pictures: 4, words: 3 });
-  assert.deepStrictEqual(parts.map(p => p.pictures), [[1, 2], [3, 4]]);
-  assert.deepStrictEqual(parts.map(p => p.words), [[1, 2], [3]], 'the QR code’s words go with it; a part not shown is no part');
-  // The first picture listed by nobody goes with the one after it.
-  const first = splitRead({ ...base, posters: [announce([2]), announce([3])],
-    events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] }, { pictures: 3 });
-  assert.deepStrictEqual(first.map(p => p.pictures), [[1, 2], [3]]);
-  // A picture two posters list is the first's.
-  const twice = splitRead({ ...base, posters: [announce([1, 2]), announce([2, 3])],
-    events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] }, { pictures: 3 });
-  assert.deepStrictEqual(twice.map(p => p.pictures), [[1, 2], [3]]);
+test('each poster’s read is a draft; one that read nothing goes with the picture before it, and a failure says so', () => {
+  const groups = sortGroups([announce([1], [1]), announce([2], [2]), announce([3], [3], 'St Elias', 'Wollongong'), announce([4], [])],
+    { pictures: 4, words: 3 });
+  const parts = keepParts(groups, [
+    readOf(doc([ev('MENS GROUP', '2026-11-19')])),
+    readOf(doc([])),                                   // a QR code: nothing of its own
+    readOf(doc([ev('Fruit Picking Trip', '2027-01-16')])),
+    { ok: false, error: 'The poster reader is busy — try again in a minute.', retry: true },
+  ], { pictures: 4 });
+  assert.deepStrictEqual(parts.map(p => [p.pictures, p.words]), [[[1, 2], [1, 2]], [[3, 4], [3]]]);
+  assert.deepStrictEqual(parts.map(p => p.read.events.map(e => e.title)), [['Mens Group'], ['Fruit Picking Trip']], 'each normalised');
+  assert.deepStrictEqual(parts[1].read.notes, ['Image 4 could not be read on its own, so it is with these pictures: read it again to try.']);
+  assert.deepStrictEqual(parts[0].read.notes, [], 'nothing to say of a picture that read as nothing');
+  // Whose it is, when its read does not say: the sort's.
+  assert.deepStrictEqual(parts[1].read.other_parish, { name: 'St Elias', place: 'Wollongong' });
+  assert.strictEqual(parts[0].read.other_parish, null);
+  // Its read's own say wins over the sort's.
+  const own = keepParts(sortGroups([announce([1], [], 'St Elias'), announce([2])], { pictures: 2 }),
+    [readOf(doc([ev('A', '2027-01-10')], { other_parish: { name: 'St George', place: 'Enmore' } })), readOf(doc([ev('B', '2027-01-11')]))],
+    { pictures: 2 });
+  assert.strictEqual(own[0].read.other_parish.name, 'St George');
+  // Nothing read anywhere: no drafts to make.
+  assert.deepStrictEqual(keepParts(groups, groups.map(() => readOf(doc([]))), { pictures: 4 }), []);
 });
 
-test('something only in the words is a part of its own, last; whose each poster is, its own', () => {
-  const parts = splitRead({
-    kind: 'poster', written_in: 'English', details: NO_DETAILS, notes: [], services: [],
-    other_parish: { name: 'St Elias', place: 'Wollongong' },
-    // Listed in an order that is not the pictures'.
-    posters: [announce([], [3]), announce([2], [2], 'St Nicholas Antiochian Orthodox Church', 'Punchbowl'), announce([1], [1])],
-    events: [tagged(1, 'Working bee', '2027-01-09'), tagged(2, 'Youth night', '2027-01-15'), tagged(3, 'Liturgy', '2027-01-17')],
-  }, { pictures: 2, words: 3 });
-  assert.deepStrictEqual(parts.map(p => [p.pictures, p.words]), [[[1], [1]], [[2], [2]], [[], [3]]],
-    'by the first picture each holds, the words-only one last; the draft that came keeps picture 1');
-  assert.deepStrictEqual(parts.map(p => p.read.events[0].title), ['Liturgy', 'Youth night', 'Working bee']);
-  assert.deepStrictEqual(parts.map(p => p.read.other_parish), [
-    { name: 'St Elias', place: 'Wollongong' },
-    { name: 'St Nicholas Antiochian Orthodox Church', place: 'Punchbowl' },
-    { name: 'St Elias', place: 'Wollongong' },
-  ]);
-});
-
-test('a sign among the posters keeps its services and its details; nothing else gets the details', () => {
-  const service = { poster: 2, title: 'Divine Liturgy', every: 'Sundays', day: 'Sunday', start_time: '09:00', end_time: '',
+test('a sign among the posters keeps its services and its details', () => {
+  const service = { title: 'Divine Liturgy', every: 'Sundays', day: 'Sunday', start_time: '09:00', end_time: '',
     weeks: [], languages: [], event_type: 'liturgy', venue: '', description: '', starts: '', until: '', notes: [] };
-  const parts = splitRead({
-    kind: 'poster', written_in: 'English', other_parish: null, notes: [],
-    details: { address: '1 Church St', phone: '', email: '', website: '' },
-    posters: [announce([1]), announce([2])],
-    events: [tagged(1, 'Fete', '2027-03-06')], services: [service],
-  }, { pictures: 2 });
+  const parts = keepParts(sortGroups([announce([1]), announce([2])], { pictures: 2 }), [
+    readOf(doc([ev('Fete', '2027-03-06')])),
+    readOf(doc([], { kind: 'timetable', services: [service], details: { address: '1 Church St', phone: '', email: '', website: '' } })),
+  ], { pictures: 2 });
   assert.deepStrictEqual(parts.map(p => p.read.services.length), [0, 1]);
   assert.strictEqual(parts[0].read.details, null);
   assert.deepStrictEqual(parts[1].read.details, { address: '1 Church St', phone: null, email: null, website: null });
-  assert.ok(!('poster' in parts[1].read.services[0]));
 });
 
-test('readPoster gives the parts when it is asked to tell posters apart, and none otherwise', async () => {
-  const doc = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [],
-    posters: [announce([1]), announce([2])], events: [tagged(1, 'A', '2027-01-10'), tagged(2, 'B', '2027-01-24')] };
-  const two = [{ bytes: image, mediaType: 'image/jpeg' }, { bytes: image, mediaType: 'image/jpeg' }];
-  const go = (split) => readPoster({ apiKey: 'k', images: two, context: 'ctx', split, words: 0,
-    fetchImpl: fakeFetch(haikuStream(JSON.stringify(doc))) });
-  const apart = await go(true);
-  assert.deepStrictEqual(apart.parts.map(p => p.read.events[0].title), ['A', 'B']);
-  assert.deepStrictEqual(apart.read.events.map(e => e.title), ['A', 'B'], 'the whole read too');
-  assert.strictEqual((await go(false)).parts, null);
-});
-
-test('readPoster counts a weekday printed alone from the today it is given, in the read and in each part', async () => {
-  const doc = { kind: 'poster', written_in: 'English', other_parish: null, details: NO_DETAILS, notes: [], services: [],
-    posters: [announce([1]), announce([2])],
-    events: [tagged(1, 'Feast of Saint Catherine', '2026-11-25', { date_printed: false, weekday_printed: 'Tuesday' }),
-      tagged(2, 'Youth night', '2026-11-27', { date_printed: true, weekday_printed: 'Friday' })] };
-  const two = [{ bytes: image, mediaType: 'image/jpeg' }, { bytes: image, mediaType: 'image/jpeg' }];
-  const r = await readPoster({ apiKey: 'k', images: two, context: 'ctx', split: true, words: 0, today: '2026-11-19',
-    fetchImpl: fakeFetch(haikuStream(JSON.stringify(doc))) });
+test('readPoster counts a weekday printed alone from the today it is given', async () => {
+  const d = doc([ev('Feast of Saint Catherine', '2026-11-25', { date_printed: false, weekday_printed: 'Tuesday' }),
+    ev('Youth night', '2026-11-27', { date_printed: true, weekday_printed: 'Friday' })]);
+  const r = await readPoster({ apiKey: 'k', image, mediaType: 'image/jpeg', context: 'ctx', today: '2026-11-19',
+    fetchImpl: fakeFetch(haikuStream(JSON.stringify(d))) });
   assert.deepStrictEqual(r.read.events.map(e => e.date), ['2026-11-24', '2026-11-27']);
-  assert.deepStrictEqual(r.parts.map(p => p.read.events[0].date), ['2026-11-24', '2026-11-27']);
+});
+
+// ── a read that stops part-way (Cabramatta's timetable, 28 Nov 2026) ──
+//
+// Out of room after 56 seconds in the editor, and cut off by the runtime at
+// 30 on WhatsApp: both kept nothing. Now what it finished is kept, and where
+// it stopped, for reading on.
+
+const PROGRAMME = [
+  ev('Divine Liturgy', '2026-12-06', { start_time: '09:00', event_type: 'liturgy' }),
+  ev('Vespers', '2026-12-12', { start_time: '17:00', event_type: 'vespers' }),
+  ev('Divine Liturgy', '2026-12-13', { start_time: '09:00', event_type: 'liturgy' }),
+  ev('Sunday School picnic', '2026-12-13', { start_time: '12:00' }),
+];
+/** The answer as far as it got: whole events, then part of the next. */
+const sofar = (events, into = 'Divine Litu') =>
+  `{"kind":"poster","written_in":"English","other_parish":null,"events":[${events.map(e => JSON.stringify(e)).join(',')},{"title":"${into}`;
+
+test('out of room, a read keeps every event it finished and says where it stopped', async () => {
+  const seen = [];
+  const r = await read(fakeFetch(haikuStream(sofar(PROGRAMME.slice(0, 3)), { stop: 'max_tokens' })), (e, p) => seen.push({ e, ...p }));
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.read.events.map(e => [e.title, e.date]),
+    [['Divine Liturgy', '2026-12-06'], ['Vespers', '2026-12-12'], ['Divine Liturgy', '2026-12-13']]);
+  assert.deepStrictEqual(r.cut, { after: '2026-12-13', count: 3, title: 'Divine Liturgy', why: 'max_tokens',
+    had: [{ date: '2026-12-06', start_time: '09:00', title: 'Divine Liturgy' }, { date: '2026-12-12', start_time: '17:00', title: 'Vespers' },
+      { date: '2026-12-13', start_time: '09:00', title: 'Divine Liturgy' }], note: r.cut.note });
+  assert.strictEqual(r.read.cut, r.cut);
+  assert.match(r.cut.note, /^Read up to 13 December, when there was more on the poster than one read takes: the rest is still to read\.$/);
+  assert.deepStrictEqual(r.read.notes, [r.cut.note]);
+  assert.deepStrictEqual(seen.filter(x => x.e === 'item').map(x => x.index), [0, 1, 2], 'the editor saw each as it came');
+  assert.strictEqual(r.read.kind, 'poster');
+
+  // Out of room before one event was whole: nothing to keep, as before.
+  const none = await read(fakeFetch(haikuStream(sofar([]), { stop: 'max_tokens' })));
+  assert.deepStrictEqual([none.ok, none.retry], [false, false]);
+  assert.match(none.error, /more on this poster/);
+});
+
+test('at the most events one read lists, it stops there too, to read on', async () => {
+  // Cabramatta's timetable is about 57 dated services: told the cap, a read lists 40 and ends.
+  const day = (n) => new Date(Date.UTC(2026, 10, 22 + n)).toISOString().slice(0, 10);
+  const forty = Array.from({ length: MAX_EVENTS }, (_, i) => ev('Divine Liturgy', day(i), { start_time: '09:00' }));
+  const r = await read(fakeFetch(haikuStream(JSON.stringify(doc(forty, { notes: ['Small print.'] })))));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.read.events.length, MAX_EVENTS);
+  assert.deepStrictEqual([r.cut.after, r.cut.why, r.cut.count, r.cut.had.length], ['2026-12-31', 'cap', 40, 40]);
+  assert.deepStrictEqual(r.read.notes, ['Small print.',
+    'Read up to 31 December, when it had read 40 events, the most one read takes: the rest is still to read.'],
+    'said once, as a stop, not as "check it for any after"');
+  assert.ok(!('capped' in r.read));
+  // Under it, a whole read: no stop.
+  const some = await read(fakeFetch(haikuStream(JSON.stringify(doc(forty.slice(0, 39))))));
+  assert.strictEqual(some.cut, null);
+});
+
+/** A fetch whose answer comes as far as `text` and then waits, until the read gives up on it. */
+const stalls = (text) => async (url, init) => {
+  const body = new TextEncoder().encode(haikuStream(text).split('event: content_block_stop')[0]);
+  return new Response(new ReadableStream({
+    start(c) {
+      c.enqueue(body);
+      init.signal.addEventListener('abort', () => c.error(init.signal.reason || new DOMException('aborted', 'AbortError')));
+    },
+  }), { status: 200 });
+};
+
+test('out of time, a read stops at its deadline and keeps what it finished', async (t) => {
+  // AbortSignal.timeout's timer holds nothing open in Node: this does, while the reads wait.
+  const hold = setInterval(() => {}, 50);
+  t.after(() => clearInterval(hold));
+  const t0 = Date.now();
+  const r = await read(stalls(sofar(PROGRAMME.slice(0, 2))), undefined, { deadline: Date.now() + 1200 });
+  assert.ok(Date.now() - t0 < 5000);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.read.events.map(e => e.title), ['Divine Liturgy', 'Vespers']);
+  assert.deepStrictEqual([r.cut.after, r.cut.why], ['2026-12-12', 'deadline']);
+  assert.match(r.cut.note, /^Read up to 12 December, when it ran out of time/);
+
+  // A stop the caller sets later (the editor gone: routes/admin.mjs) is the same.
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 300);
+  const later = await read(stalls(sofar(PROGRAMME.slice(0, 1))), undefined, { stop: stop.signal });
+  assert.deepStrictEqual([later.ok, later.cut.why, later.read.events.length], [true, 'deadline', 1]);
+
+  // Out of time with nothing whole: say so, to try again.
+  const nothing = await read(stalls(sofar([])), undefined, { deadline: Date.now() + 300 });
+  assert.deepStrictEqual([nothing.ok, nothing.retry], [false, true]);
+  assert.match(nothing.error, /took too long/);
+});
+
+test('reading on: told every event on the draft already, and where it stopped', () => {
+  const cut = { after: '2026-12-13', count: 2, title: 'Divine Liturgy',
+    had: [{ date: '2026-12-06', start_time: '09:00', title: 'Divine Liturgy' }, { date: '2026-12-13', start_time: '09:00', title: 'Divine Liturgy' }] };
+  const text = posterContext(PARISH, '2026-11-28', RULES, '', { pdf: true, after: cut });
+  assert.match(text, /This read goes on from one that stopped part-way, after “Divine Liturgy” on 13 December\. The events it read are on the draft already:\n- Sunday 6 December 2026 09:00: Divine Liturgy\n- Sunday 13 December 2026 09:00: Divine Liturgy\nList in events only the ones not among them, in the order the image gives them\./);
+  assert.doesNotMatch(posterContext(PARISH, '2026-11-28', RULES, '', { pdf: true }), /goes on from/);
+});
+
+test('what a read on says again is dropped, an event out of date order kept, and its own stop has all read so far', () => {
+  const after = { after: '2026-12-13', count: 3, title: 'Divine Liturgy', had: [
+    { date: '2026-12-06', start_time: '09:00', title: 'Divine Liturgy' }, { date: '2026-12-12', start_time: '17:00', title: 'Vespers' },
+    { date: '2026-12-13', start_time: '09:00', title: 'Divine Liturgy' }] };
+  const r = { ok: true, read: normalizeRead(doc([
+    ev('divine liturgy ', '2026-12-13', { start_time: '09:00' }),   // said again
+    ev('Vespers', '2026-12-12', { start_time: null }),              // said again, its time left out
+    ev('Sunday School picnic', '2026-12-13', { start_time: '12:00' }),
+    ev('Parish lunch', '2026-12-06', { start_time: '12:00' }),      // listed last, on the 6th
+    ev('Divine Liturgy', '2026-12-20', { start_time: '09:00' }),
+  ])) };
+  r.read.cut = { after: '2026-12-20', count: 5, title: 'Divine Liturgy', had: [], why: 'max_tokens' };
+  onFrom(r, after);
+  assert.deepStrictEqual(r.read.events.map(e => e.title), ['Sunday School picnic', 'Parish lunch', 'Divine Liturgy']);
+  assert.strictEqual(r.read.cut.count, 6, 'three before, three now');
+  assert.deepStrictEqual(r.read.cut.had.map(e => e.date), ['2026-12-06', '2026-12-12', '2026-12-13', '2026-12-13', '2026-12-06', '2026-12-20']);
 });

@@ -51,13 +51,20 @@
 //                    nothing publishes until each is confirmed on its card
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
+//                  A forward's sort (poster-read.mjs sortPosters) is answered from the
+//                  mode's `posters`, or one poster of every picture; a read of one of
+//                  them ("announcement n of the k") with its own events (`poster: n`).
+//   POST /__mode   {"cut": 3}  each read stops out of room (max_tokens) after 3 events,
+//                  part-way into the next; reading on ("goes on from one that stopped")
+//                  answers the ones after, the last one before them said again, as a
+//                  model does. {"cut": 0} reads whole again.
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image, pdfs
 //
 // Dev tooling only — nothing deployed imports it.
 import http from 'node:http';
 
 const port = Number(process.argv[2] || 8788);
-let mode = 'one', delay = 60;
+let mode = 'one', delay = 60, cut = 0, given = 0;
 const calls = [];
 
 /** St Emilia's Mums Group's poster, a month's meeting of it (St Nicholas, Punchbowl, 5 Nov 2026). */
@@ -315,6 +322,38 @@ for (const d of Object.values(DOCS)) {
   for (const e of d.events) { e.feast ??= ''; e.cancelled ??= false; }
 }
 
+/**
+ * What this request is answered with: a forward's sort, one of its posters,
+ * the whole of the mode's read — or, with `cut`, as much of it as one read
+ * gets through, stopped out of room.
+ */
+function answer(parsed, context) {
+  const doc = DOCS[mode];
+  const schema = parsed.output_config && parsed.output_config.format && parsed.output_config.format.schema;
+  if (schema && schema.properties && schema.properties.posters && !schema.properties.events) {
+    const pictures = parsed.messages[0].content.filter(c => c.type === 'image' || c.type === 'document').length;
+    const posters = doc.posters || [{ pictures: Array.from({ length: pictures }, (_, i) => i + 1), words: [], parish: '', place: '' }];
+    return { text: JSON.stringify({ posters }), stop: 'end_turn' };
+  }
+  const { posters, ...read } = doc;
+  const part = /announcement (\d+) of the (\d+) forwarded together/.exec(context || '');
+  let events = read.events.filter(e => !part || e.poster === Number(part[1])).map(({ poster, ...e }) => e);
+  if (!cut) return { text: JSON.stringify({ ...read, events }), stop: 'end_turn' };
+  // Reading on: the ones after what was given, the last of those said again.
+  if (/goes on from one that stopped part-way/.test(context || '')) events = events.slice(Math.max(0, given - 1));
+  else given = 0;
+  if (events.length <= cut + (given ? 1 : 0)) {
+    given = read.events.length;
+    return { text: JSON.stringify({ ...read, events }), stop: 'end_turn' };
+  }
+  const shown = events.slice(0, cut + (given ? 1 : 0));
+  given += cut;
+  const whole = JSON.stringify({ kind: read.kind, other_parish: read.other_parish, events: [...shown, events[shown.length]] });
+  // Part-way into the next event: its title, and no more.
+  const into = whole.lastIndexOf('"title"');
+  return { text: whole.slice(0, into + 20), stop: 'max_tokens' };
+}
+
 const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -325,7 +364,8 @@ http.createServer(async (req, res) => {
     const m = JSON.parse(body || '{}');
     if (m.mode) mode = m.mode;
     if (m.delay != null) delay = m.delay;
-    res.end(JSON.stringify({ mode, delay, calls: calls.length }));
+    if (m.cut != null) cut = m.cut;
+    res.end(JSON.stringify({ mode, delay, cut, calls: calls.length }));
     return;
   }
   if (req.url === '/__calls') { res.end(JSON.stringify(calls)); return; }
@@ -346,7 +386,7 @@ http.createServer(async (req, res) => {
     return;
   }
   res.writeHead(200, { 'content-type': 'text/event-stream' });
-  const text = JSON.stringify(DOCS[mode]);
+  const { text, stop } = answer(parsed, calls[calls.length - 1].context);
   res.write(frame('message_start', { message: { model: parsed.model, usage: { input_tokens: 1700 } } }));
   res.write(frame('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }));
   for (let i = 0; i < text.length; i += 9) {
@@ -354,7 +394,7 @@ http.createServer(async (req, res) => {
     res.write(frame('content_block_delta', { index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 9) } }));
   }
   res.write(frame('content_block_stop', { index: 0 }));
-  res.write(frame('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 380 } }));
+  res.write(frame('message_delta', { delta: { stop_reason: stop }, usage: { output_tokens: 380 } }));
   res.write(frame('message_stop', {}));
   res.end();
 }).listen(port, '127.0.0.1', () => console.log(`mock anthropic on ${port}`));

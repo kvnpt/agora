@@ -8,7 +8,7 @@
 //
 // lib/poster-read.mjs is the model side; lib/drafts.mjs has every step below.
 
-import { readPoster, posterContext, noteParts, PDF_TYPE } from './poster-read.mjs';
+import { readPoster, sortPosters, sortGroups, keepParts, posterContext, noteParts, PDF_TYPE } from './poster-read.mjs';
 import { placeRead, afterServices, placeHosts, matchOccurrences, matchOnFile, suggestEnds, suggestLanguages,
   mergeRead, setReadStatus, splitDraft } from './drafts.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
@@ -53,7 +53,11 @@ export async function readContext(db, parishId) {
  * @param {string} [o.note]            words sent with it: a suggestion's note, a WhatsApp caption
  * @param {boolean} [o.whatsapp]       the note came with the image on WhatsApp
  * @param {boolean} [o.split]          several pictures may be several posters, each a draft of its
- *                                     own (a WhatsApp forward's, as it came: poster-read.mjs splitRead)
+ *                                     own (a WhatsApp forward's, as it came: readApart)
+ * @param {number} [o.deadline]        ms since the epoch: stop reading then, and keep what was read
+ * @param {AbortSignal} [o.stop]       the same, known only later (the editor gone: routes/admin.mjs)
+ * @param {{after, count, title}} [o.after]  read on from where the draft's last read stopped
+ *                                     (its `read_cut`): only what comes after, added to its cards
  * @param {Function} [o.send]          the editor's stream: 'kind', 'field', 'item' as they are written
  * @param {(read) => string|null} [o.choose]
  *   For a draft whose parish was only a guess (a WhatsApp sender's): the
@@ -66,36 +70,36 @@ export async function readContext(db, parishId) {
  *   it was several posters: each one's {id, draft, read, moved, pictures},
  *   the first this draft.
  */
-export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, images = null, note = '', whatsapp = false, split = false, send = () => {}, choose = null }) {
+export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, images = null, note = '', whatsapp = false, split = false, send = () => {}, choose = null, deadline = null, stop = null, after = null }) {
   const db = env.DB;
   await setReadStatus(db, draft.id, 'reading');
   const context = await readContext(db, draft.parish_id);
   const { parish, zone, today, rules } = context;
 
   const pictures = images && images.length ? images : (bytes ? [{ bytes, mediaType }] : []);
-  const apart = split && pictures.length > 1;
   const words = noteParts(note);
-  const read = await readPoster({
-    apiKey,
-    baseUrl: env.ANTHROPIC_BASE_URL,
-    images: pictures,
-    split: apart,
-    words: words.parts.length,
-    today,
-    context: posterContext({ ...parish, timezone: zone }, today, rules, note,
-      { image: pictures.length > 0, whatsapp, pictures: pictures.length, split: apart,
-        pdf: pictures.some(p => p.mediaType === PDF_TYPE) }),
-  }, send);
+  const base = { apiKey, baseUrl: env.ANTHROPIC_BASE_URL, today, deadline, stop };
+  const contextFor = (own, o = {}) => posterContext({ ...parish, timezone: zone }, today, rules, o.note ?? note,
+    { image: own.length > 0, whatsapp, pictures: own.length, pdf: own.some(p => p.mediaType === PDF_TYPE),
+      part: o.part || null, after });
+  const read = split && pictures.length > 1 && !after
+    ? await readApart({ base, pictures, note, words, contextFor, parish: { ...parish, timezone: zone }, send })
+    : await readPoster({ ...base, images: pictures, context: contextFor(pictures) }, send);
   // One line per read, for Workers Observability: what it cost and how long.
   console.log(JSON.stringify({ poster_read: {
     draft: draft.id, parish: draft.parish_id, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
     ...(pictures.length > 1 ? { pictures: pictures.length } : {}),
     ...(pictures.some(p => p.mediaType === PDF_TYPE) ? { pdf: true } : {}),
+    ...(read.sorted ? { sorted: read.sorted } : {}),
     ...(read.parts ? { posters: read.parts.length } : {}),
+    ...(after ? { after: after.after } : {}),
     ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
+    ...(read.ok && read.cut ? { cut: read.cut.why } : {}),
   } }));
+  // Read on from a stop: only what it had not, and where this one stopped, if it did, counted from the first.
+  if (read.ok && after) onFrom(read, after);
   if (!read.ok) {
-    await setReadStatus(db, draft.id, 'failed');
+    await setReadStatus(db, draft.id, after ? 'read' : 'failed');
     return { ok: false, error: read.error, retry: read.retry };
   }
 
@@ -104,7 +108,7 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
   // poster that came alone.
   const said = whatsapp ? plainWords(note) : null;
   if (!read.parts) {
-    const r = await squareRead(env, draft, read.read, { choose, context, words: said });
+    const r = await squareRead(env, draft, read.read, { choose: after ? null : choose, context, words: after ? null : said, append: !!after });
     return { ok: true, draft: r.draft, read: read.read, moved: r.moved };
   }
 
@@ -125,6 +129,77 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
 }
 
 /**
+ * The rest of a read that stopped part-way, squared with what it has: an
+ * event it read already (by date and title, and time when both give one) is
+ * one the draft has, said again, and goes. Where this read stopped, if it
+ * did, has every event read so far, the first read's too.
+ */
+export function onFrom(read, after) {
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const had = after.had || [];
+  const known = (e) => had.some(h => (h.date || null) === (e.date || null) && same(h.title, e.title)
+    && (!h.start_time || !e.start_time || h.start_time === e.start_time));
+  read.read.events = read.read.events.filter(e => !known(e));
+  const cut = read.read.cut;
+  if (cut) {
+    cut.had = [...had, ...read.read.events.map(e => ({ date: e.date, start_time: e.start_time, title: e.title }))];
+    cut.count = cut.had.length;
+  }
+  return read;
+}
+
+/**
+ * A WhatsApp forward of several pictures, which may be several posters: which
+ * announcements it is (sortPosters, a small request), then each read on its
+ * own, at once. One announcement — or a sort that fails or says nothing
+ * clear — is one read of every picture, as before.
+ *
+ * It was one read that did both, with a schema the API would not compile
+ * (400, St Mary's, Mays Hill's two posters, 28 Nov 2026). Read apart, each
+ * poster is also a shorter read, and they run side by side.
+ *
+ * @returns readPoster's answer, with `parts` (keepParts's) when there are
+ *   several posters, and `sorted`: how many announcements the sort said, or
+ *   'failed'.
+ */
+async function readApart({ base, pictures, note, words, contextFor, parish, send }) {
+  const started = Date.now();
+  const sorted = await sortPosters({ ...base, images: pictures, parish, note });
+  const groups = sorted.ok ? sortGroups(sorted.posters, { pictures: pictures.length, words: words.parts.length }) : null;
+  if (!sorted.ok) console.error(`[poster-read] sort: ${sorted.error}`);
+  if (!groups || groups.length < 2) {
+    const one = await readPoster({ ...base, images: pictures, context: contextFor(pictures) }, send);
+    return { ...one, ms: Date.now() - started, sorted: sorted.ok ? 1 : 'failed' };
+  }
+  const anyWords = groups.some(g => g.words.length);
+  const reads = await Promise.all(groups.map((g, i) => {
+    const own = g.pictures.map(n => pictures[n - 1]);
+    // Its own part of the words; when the sort gave none any, all of them,
+    // said to be everybody's.
+    const text = anyWords ? g.words.map(k => words.parts[k - 1]).join(words.sep) : note;
+    return readPoster({ ...base, images: own,
+      context: contextFor(own, { note: text, part: { n: i + 1, of: groups.length, shared: !anyWords && !!note } }) });
+  }));
+  const usage = { input_tokens: 0, output_tokens: 0 };
+  for (const r of [sorted, ...reads]) {
+    if (r.usage) {
+      usage.model = usage.model || r.usage.model;
+      usage.input_tokens += r.usage.input_tokens || 0;
+      usage.output_tokens += r.usage.output_tokens || 0;
+    }
+  }
+  const ms = Date.now() - started;
+  const parts = keepParts(groups, reads, { pictures: pictures.length });
+  if (!parts.length) {
+    const failed = reads.find(r => !r.ok) || { error: 'Nothing could be read.', retry: true };
+    return { ok: false, error: failed.error, retry: failed.retry, ms, usage, sorted: groups.length };
+  }
+  // The whole read, for the draft that came: its first part's.
+  const read = parts[0].read;
+  return { ok: true, read, cut: read.cut || null, parts: parts.length > 1 ? parts : null, usage, ms, sorted: groups.length };
+}
+
+/**
  * A finished read, squared with the parish its draft is at — or moved to,
  * when `choose` says whose it is — and merged into the draft.
  *
@@ -133,8 +208,9 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
  * @param {object} o
  * @param {object} o.context  readContext() at the draft's parish
  * @param {string|null} [o.words]  the sender's words for its one event's description (plainWords)
+ * @param {boolean} [o.append]  the rest of a read that stopped part-way: added after the cards
  */
-async function squareRead(env, draft, read, { choose = null, context, words = null }) {
+async function squareRead(env, draft, read, { choose = null, context, words = null, append = false }) {
   const db = env.DB;
   let parishId = draft.parish_id;
   let { parish, rules, zone } = context;
@@ -185,7 +261,7 @@ async function squareRead(env, draft, read, { choose = null, context, words = nu
     // Not "from poster": the WhatsApp words, shown under it, are where it came from.
     only.suggested = [...(only.suggested || []), 'description'];
   }
-  return { draft: await mergeRead(db, draft.id, read), moved };
+  return { draft: await mergeRead(db, draft.id, read, { append }), moved };
 }
 
 /**
@@ -199,7 +275,7 @@ async function squareRead(env, draft, read, { choose = null, context, words = nu
  *
  * @returns {Promise<{ok: true, read: object, parishId: string}|{ok: false, error: string}>}
  */
-export async function readForSuggestion(env, parishId, { apiKey, images = [], note = '', whatsapp = true, fixed = false }) {
+export async function readForSuggestion(env, parishId, { apiKey, images = [], note = '', whatsapp = true, fixed = false, deadline = null }) {
   const db = env.DB;
   let { parish, zone, today, rules } = await readContext(db, parishId);
   const read = await readPoster({
@@ -207,6 +283,7 @@ export async function readForSuggestion(env, parishId, { apiKey, images = [], no
     baseUrl: env.ANTHROPIC_BASE_URL,
     images,
     today,
+    deadline,
     context: posterContext({ id: parishId, ...(parish || {}), timezone: zone }, today, rules, note,
       { image: images.length > 0, whatsapp, pictures: images.length, pdf: images.some(p => p.mediaType === PDF_TYPE) }),
   });

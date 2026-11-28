@@ -755,6 +755,7 @@
             <div class="ee-status" data-ee="status" aria-live="polite"></div>
             <div class="ee-read-notes" data-ee="read-notes" hidden></div>
             <div class="ee-poster-actions">
+              <button type="button" class="ee-link" data-ee="more" hidden>Read the rest</button>
               <button type="button" class="ee-link" data-ee="retry" hidden>Try again</button>
               <button type="button" class="ee-link" data-ee="stop" hidden>Stop watching</button>
             </div>
@@ -897,8 +898,10 @@
 
     $('retry').addEventListener('click', () => {
       if (state.read && state.read.blob) startRead(state.read.blob);
-      else startRead(null);
+      else startRead(null, { more: !!(state.read && state.read.more) });
     });
+    // A read that stopped part-way, read on from where it stopped.
+    $('more').addEventListener('click', () => startRead(null, { more: true }));
     // Closes the stream on this side only: the Worker finishes the read and
     // saves it either way, so "stop" is stop WATCHING.
     $('stop').addEventListener('click', () => {
@@ -957,7 +960,7 @@
       // answers with the draft as it was: the pictures stand.
       const joined = state.joined && d.poster_path === state.joined.from ? state.joined : null;
       state.draft = { id: d.id, poster_path: joined ? joined.to : d.poster_path, read_status: d.read_status,
-        read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null,
+        read_kind: d.read_kind, read_notes: d.read_notes || [], read_cut: d.read_cut || null, read_parish: d.read_parish || null,
         read_language: d.read_language || null, read_details: d.read_details || null,
         source: d.source || null, message_text: d.message_text || null,
         sender_name: d.sender_name || null,
@@ -2666,7 +2669,7 @@
 
     function abortRead() {
       if (state.read && state.read.ctrl) state.read.ctrl.abort();
-      if (state.read) state.read.active = false;
+      if (state.read) { state.read.active = false; state.read.next = null; }
     }
 
     /**
@@ -2729,18 +2732,27 @@
       startRead(file);
     }
 
-    /** `blob`: a picture, several (a gallery, read as one), a PDF, or none to read again what the draft has. */
-    async function startRead(blob) {
+    /**
+     * `blob`: a picture, several (a gallery, read as one), a PDF, or none to
+     * read again what the draft has. `more`: read on from where the draft's
+     * read stopped part-way (its `read_cut`), the rest added after its cards;
+     * `round` counts the reads on that followed each other by themselves.
+     */
+    async function startRead(blob, { more = false, round = 0 } = {}) {
       abortRead();
       const ctrl = new AbortController();
-      state.read = { ctrl, active: true, kind: null, items: 0, blob };
+      const upTo = more && state.draft && state.draft.read_cut ? dateLabel(state.draft.read_cut.after) : '';
+      // Reading on, its events are the cards after the ones there are (routes/admin.mjs).
+      const base = more ? state.cards.filter(c => c.id).length : 0;
+      state.read = { ctrl, active: true, kind: null, items: 0, blob, more, round, next: null, base };
       state.readFinished = false;
       renderIntent();
       renderReadNotes(null);
       for (const c of state.cards) c.readFilling = new Set();
-      setStatus(state.posterUrl || blob ? 'Reading the poster…' : 'Reading the message…', 'busy', { stop: true });
+      setStatus(more ? `Reading the rest of the poster, after ${upTo}…`
+        : state.posterUrl || blob ? 'Reading the poster…' : 'Reading the message…', 'busy', { stop: true });
       sync();
-      const url = `/api/admin/drafts/${state.draft.id}/poster${blob ? '' : '?reread=1'}`;
+      const url = `/api/admin/drafts/${state.draft.id}/poster${blob ? '' : more ? '?reread=1&more=1' : '?reread=1'}`;
       // Several pictures go as a form of them (pictureBody); one as itself.
       const send = !blob ? { body: undefined, headers: {} }
         : Array.isArray(blob) ? pictureBody(blob)
@@ -2778,14 +2790,30 @@
         parser.end();
       } catch {
         if (ctrl.signal.aborted) return;
-        setStatus('The connection dropped — the poster is still being read; reopen this draft in a minute.', 'note');
+        // The read goes on, and is saved (routes/admin.mjs): what it read is
+        // filled in here once it is.
+        setStatus('The connection dropped. The poster is still being read, and will be filled in here when it is done.', 'note');
+        if (state.draft) watchRead(state.draft.id);
       } finally {
-        if (state.read && state.read.ctrl === ctrl) state.read.active = false;
+        const mine = state.read && state.read.ctrl === ctrl;
+        if (mine) state.read.active = false;
         $('stop').hidden = true;
         updateHead();
         sync();
+        // A read that ran out of room reads on, by itself (readResult).
+        const next = mine && !state.closed ? state.read.next : null;
+        if (next) startRead(null, next);
       }
     }
+
+    /**
+     * Reads on, after one that stopped part-way, that follow by themselves:
+     * only a read that ran out of room (`max_tokens`, or the most events one
+     * read lists, `cap`), with the editor open,
+     * this many in a row. One out of time, or past these, waits for Read the
+     * rest.
+     */
+    const MORE_ROUNDS = 4;
 
     function onFrame({ event, data }) {
       let d;
@@ -2808,8 +2836,10 @@
         readField(d);
       } else if (event === 'item') {
         state.read.items = Math.max(state.read.items, d.index + 1);
-        if (state.multi) setStatus(`Reading the poster… ${state.read.items} found so far.`, 'busy', { stop: true });
+        if (state.read.more) setStatus(`Reading the rest of the poster… ${state.read.items - state.read.base} more so far.`, 'busy', { stop: true });
+        else if (state.multi) setStatus(`Reading the poster… ${state.read.items} found so far.`, 'busy', { stop: true });
       } else if (event === 'error') {
+        if (state.read) state.read.failed = true;
         setStatus(d.error, 'error', { retry: !!d.retry });
       } else if (event === 'result') {
         readResult(d);
@@ -2857,14 +2887,28 @@
         cardFromServer(card, row, { keepLocal: true });
         if (!Object.keys(card.pending).length) setSaved(card, 'saved');
       });
+      // A card the stream began that the read did not keep: reading on, one
+      // it said again of the cards it had (draft-read.mjs onFrom).
+      for (const c of state.cards.slice(rows.length)) if (c.provisional && !c.id) dropCard(c);
       // Anything typed into a card while it was being read goes now.
       for (const c of state.cards) if (Object.keys(c.pending).length) schedule(c, 0);
       if (state.cards.length > 1) enterMulti();
       state.cards.forEach(refreshCard);
       if (d.configured === false) {
         setStatus(d.error || 'Reading posters is not set up on this site — fill in the details by hand.', 'note');
+      } else if (state.read && state.read.failed) {
+        // The error stays said. Reading on that failed keeps what the read
+        // before it got, and Read the rest with it.
+        renderReadNotes(d.draft);
       } else if (d.draft.read_status === 'read') {
         setStatus(readSummary(d.draft), 'done');
+        // More on the poster than one read takes: the rest is read now, once
+        // this stream has ended (startRead).
+        const cut = d.draft.read_cut;
+        const round = (state.read && state.read.round) || 0;
+        if (cut && cut.after && (cut.why === 'max_tokens' || cut.why === 'cap') && round + 1 < MORE_ROUNDS && state.read) {
+          state.read.next = { more: true, round: round + 1 };
+        }
       }
       renderSign();
       renderIntent();
@@ -2942,6 +2986,8 @@
       const notes = (draft && draft.read_notes) || [];
       box.innerHTML = notes.map(n => `<p class="ee-note ee-note-read">${esc(n)}</p>`).join('');
       box.hidden = !notes.length;
+      // A read that stopped part-way: the rest, read on from where it stopped.
+      $('more').hidden = !(draft && draft.read_cut && draft.read_cut.after);
     }
 
     // ── the timetable: what a programme was matched to, and what a sign is set beside ──

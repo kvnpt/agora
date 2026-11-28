@@ -478,6 +478,15 @@ export function readSummary(draft) {
   return parts.join('; ');
 }
 
+/**
+ * How far a read that stopped part-way got — "13 Dec", the last date
+ * it read (drafts.mjs readCut) — or null when it read the whole poster.
+ */
+export function readUpTo(draft) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((draft && draft.read_cut && draft.read_cut.after) || '');
+  return m ? `${+m[3]} ${MONTH[+m[2] - 1]}` : null;
+}
+
 export const REPLIES = {
   linked: (email) => `Linked. Posters you send here become drafts for ${email}. Forward a poster with its words and I'll read it.`,
   badCode: () => 'That code didn\'t work. It may have run out: open Link WhatsApp again for a new one.',
@@ -492,10 +501,15 @@ export const REPLIES = {
   gorgonTooLarge: () => 'That PDF is too large for Gorgon (25 MB at most). Save it to Files and use Upload there instead.',
   gorgonFailed: () => 'I couldn\'t download that PDF from WhatsApp. Send it again in a minute.',
   // `at` is "at St Nicholas, Punchbowl", or "without a parish yet".
-  read: (summary, at, link) => summary
-    ? `Got it: ${summary}. It's a draft ${at} until it's published: ${link}`
-    : `Got it, but I couldn't find an event in it. It's a draft ${at}, to fill in: ${link}`,
+  // `upTo`, when the read stopped part-way: the last date it read (readUpTo).
+  read: (summary, at, link, upTo = null) => upTo
+    ? `Got it: ${summary}. I read it as far as ${upTo}; open the draft and choose Read the rest for the others. It's a draft ${at} until it's published: ${link}`
+    : summary
+      ? `Got it: ${summary}. It's a draft ${at} until it's published: ${link}`
+      : `Got it, but I couldn't find an event in it. It's a draft ${at}, to fill in: ${link}`,
   reading: (at, link) => `Got it. It's still being read, and will be a draft ${at}: ${link}`,
+  // After `reading`, a read that stopped part-way: how far it got.
+  readOn: (summary, upTo, link) => `Read as far as ${upTo}: ${summary}. Open the draft and choose Read the rest for the others: ${link}`,
   readFailed: (error, at, link) => `Got it, but reading it didn't work (${String(error || '').replace(/[.\s]+$/, '')}). It's a draft ${at}; open it to read it again or fill it in: ${link}`,
   unread: (at, link) => `Got it. It's a draft ${at}: ${link}`,
   // A forward of several posters, a draft each (routes/ingest.mjs): one
@@ -507,7 +521,7 @@ export const REPLIES = {
     const head = late
       ? `Read it: ${n} posters, so ${n} drafts${one ? ` ${one}` : ''}:`
       : `Got it: ${n} posters, so ${n} drafts${one ? ` ${one}` : ''}, waiting until they're published:`;
-    return [head, ...items.map(i => `• ${i.summary || 'one to fill in'}${one ? '' : `, ${i.at}`}: ${i.link}`)].join('\n');
+    return [head, ...items.map(i => `• ${i.summary || 'one to fill in'}${i.upTo ? ` (read as far as ${i.upTo}: open it to read the rest)` : ''}${one ? '' : `, ${i.at}`}: ${i.link}`)].join('\n');
   },
   added: (at, link) => `Added that to the draft ${at}: ${link}`,
   moved: (at, link) => `Moved the draft to ${at.replace(/^at /, '')}: ${link}`,

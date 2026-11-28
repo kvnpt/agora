@@ -299,7 +299,9 @@ export function draftOut(d, cards = []) {
     // Five kinds of poster became one (poster-read.mjs READ_KINDS); a draft read
     // before that says which of the five, and is a poster.
     read_kind: d.read_kind == null ? null : (['timetable', 'not_an_event'].includes(d.read_kind) ? d.read_kind : 'poster'),
-    read_notes: parseList(d.read_notes),
+    // The notes as words, and where a read that stopped part-way stopped.
+    read_notes: parseList(d.read_notes).map(n => (n && typeof n === 'object' ? n.note : n)).filter(n => typeof n === 'string'),
+    read_cut: readCut(parseList(d.read_notes)),
     read_parish: parseObject(d.read_parish),
     // What the image was written in, when it was not English — and what a
     // sign said: weekly services to add to the timetable and the parish's
@@ -443,8 +445,8 @@ function readColumn(f, v) {
  *
  * Returns the draft as it now stands, or null if it was discarded mid-read.
  */
-export async function mergeRead(db, draftId, read) {
-  const draft = await db.prepare('SELECT id FROM drafts WHERE id = ?').bind(draftId).first();
+export async function mergeRead(db, draftId, read, { append = false } = {}) {
+  const draft = await db.prepare('SELECT id, read_notes FROM drafts WHERE id = ?').bind(draftId).first();
   if (!draft) return null;
   const existing = (await db.prepare(
     'SELECT * FROM draft_events WHERE draft_id = ? ORDER BY position, id').bind(draftId).all()).results || [];
@@ -452,7 +454,8 @@ export async function mergeRead(db, draftId, read) {
   let nextPos = existing.reduce((m, c) => Math.max(m, c.position), -1) + 1;
 
   read.events.forEach((ev, i) => {
-    const card = existing[i];
+    // The rest of a read that stopped part-way is new cards, after the ones it made.
+    const card = append ? null : existing[i];
     const filled = [];
     const set = {};
     for (const f of READ_FIELDS) {
@@ -490,16 +493,45 @@ export async function mergeRead(db, draftId, read) {
       stmts.push(insertStatement(db, draftId, nextPos++, set));
     }
   });
-  stmts.push(db.prepare(
-    `UPDATE drafts SET read_status = 'read', read_kind = ?, read_notes = ?, read_parish = ?,
-       read_language = ?, read_services = ?, read_details = ?, updated_at = ${NOW} WHERE id = ?`
-  ).bind(read.kind, read.notes.length ? JSON.stringify(read.notes) : null,
-    read.parish ? JSON.stringify(read.parish) : null,
-    read.language || null,
-    read.services && read.services.length ? JSON.stringify(read.services) : null,
-    read.details ? JSON.stringify(read.details) : null, draftId));
+  // Where a read stopped part-way is kept with its note (readCut), for
+  // reading on from there; the rest of it replaces that note with its own.
+  const notes = read.notes.map(n => (read.cut && n === read.cut.note ? { cut: cutOf(read.cut), note: n } : n));
+  if (append) {
+    const before = parseList(draft.read_notes).filter(n => typeof n === 'string');
+    const all = [...before, ...notes];
+    stmts.push(db.prepare(
+      `UPDATE drafts SET read_status = 'read', read_notes = ?, updated_at = ${NOW} WHERE id = ?`
+    ).bind(all.length ? JSON.stringify(all) : null, draftId));
+  } else {
+    stmts.push(db.prepare(
+      `UPDATE drafts SET read_status = 'read', read_kind = ?, read_notes = ?, read_parish = ?,
+         read_language = ?, read_services = ?, read_details = ?, updated_at = ${NOW} WHERE id = ?`
+    ).bind(read.kind, notes.length ? JSON.stringify(notes) : null,
+      read.parish ? JSON.stringify(read.parish) : null,
+      read.language || null,
+      read.services && read.services.length ? JSON.stringify(read.services) : null,
+      read.details ? JSON.stringify(read.details) : null, draftId));
+  }
   await db.batch(stmts);
   return getDraft(db, draftId);
+}
+
+const cutOf = (c) => ({
+  after: c.after || null, count: c.count || 0, title: c.title || null, why: c.why || null,
+  // Every event read so far, for reading on (poster-read.mjs continuation).
+  had: (Array.isArray(c.had) ? c.had : []).slice(0, 400).filter(e => e && typeof e === 'object')
+    .map(e => ({ date: e.date || null, start_time: e.start_time || null, title: e.title ? String(e.title).slice(0, 200) : null })),
+});
+
+/**
+ * Where a draft's read stopped part-way — {after, count, title, why, had}:
+ * the last date it read, its event, and every event read so far — or null
+ * when it read everything (or nothing). Kept in read_notes beside the note
+ * that says so.
+ */
+export function readCut(notes) {
+  const m = (Array.isArray(notes) ? notes : []).find(n => n && typeof n === 'object' && n.cut);
+  return m ? cutOf(m.cut) : null;
 }
 
 /**
@@ -1275,8 +1307,8 @@ export const setReadStatus = (db, draftId, status) => db.prepare(
 ).bind(status, draftId).run();
 
 /**
- * A WhatsApp forward of several posters as a draft for each (poster-read.mjs
- * splitRead, draft-read.mjs): the draft keeps the first part's pictures and
+ * A WhatsApp forward of several posters as a draft for each (draft-read.mjs
+ * readApart, poster-read.mjs keepParts): the draft keeps the first part's pictures and
  * words, and every other part is a draft of its own beside it — at the same
  * parish, from the same sender, unopened — with its pictures and its words.
  * Its pictures are the draft's own, by number: 1 is its poster, then its
