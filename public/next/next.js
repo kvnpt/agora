@@ -3853,7 +3853,9 @@
 
   function timesHTML(p, focus = null) {
     const hasTimes = rulesOf(p.id).some(liveRule);
-    return `${hasTimes ? timetable(p.id, { focus }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+    // A group (a run club) meets where each event says: nothing regular is no "service times".
+    const none = p.kind === 'body' ? 'Nothing regular on file yet.' : `No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}`;
+    return `${hasTimes ? timetable(p.id, { focus }) : `<div class="tt-none">${none}</div>`}
       ${timesSource(p.id)}
       ${addBox(SUGGEST.service, 'Add a service time')}`;
   }
@@ -3897,8 +3899,9 @@
       // What its services are tagged with; none tagged, no box.
       langs.length ? `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · '))}</b></div>` : '',
       // The jurisdiction says itself in its colour, as its tab does, and opens
-      // its collection, as More's "More … parishes" does.
-      `<button class="sum sum-link" type="button" data-act="juris-of"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}${I.chev}</b></button>`,
+      // its collection, as More's "More … parishes" does. 'other' is none (a
+      // run club under no archdiocese): no box, not a chevron to nowhere.
+      JURIS[p.jurisdiction] ? `<button class="sum sum-link" type="button" data-act="juris-of"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction].short)}${I.chev}</b></button>` : '',
     ].join('');
   }
   /** The card's top: its logo, its names and where it is. */
@@ -4842,7 +4845,7 @@
         <div class="actions">
           ${pinHref(lat, lng) ? `<a class="abtn primary" href="${esc(pinHref(lat, lng))}" target="_blank" rel="noopener">${I.place}<span>Google Maps</span></a>` : ''}
           ${live ? `<a class="abtn" href="${esc(live)}" target="_blank" rel="noopener">${I.live}<span>Watch live</span></a>` : ''}
-          <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
+          <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>${p && p.kind === 'body' ? 'Group' : 'Parish'}</span></button>
           ${edits ? `<button class="abtn" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>Edit</span></button>` : ''}
         </div>
         ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`

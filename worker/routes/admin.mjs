@@ -60,6 +60,7 @@ import { whatsappConfig, ensureWhatsappTables, newCode, maskPhone, linkUrl, CODE
   from '../lib/whatsapp.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
 import { suggestAcronym } from '../lib/acronym-suggest.mjs';
+import { PIN_COLS_SQL } from '../../public/shared/parish-join.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
 const { isResolvableTimezone, DEFAULT_TIMEZONE } = timezones;
@@ -632,7 +633,7 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
     return { response: json({ error: 'end_utc is before start_utc' }, 400) };
   }
 
-  const parish = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?')
+  const parish = await env.DB.prepare(`SELECT id, ${PIN_COLS_SQL} FROM parishes WHERE id = ?`)
     .bind(parish_id).first();
   if (!parish) return { response: json({ error: 'Invalid parish_id' }, 400) };
   // Where, when it is not here (lib/venues.mjs): another parish, or a place
@@ -921,7 +922,7 @@ async function sweepSuggestionPosters(env, before) {
 // Keep an event's coordinates in step with its parish, unless it is elsewhere.
 async function syncEventCoordsForParish(db, parishId) {
   if (!parishId || parishId === '_unassigned') return;
-  const p = await db.prepare('SELECT lat, lng FROM parishes WHERE id = ?').bind(parishId).first();
+  const p = await db.prepare(`SELECT ${PIN_COLS_SQL} FROM parishes WHERE id = ?`).bind(parishId).first();
   if (!p || p.lat == null) return;
   await db.prepare(
     `UPDATE events SET lat = ?, lng = ? WHERE parish_id = ?
@@ -1728,7 +1729,7 @@ export function registerAdminRoutes(router) {
       // handing one away is how a scope is escaped in a single PATCH.
       const scopedMove = outOfScope(c, parish_id);
       if (scopedMove) return scopedMove;
-      const p = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').bind(parish_id).first();
+      const p = await env.DB.prepare(`SELECT id, ${PIN_COLS_SQL} FROM parishes WHERE id = ?`).bind(parish_id).first();
       if (!p) return json({ error: 'Invalid parish_id' }, 400);
       put('parish_id', parish_id); put('lat', p.lat); put('lng', p.lng);
     }
@@ -1747,7 +1748,7 @@ export function registerAdminRoutes(router) {
       } else if (v.venue.location_override) {
         await pinFromWords(env.DB, params.id, v.venue.location_override);
       } else {
-        const p = await env.DB.prepare('SELECT lat, lng FROM parishes WHERE id = ?')
+        const p = await env.DB.prepare(`SELECT ${PIN_COLS_SQL} FROM parishes WHERE id = ?`)
           .bind(parish_id || event.parish_id).first();
         if (p) {
           await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')

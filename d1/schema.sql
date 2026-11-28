@@ -136,7 +136,23 @@ CREATE TABLE parishes (
   --   hand       a person keeps it; nothing automated writes to it
   -- Replaced the info_overrides rulings as the thing an import asks. Last,
   -- because it arrived by ALTER (d1/migrations/017) and ALTER appends.
-  read_from   TEXT NOT NULL DEFAULT 'directory' CHECK(read_from IN ('directory','website','hand'))
+  read_from   TEXT NOT NULL DEFAULT 'directory' CHECK(read_from IN ('directory','website','hand')),
+
+  -- What the row is (d1/migrations/042). 'parish' is a place people go to
+  -- pray, monasteries included. 'body' is a group with a card, links and
+  -- events of its own but no place of its own: an inter-parish youth body,
+  -- a uni group, a run club. `body_type` says which ('youth', 'campus',
+  -- 'community'). No CHECK on either, so a new kind costs no rebuild: the
+  -- routes say what they take.
+  kind        TEXT NOT NULL DEFAULT 'parish',
+  body_type   TEXT,
+
+  -- 0 = nowhere to visit: a body, or a monastery closed to visitors with a
+  -- PO Box for an address. lat/lng stay NOT NULL (rebuilding this table
+  -- would cascade-delete parish_links), so the point stays stored and every
+  -- public read selects it through pinSql (public/shared/parish-join.mjs),
+  -- which says NULL: no dot, no distance, no city.
+  has_place   INTEGER NOT NULL DEFAULT 1
 );
 
 -- Sentinel parish for events whose parish is unknown.

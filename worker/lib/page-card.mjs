@@ -309,7 +309,7 @@ function summaryHTML(m, today) {
   // What its services are tagged with; none tagged, no box.
   const langs = ruleFilters.parishLangsOf(m.rules.filter(r => lines.isLive(r, today)));
   return `${nextCell}${langs.length ? `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · '))}</b></div>` : ''}
-      <a class="sum sum-link" href="/${esc(m.parish.jurisdiction || '')}"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction) || m.parish.jurisdiction || '')}</b></a>`;
+      ${JURIS_SHORT(m.parish.jurisdiction) ? `<a class="sum sum-link" href="/${esc(m.parish.jurisdiction)}"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction))}</b></a>` : ''}`;
 }
 
 /** A parish's card, as next.js's openParish draws it. */
@@ -352,7 +352,7 @@ export function parishCardHTML(m) {
         </div>
         ${sourceLine.detailsSourceHTML(p, { cls: 'src-line', now: m.now })}</div>
       <h2 class="sec">Timetable</h2>
-      <div class="p-times">${times || `<div class="tt-none">No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}</div>`}
+      <div class="p-times">${times || `<div class="tt-none">${p.kind === 'body' ? 'Nothing regular on file yet.' : `No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}`}</div>`}
         ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
         ${addBox(p.id, 'Add a service time')}</div>
       <section class="cu-band" id="coming-up">
@@ -429,7 +429,7 @@ export function eventCardHTML(m) {
       <div class="actions">
         ${lat && lng ? `<a class="abtn primary" href="${esc(mapsHref({ lat, lng }))}" target="_blank" rel="noopener">${I.place}<span>Google Maps</span></a>` : ''}
         ${!e.hide_live && p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
-        <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
+        <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>${p.kind === 'body' ? 'Group' : 'Parish'}</span></a>
       </div>
       ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
         : `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}

@@ -40,7 +40,8 @@ test("a joined rule projects in its parish's zone, with its parish's address to 
 });
 
 test('the Worker builds its join from this list, not its own', () => {
-  assert.match(PARISH_JOIN_SQL, /^p\.lat AS p_lat, /);
+  // The pin through pinSql: a row with no place (has_place = 0) joins none.
+  assert.match(PARISH_JOIN_SQL, /^CASE WHEN p\.has_place = 0 THEN NULL ELSE p\.lat END AS p_lat, /);
   const expand = fs.readFileSync('worker/lib/expand.mjs', 'utf8');
   assert.ok(expand.includes("from '../../public/shared/parish-join.mjs'"));
   assert.ok(!/p\.website AS parish_website/.test(expand), 'expand.mjs grew its own alias list back');

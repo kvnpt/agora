@@ -19,6 +19,7 @@ import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 import { cachedJson } from '../lib/data-version.mjs';
 import { favouriteCount } from '../lib/saved-items.mjs';
 import { crossRows, takingPartIn } from '../lib/taking-part.mjs';
+import { PIN_COLS_SQL } from '../../public/shared/parish-join.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
@@ -43,11 +44,11 @@ function withoutAuthor(row) {
   return rest;
 }
 
-const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
+const PARISH_COLS = `id, name, full_name, jurisdiction, address, ${PIN_COLS_SQL}, timezone,
   website, phone, email, logo_path, acronym, chant_style, languages, live_url,
   donation_url, raffle_url, payment_url, gala_url, feast_day,
   info_source_type, info_source_ref, info_source_name, info_checked_at,
-  info_verified_at, maps_url, read_from`;
+  info_verified_at, maps_url, read_from, kind, body_type`;
 
 export function registerPublicRoutes(router) {
   // GET /api/bundle — everything the client needs to build the feed itself.

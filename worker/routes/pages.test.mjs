@@ -167,6 +167,18 @@ test("a parish's card keeps room at its top for the page's map, the parish alone
     'under its bar, before its name, scrolling with the card (next.js mapToCard moves the map in)');
 });
 
+test('a group with no place (the run club) has no map, pin, jurisdiction or "service times"', async () => {
+  const { raw, get } = fresh();
+  raw.prepare("UPDATE parishes SET jurisdiction = 'other', kind = 'body', body_type = 'community', has_place = 0 WHERE id = ?").run(PARISH);
+  raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(PARISH);
+  const { html } = await get('/sgr');
+  const c = card(html);
+  assert.match(c, /^<section class="sheet parish open ssr"/, 'no room kept for a map');
+  assert.doesNotMatch(c, /card-map|Google Maps|>Jurisdiction</);
+  assert.doesNotMatch(html, /GeoCoordinates/, 'no pin in its structured data either');
+  assert.match(timesOf(html), /Nothing regular on file yet\./);
+});
+
 test('the card says where its details and its times came from, and how long ago (public/shared/source-line.js)', async () => {
   const { raw, get } = fresh();
   raw.prepare(`UPDATE parishes SET info_source_name = 'Antiochian Archdiocese', info_source_ref = 'https://antiochian.org.au/sgr',

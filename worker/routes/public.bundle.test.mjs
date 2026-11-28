@@ -155,3 +155,20 @@ test('/api/schedules withholds the author too', async () => {
   assert.ok(rows.length);
   for (const r of rows) assert.ok(!('updated_by' in r));
 });
+
+test('a row with no place to visit travels with no pin, and keeps its point stored', async () => {
+  const { raw, call } = fresh();
+  const id = raw.prepare("SELECT id FROM parishes WHERE id != '_unassigned' LIMIT 1").get().id;
+  raw.prepare("UPDATE parishes SET kind = 'body', body_type = 'community', has_place = 0 WHERE id = ?").run(id);
+  const b = await (await call('GET', '/api/bundle')).json();
+  const p = b.parishes.find(x => x.id === id);
+  assert.equal(p.lat, null);
+  assert.equal(p.lng, null);
+  assert.equal(p.kind, 'body');
+  assert.equal(p.body_type, 'community');
+  assert.ok(b.parishes.some(x => x.id !== id && x.lat != null), 'every other row keeps its pin');
+  assert.notEqual(raw.prepare('SELECT lat FROM parishes WHERE id = ?').get(id).lat, null);
+  // The Worker's own join says the same.
+  const j = raw.prepare(`SELECT ${PARISH_JOIN_SQL} FROM parishes p WHERE p.id = ?`).get(id);
+  assert.equal(j.p_lat, null);
+});
